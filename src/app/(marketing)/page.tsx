@@ -1,8 +1,39 @@
 import Link from 'next/link';
+import { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'SMS-Powered Sales Training for Auto Dealers | DealershipIQ',
+  description:
+    'Train your sales team via daily text messages. AI grades every response. Managers see real-time results. 30-day free trial, no credit card required.',
+  alternates: {
+    canonical: 'https://dealershipiq-wua7.vercel.app',
+  },
+};
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'DealershipIQ',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Web',
+  description:
+    'SMS-based automotive sales training platform with AI grading and real-time manager dashboards.',
+  offers: {
+    '@type': 'Offer',
+    price: '449',
+    priceCurrency: 'USD',
+    priceValidUntil: '2027-12-31',
+    availability: 'https://schema.org/InStock',
+  },
+};
 
 export default function LandingPage() {
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center">
