@@ -1,0 +1,96 @@
+// Ask IQ: User question endpoint
+// POST /api/ask
+// Body: { question: string }
+// Auth: required (any authenticated user)
+// Logs query, returns AI response (placeholder for now)
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { serviceClient } from '@/lib/supabase/service';
+
+interface AskRequest {
+  question: string;
+}
+
+interface AskResponse {
+  id: string;
+  question: string;
+  response: string;
+  confidence: number;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
+    if (!dealershipId) {
+      return NextResponse.json({ error: 'No dealership' }, { status: 403 });
+    }
+
+    const body = await request.json() as AskRequest;
+
+    if (!body.question || body.question.trim().length === 0) {
+      return NextResponse.json(
+        { error: 'question is required' },
+        { status: 400 }
+      );
+    }
+
+    const questionText = body.question.trim();
+
+    if (questionText.length > 1000) {
+      return NextResponse.json(
+        { error: 'question must be 1000 characters or less' },
+        { status: 400 }
+      );
+    }
+
+    // TODO: Call AI service to generate response (Phase 2 infrastructure)
+    // For now, return placeholder response with high confidence
+    const aiResponse = `Thank you for your question: "${questionText}". The AI engine is being trained with your dealership's knowledge base. Check back soon for a fully personalized response!`;
+    const confidence = 0.0; // Low confidence for placeholder
+
+    // Log query to askiq_queries
+    const { data: queryRecord, error: insertError } = await serviceClient
+      .from('askiq_queries')
+      .insert({
+        user_id: user.id,
+        dealership_id: dealershipId,
+        query_text: questionText,
+        ai_response: aiResponse,
+        confidence,
+        topic: null, // TODO: Extract topic from question
+      })
+      .select('id')
+      .single();
+
+    if (insertError) {
+      console.error('Failed to log query:', insertError);
+      return NextResponse.json(
+        { error: 'Failed to process question' },
+        { status: 500 }
+      );
+    }
+
+    const response: AskResponse = {
+      id: queryRecord.id,
+      question: questionText,
+      response: aiResponse,
+      confidence,
+    };
+
+    return NextResponse.json(response);
+  } catch (err) {
+    console.error('POST /api/ask error:', err);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}

@@ -1,0 +1,90 @@
+// Manager Dashboard: Knowledge gaps from low-confidence queries
+// GET /api/dashboard/gaps
+// Returns askiq_queries where confidence is low (< 70%)
+// Auth: manager+ role required
+
+import { NextResponse } from 'next/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+
+interface KnowledgeGap {
+  id: string;
+  user_id: string;
+  user_name: string;
+  query_text: string;
+  ai_response: string;
+  confidence: number;
+  topic: string | null;
+  created_at: string;
+}
+
+export async function GET() {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
+    if (!dealershipId) {
+      return NextResponse.json({ error: 'No dealership' }, { status: 403 });
+    }
+
+    const userRole = user.app_metadata?.user_role as string | undefined;
+    if (userRole !== 'manager' && userRole !== 'owner') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // Get low-confidence queries from past 30 days
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffIso = cutoff.toISOString();
+
+    const { data: gaps, error: gapsError } = await supabase
+      .from('askiq_queries')
+      .select(`
+        id,
+        user_id,
+        users (full_name),
+        query_text,
+        ai_response,
+        confidence,
+        topic,
+        created_at
+      `)
+      .eq('dealership_id', dealershipId)
+      .lt('confidence', 0.7)
+      .gte('created_at', cutoffIso)
+      .order('confidence', { ascending: true })
+      .limit(100);
+
+    if (gapsError) {
+      console.error('Failed to fetch knowledge gaps:', gapsError);
+      return NextResponse.json(
+        { error: 'Failed to fetch knowledge gaps' },
+        { status: 500 }
+      );
+    }
+
+    // Transform data
+    const transformed: KnowledgeGap[] = (gaps ?? []).map((g: any) => ({
+      id: g.id,
+      user_id: g.user_id,
+      user_name: g.users?.full_name ?? 'Unknown',
+      query_text: g.query_text,
+      ai_response: g.ai_response,
+      confidence: Math.round(g.confidence * 100),
+      topic: g.topic,
+      created_at: g.created_at,
+    }));
+
+    return NextResponse.json({ gaps: transformed });
+  } catch (err) {
+    console.error('GET /api/dashboard/gaps error:', err);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}

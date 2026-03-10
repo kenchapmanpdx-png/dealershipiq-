@@ -378,3 +378,302 @@ export async function getFeatureFlagConfig(
   if (!data?.enabled) return null;
   return data.config as Record<string, unknown>;
 }
+
+// ─── Daily digest (Phase 3) ────────────────────────────────────────────
+// Get managers for a dealership
+
+export interface ManagerUser {
+  id: string;
+  full_name: string;
+  phone: string;
+  role: string;
+}
+
+export async function getManagersForDealership(
+  dealershipId: string
+): Promise<ManagerUser[]> {
+  const { data, error } = await serviceClient
+    .from('users')
+    .select(`
+      id,
+      full_name,
+      phone,
+      dealership_memberships!inner ( role )
+    `)
+    .eq('dealership_memberships.dealership_id', dealershipId)
+    .in('dealership_memberships.role', ['manager', 'owner'])
+    .not('phone', 'is', null);
+
+  if (error) throw error;
+
+  return (data ?? []).map((user: any) => ({
+    id: user.id,
+    full_name: user.full_name,
+    phone: user.phone,
+    role: user.dealership_memberships?.[0]?.role ?? 'manager',
+  }));
+}
+
+// Daily digest stats for a dealership on a specific date
+export interface DigestStats {
+  completionRate: number;
+  totalSessions: number;
+  completedSessions: number;
+  topPerformer: { fullName: string; score: number } | null;
+  lowestPerformer: { fullName: string; score: number } | null;
+  avgScores: Record<string, number>;
+}
+
+export async function getDailyDigestStats(
+  dealershipId: string,
+  dateStr: string // YYYY-MM-DD format
+): Promise<DigestStats> {
+  // Get all users eligible for training that day
+  const { data: eligibleUsers, error: eligibleError } = await serviceClient
+    .from('users')
+    .select(`
+      id,
+      dealership_memberships!inner ( dealership_id )
+    `)
+    .eq('dealership_memberships.dealership_id', dealershipId)
+    .eq('status', 'active')
+    .not('phone', 'is', null);
+
+  if (eligibleError) throw eligibleError;
+
+  const totalSessions = eligibleUsers?.length ?? 0;
+
+  // Get training results from that date
+  const startOfDay = `${dateStr}T00:00:00Z`;
+  const endOfDay = `${dateStr}T23:59:59Z`;
+
+  const { data: results, error: resultsError } = await serviceClient
+    .from('training_results')
+    .select(`
+      id,
+      user_id,
+      users ( full_name ),
+      product_accuracy,
+      tone_rapport,
+      addressed_concern,
+      close_attempt
+    `)
+    .eq('dealership_id', dealershipId)
+    .gte('created_at', startOfDay)
+    .lte('created_at', endOfDay);
+
+  if (resultsError) throw resultsError;
+
+  const completedSessions = results?.length ?? 0;
+  const completionRate = totalSessions > 0 ? completedSessions / totalSessions : 0;
+
+  // Aggregate scores by user
+  const userScores: Record<
+    string,
+    { fullName: string; scores: number[] }
+  > = {};
+
+  (results ?? []).forEach((r: any) => {
+    const userId = r.user_id;
+    const fullName = r.users?.full_name ?? 'Unknown';
+    const avgScore =
+      (r.product_accuracy +
+        r.tone_rapport +
+        r.addressed_concern +
+        r.close_attempt) /
+      4;
+
+    if (!userScores[userId]) {
+      userScores[userId] = { fullName, scores: [] };
+    }
+    userScores[userId].scores.push(avgScore);
+  });
+
+  // Find top and lowest performers
+  const performers = Object.entries(userScores)
+    .map(([_, data]) => ({
+      fullName: data.fullName,
+      avgScore:
+        data.scores.reduce((a, b) => a + b, 0) / data.scores.length,
+    }))
+    .sort((a, b) => b.avgScore - a.avgScore);
+
+  const topPerformer = performers.length > 0 ? performers[0] : null;
+  const lowestPerformer =
+    performers.length > 0 ? performers[performers.length - 1] : null;
+
+  // Calculate overall averages
+  const allScores: Record<string, number[]> = {
+    product_accuracy: [],
+    tone_rapport: [],
+    addressed_concern: [],
+    close_attempt: [],
+  };
+
+  (results ?? []).forEach((r: any) => {
+    allScores.product_accuracy.push(r.product_accuracy);
+    allScores.tone_rapport.push(r.tone_rapport);
+    allScores.addressed_concern.push(r.addressed_concern);
+    allScores.close_attempt.push(r.close_attempt);
+  });
+
+  const avgScores: Record<string, number> = {};
+  Object.entries(allScores).forEach(([key, scores]) => {
+    avgScores[key] =
+      scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+  });
+
+  return {
+    completionRate,
+    totalSessions,
+    completedSessions,
+    topPerformer: topPerformer
+      ? { fullName: topPerformer.fullName, score: topPerformer.avgScore }
+      : null,
+    lowestPerformer: lowestPerformer
+      ? { fullName: lowestPerformer.fullName, score: lowestPerformer.avgScore }
+      : null,
+    avgScores,
+  };
+}
+
+// ─── Red flag detection (Phase 3) ──────────────────────────────────────
+
+export interface FlaggedUser {
+  id: string;
+  fullName: string;
+  phone: string;
+  flags: string[];
+}
+
+export async function getRedFlagUsers(
+  dealershipId: string
+): Promise<FlaggedUser[]> {
+  // Get all active users in dealership
+  const { data: users, error: usersError } = await serviceClient
+    .from('users')
+    .select(`
+      id,
+      full_name,
+      phone,
+      dealership_memberships!inner ( dealership_id )
+    `)
+    .eq('dealership_memberships.dealership_id', dealershipId)
+    .eq('status', 'active')
+    .not('phone', 'is', null);
+
+  if (usersError) throw usersError;
+
+  const flaggedList: FlaggedUser[] = [];
+
+  for (const user of users ?? []) {
+    const flags: string[] = [];
+
+    // Check: no response in 3+ days
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+    const { data: recentSessions, error: sessionsError } = await serviceClient
+      .from('conversation_sessions')
+      .select('id, updated_at')
+      .eq('dealership_id', dealershipId)
+      .eq('user_id', user.id)
+      .gte('updated_at', threeDaysAgo.toISOString())
+      .limit(1);
+
+    if (!sessionsError && (!recentSessions || recentSessions.length === 0)) {
+      flags.push('no_response_3d');
+    }
+
+    // Check: completion rate <30% (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { data: sevenDaySessions, error: sevenDayError } =
+      await serviceClient
+        .from('conversation_sessions')
+        .select('id, status')
+        .eq('dealership_id', dealershipId)
+        .eq('user_id', user.id)
+        .gte('created_at', sevenDaysAgo.toISOString());
+
+    if (!sevenDayError) {
+      const sessions = sevenDaySessions ?? [];
+      const completed = sessions.filter((s: any) => s.status === 'completed').length;
+      const completionRate = sessions.length > 0 ? completed / sessions.length : 0;
+
+      if (sessions.length > 0 && completionRate < 0.3) {
+        flags.push('low_completion');
+      }
+    }
+
+    // Check: score decline >40% vs previous week
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const now = new Date();
+
+    const { data: previousWeek, error: prevWeekError } = await serviceClient
+      .from('training_results')
+      .select('product_accuracy, tone_rapport, addressed_concern, close_attempt')
+      .eq('dealership_id', dealershipId)
+      .eq('user_id', user.id)
+      .gte('created_at', twoWeeksAgo.toISOString())
+      .lt('created_at', weekAgo.toISOString());
+
+    const { data: currentWeek, error: currWeekError } = await serviceClient
+      .from('training_results')
+      .select('product_accuracy, tone_rapport, addressed_concern, close_attempt')
+      .eq('dealership_id', dealershipId)
+      .eq('user_id', user.id)
+      .gte('created_at', weekAgo.toISOString());
+
+    if (!prevWeekError && !currWeekError) {
+      const prevScores = previousWeek ?? [];
+      const currScores = currentWeek ?? [];
+
+      if (prevScores.length > 0 && currScores.length > 0) {
+        const prevAvg =
+          prevScores.reduce(
+            (sum: number, r: any) =>
+              sum +
+              (r.product_accuracy +
+                r.tone_rapport +
+                r.addressed_concern +
+                r.close_attempt) /
+                4,
+            0
+          ) / prevScores.length;
+
+        const currAvg =
+          currScores.reduce(
+            (sum: number, r: any) =>
+              sum +
+              (r.product_accuracy +
+                r.tone_rapport +
+                r.addressed_concern +
+                r.close_attempt) /
+                4,
+            0
+          ) / currScores.length;
+
+        const decline = (prevAvg - currAvg) / prevAvg;
+        if (decline > 0.4) {
+          flags.push('score_decline');
+        }
+      }
+    }
+
+    if (flags.length > 0) {
+      flaggedList.push({
+        id: user.id,
+        fullName: user.full_name,
+        phone: user.phone,
+        flags,
+      });
+    }
+  }
+
+  return flaggedList;
+}
