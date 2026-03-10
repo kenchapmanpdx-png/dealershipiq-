@@ -677,3 +677,145 @@ export async function getRedFlagUsers(
 
   return flaggedList;
 }
+
+// ─── Phase 4: Adaptive Weighting ────────────────────────────────────────
+// Manage employee priority vectors across training domains
+
+export async function getEmployeePriorityVector(
+  userId: string,
+  dealershipId: string
+): Promise<Record<string, number> | null> {
+  const { data, error } = await serviceClient
+    .from('employee_priority_vectors')
+    .select('weights')
+    .eq('dealership_id', dealershipId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+
+  return data.weights as Record<string, number>;
+}
+
+export async function upsertPriorityVector(
+  userId: string,
+  dealershipId: string,
+  weights: Record<string, number>
+): Promise<void> {
+  const { error } = await serviceClient.from('employee_priority_vectors').upsert(
+    {
+      user_id: userId,
+      dealership_id: dealershipId,
+      weights,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,dealership_id' }
+  );
+
+  if (error) throw error;
+}
+
+export async function getLastTrainingDomain(
+  userId: string,
+  dealershipId: string
+): Promise<string | null> {
+  const { data, error } = await serviceClient
+    .from('training_results')
+    .select('training_domain')
+    .eq('dealership_id', dealershipId)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+
+  return data.training_domain as string;
+}
+
+export async function getAdaptiveWeightingConfig(
+  dealershipId: string
+): Promise<{
+  alpha: number;
+  beta: number;
+  threshold: number;
+  k_values: Record<string, number>;
+} | null> {
+  const { data, error } = await serviceClient
+    .from('dealerships')
+    .select('feature_flags')
+    .eq('id', dealershipId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+
+  const flags = data.feature_flags as Record<string, unknown>;
+  const adaptive = flags.adaptive_weighting as Record<string, unknown> | undefined;
+
+  if (!adaptive) return null;
+
+  return {
+    alpha: Number(adaptive.alpha ?? 0.3),
+    beta: Number(adaptive.beta ?? 0.1),
+    threshold: Number(adaptive.threshold ?? 3.0),
+    k_values: (adaptive.k_values as Record<string, number>) ?? {},
+  };
+}
+
+// ─── Phase 4: Schedule Awareness ────────────────────────────────────────
+// Manage employee schedules (days off, vacation)
+
+export async function getEmployeeSchedule(
+  userId: string,
+  dealershipId: string
+): Promise<{
+  daysOff: string[];
+  vacationStart: string | null;
+  vacationEnd: string | null;
+  lastUpdated: string;
+} | null> {
+  const { data, error } = await serviceClient
+    .from('employee_schedules')
+    .select('days_off, vacation_start, vacation_end, updated_at')
+    .eq('dealership_id', dealershipId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+
+  return {
+    daysOff: data.days_off as string[],
+    vacationStart: data.vacation_start as string | null,
+    vacationEnd: data.vacation_end as string | null,
+    lastUpdated: data.updated_at as string,
+  };
+}
+
+export async function upsertEmployeeSchedule(
+  userId: string,
+  dealershipId: string,
+  schedule: {
+    daysOff: string[];
+    vacationStart: string | null;
+    vacationEnd: string | null;
+    lastUpdated: string;
+  }
+): Promise<void> {
+  const { error } = await serviceClient.from('employee_schedules').upsert(
+    {
+      user_id: userId,
+      dealership_id: dealershipId,
+      days_off: schedule.daysOff,
+      vacation_start: schedule.vacationStart,
+      vacation_end: schedule.vacationEnd,
+      updated_at: schedule.lastUpdated,
+    },
+    { onConflict: 'user_id,dealership_id' }
+  );
+
+  if (error) throw error;
+}
