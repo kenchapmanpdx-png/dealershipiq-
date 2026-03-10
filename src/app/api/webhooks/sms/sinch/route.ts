@@ -1,7 +1,9 @@
 // Sinch Conversation API webhook handler
 // Build Master: Phase 2A, 2B, 2C, 2D, 2E
-// CRITICAL: Return 200 OK immediately before any processing.
-// 4xx responses permanently kill Sinch callbacks (except 429).
+// CRITICAL: Always return 200 OK. Never return 4xx — Sinch permanently
+// kills callbacks on non-429 4xx responses.
+// Processing runs synchronously before returning 200 (Vercel Hobby plan
+// does not support @vercel/functions waitUntil).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySinchWebhookSignature } from '@/lib/sinch-auth';
@@ -18,21 +20,6 @@ import {
 } from '@/lib/service-db';
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
 
-// Vercel serverless: waitUntil keeps the function alive after response.
-// Falls back to fire-and-forget if not on Vercel.
-function scheduleAfterResponse(fn: () => Promise<void>) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  try {
-    // @vercel/functions provides waitUntil in Vercel Edge/Serverless
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { waitUntil } = require('@vercel/functions');
-    waitUntil(fn());
-  } catch {
-    // Not on Vercel or package missing — fire and forget
-    void fn().catch((err) => console.error('Background processing error:', err));
-  }
-}
-
 // Idempotency: track processed message IDs (in-memory for now, Redis in Phase 2F)
 const processedMessages = new Set<string>();
 const MAX_PROCESSED_CACHE = 10_000;
@@ -47,8 +34,6 @@ export async function POST(request: NextRequest) {
   const timestamp = request.headers.get('x-sinch-webhook-signature-timestamp');
 
   if (!verifySinchWebhookSignature(rawBody, signature, nonce, timestamp)) {
-    // Return 200 anyway to avoid Sinch killing the callback
-    // Log the failure for investigation
     console.error('Sinch webhook HMAC verification failed');
     return NextResponse.json({ status: 'ok' });
   }
@@ -60,19 +45,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' });
   }
 
-  // Return 200 immediately, process asynchronously via waitUntil
-  scheduleAfterResponse(async () => {
-    try {
-      // Route: delivery report vs inbound message
-      if ('message_delivery_report' in payload) {
-        await handleDeliveryReport(payload as SinchDeliveryReport);
-      } else if ('message' in payload) {
-        await handleInboundMessage(payload as SinchInboundMessage);
-      }
-    } catch (err) {
-      console.error('Webhook background processing error:', err);
+  // Process synchronously, then return 200.
+  // Wrapped in try/catch so we ALWAYS return 200 regardless of errors.
+  try {
+    if ('message_delivery_report' in payload) {
+      await handleDeliveryReport(payload as SinchDeliveryReport);
+    } else if ('message' in payload) {
+      await handleInboundMessage(payload as SinchInboundMessage);
     }
-  });
+  } catch (err) {
+    console.error('Webhook processing error:', err);
+  }
 
   return NextResponse.json({ status: 'ok' });
 }
