@@ -74,6 +74,13 @@ const OPENAI_MODELS = {
   fallback: 'gpt-4o-mini-2024-07-18',
 } as const;
 
+// GPT-5.4+ requires max_completion_tokens; older models use max_tokens
+function tokenLimitParam(model: string, limit: number): Record<string, number> {
+  return model.startsWith('gpt-5')
+    ? { max_completion_tokens: limit }
+    : { max_tokens: limit };
+}
+
 interface GradeOptions {
   scenario: string;
   employeeResponse: string;
@@ -258,7 +265,7 @@ async function callOpenAI<T>(
           },
         },
         temperature: 0.3,
-        max_tokens: 500,
+        ...tokenLimitParam(model, 500),
       }),
       signal: controller.signal,
     });
@@ -297,7 +304,7 @@ async function callOpenAIText(
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.7,
-      max_tokens: 300,
+      ...tokenLimitParam(model, 300),
     };
 
     if (isStructured) {
@@ -377,7 +384,7 @@ export async function getOpenAICompletion(
         model: modelId,
         messages: [{ role: 'user', content: prompt }],
         temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.max_tokens ?? 500,
+        ...tokenLimitParam(modelId, options?.max_tokens ?? 500),
       }),
     });
 
