@@ -163,8 +163,15 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     const session = await getActiveSession(user.id, user.dealershipId);
 
     if (!session) {
-      // No active session — this is an unsolicited message
-      // Could be after-hours reply or stale conversation
+      // No active session — let the user know
+      await sendSms(phone, "No active training session right now. Your next question will arrive at the scheduled time!");
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: 'No active training session right now. Your next question will arrive at the scheduled time!',
+      });
       return;
     }
 
