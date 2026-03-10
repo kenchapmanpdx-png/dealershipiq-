@@ -72,12 +72,12 @@ export async function GET() {
 
     // Filter for coaching candidates
     const coachingQueue: CoachingSession[] = (results ?? []).reduce(
-      (acc: CoachingSession[], r: any) => {
+      (acc: CoachingSession[], r: Record<string, unknown>) => {
         const scores = [
-          r.product_accuracy,
-          r.tone_rapport,
-          r.addressed_concern,
-          r.close_attempt,
+          r.product_accuracy as number,
+          r.tone_rapport as number,
+          r.addressed_concern as number,
+          r.close_attempt as number,
         ];
 
         // Low score: any dimension < 3
@@ -87,17 +87,17 @@ export async function GET() {
 
         if (hasLowScore || isPerfect) {
           acc.push({
-            id: r.id,
-            user_id: r.user_id,
-            user_name: r.users?.full_name ?? 'Unknown',
-            mode: r.mode,
-            product_accuracy: r.product_accuracy,
-            tone_rapport: r.tone_rapport,
-            addressed_concern: r.addressed_concern,
-            close_attempt: r.close_attempt,
-            feedback: r.feedback,
+            id: r.id as string,
+            user_id: r.user_id as string,
+            user_name: ((r.users as Record<string, unknown>)?.full_name ?? 'Unknown') as string,
+            mode: r.mode as string,
+            product_accuracy: r.product_accuracy as number,
+            tone_rapport: r.tone_rapport as number,
+            addressed_concern: r.addressed_concern as number,
+            close_attempt: r.close_attempt as number,
+            feedback: r.feedback as string,
             reason: hasLowScore ? 'low_score' : 'perfect_score',
-            created_at: r.created_at,
+            created_at: r.created_at as string,
           });
         }
 

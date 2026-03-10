@@ -14,12 +14,6 @@ export interface ScoringSchema {
   includeBase: boolean; // Always true
 }
 
-const DEFAULT_SCHEMA: ScoringSchema = {
-  includeUrgency: false,
-  includeCompetitive: false,
-  includeBase: true,
-};
-
 // Get scoring schema for a dealership (from feature flags)
 export async function getExpandedGradingSchema(
   featureFlags: Record<string, unknown> = {}

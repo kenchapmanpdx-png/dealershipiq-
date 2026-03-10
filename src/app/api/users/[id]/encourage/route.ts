@@ -61,8 +61,8 @@ export async function PUT(
     }
 
     // Verify user belongs to this dealership
-    const memberships = targetUser.dealership_memberships as any[] || [];
-    if (!memberships.some((m: any) => m.dealership_id === dealershipId)) {
+    const memberships = (targetUser.dealership_memberships ?? []) as Array<Record<string, unknown>>;
+    if (!memberships.some((m: Record<string, unknown>) => m.dealership_id === dealershipId)) {
       return NextResponse.json(
         { error: 'User not in your dealership' },
         { status: 403 }

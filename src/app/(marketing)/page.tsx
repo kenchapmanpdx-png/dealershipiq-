@@ -32,7 +32,7 @@ export default function LandingPage() {
             <div className="bg-white p-8 rounded-lg shadow-sm">
               <h3 className="text-xl font-bold text-gray-900 mb-3">Daily SMS Training</h3>
               <p className="text-gray-600">
-                Short training questions delivered via text message. Fits into any salesperson's
+                Short training questions delivered via text message. Fits into any salesperson&apos;s
                 workflow.
               </p>
             </div>

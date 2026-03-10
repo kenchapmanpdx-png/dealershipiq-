@@ -37,10 +37,10 @@ export default async function DashboardLayout({
     .eq('user_id', user.id);
 
   const dealershipList = (memberships ?? [])
-    .filter((m: any) => m.dealerships)
-    .map((m: any) => ({
-      id: m.dealership_id,
-      name: m.dealerships.name,
+    .filter((m: Record<string, unknown>) => m.dealerships)
+    .map((m: Record<string, unknown>) => ({
+      id: m.dealership_id as string,
+      name: (m.dealerships as Record<string, unknown>).name as string,
     }));
 
   return (
@@ -70,9 +70,9 @@ export default async function DashboardLayout({
                 }}
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                {dealershipList.map((d: any) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
+                {dealershipList.map((d: Record<string, unknown>) => (
+                  <option key={d.id as string} value={d.id as string}>
+                    {d.name as string}
                   </option>
                 ))}
               </select>

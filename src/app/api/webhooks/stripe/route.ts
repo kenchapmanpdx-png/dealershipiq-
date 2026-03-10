@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       body,
       signature,
       process.env.STRIPE_WEBHOOK_SECRET || ''
-    ) as Stripe.Event;
+    ) as unknown as Stripe.Event;
   } catch (err) {
     console.error('Webhook signature verification failed:', err);
     return Response.json({ error: 'Webhook signature verification failed' }, { status: 401 });
@@ -102,7 +102,7 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
   if (!dealership) return;
 
   const locations = subscription.items.data[0]?.quantity || 1;
-  const periodEnd = (subscription as any).current_period_end;
+  const periodEnd = (subscription as unknown as Record<string, unknown>).current_period_end as number;
   const currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
 
   await updateDealershipBilling(dealership.id, {
@@ -121,9 +121,9 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   if (!dealership) return;
 
   const locations = subscription.items.data[0]?.quantity || 1;
-  const periodEnd = (subscription as any).current_period_end;
+  const periodEnd = (subscription as unknown as Record<string, unknown>).current_period_end as number;
   const currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
-  let subscriptionStatus = subscription.status;
+  const subscriptionStatus = subscription.status;
 
   if (subscriptionStatus === 'past_due' && !dealership.id) {
     return; // Avoid null reference

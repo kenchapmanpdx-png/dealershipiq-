@@ -119,10 +119,10 @@ export async function POST(request: NextRequest) {
       .eq('dealership_id', dealershipId);
 
     const existingPhones = new Set(
-      (existingUsers ?? []).map((u: any) => u.phone)
+      (existingUsers ?? []).map((u: Record<string, unknown>) => u.phone)
     );
     const optOutPhones = new Set(
-      (optOuts ?? []).map((o: any) => o.phone)
+      (optOuts ?? []).map((o: Record<string, unknown>) => o.phone)
     );
 
     // Process rows
@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
           phone: normalizedPhone,
           status: 'imported',
         });
-      } catch (err) {
+      } catch {
         result.errors++;
         result.rows.push({
           row_number: rowNumber,

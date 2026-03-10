@@ -68,15 +68,15 @@ export async function GET() {
     }
 
     // Transform data
-    const transformed: KnowledgeGap[] = (gaps ?? []).map((g: any) => ({
-      id: g.id,
-      user_id: g.user_id,
-      user_name: g.users?.full_name ?? 'Unknown',
-      query_text: g.query_text,
-      ai_response: g.ai_response,
-      confidence: Math.round(g.confidence * 100),
-      topic: g.topic,
-      created_at: g.created_at,
+    const transformed: KnowledgeGap[] = (gaps ?? []).map((g: Record<string, unknown>) => ({
+      id: g.id as string,
+      user_id: g.user_id as string,
+      user_name: ((g.users as Record<string, unknown>)?.full_name ?? 'Unknown') as string,
+      query_text: g.query_text as string,
+      ai_response: g.ai_response as string,
+      confidence: Math.round((g.confidence as number) * 100),
+      topic: g.topic as string | null,
+      created_at: g.created_at as string,
     }));
 
     return NextResponse.json({ gaps: transformed });

@@ -84,18 +84,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform data
-    const sessions: SessionResult[] = (results ?? []).map((r: any) => ({
-      id: r.id,
-      user_id: r.user_id,
-      user_name: r.users?.full_name ?? 'Unknown',
-      session_id: r.session_id,
-      mode: r.mode,
-      product_accuracy: r.product_accuracy,
-      tone_rapport: r.tone_rapport,
-      addressed_concern: r.addressed_concern,
-      close_attempt: r.close_attempt,
-      feedback: r.feedback,
-      created_at: r.created_at,
+    const sessions: SessionResult[] = (results ?? []).map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      user_id: r.user_id as string,
+      user_name: ((r.users as Record<string, unknown>)?.full_name ?? 'Unknown') as string,
+      session_id: r.session_id as string | null,
+      mode: r.mode as string,
+      product_accuracy: r.product_accuracy as number,
+      tone_rapport: r.tone_rapport as number,
+      addressed_concern: r.addressed_concern as number,
+      close_attempt: r.close_attempt as number,
+      feedback: r.feedback as string,
+      created_at: r.created_at as string,
     }));
 
     return NextResponse.json({ sessions, days });

@@ -215,12 +215,12 @@ interface SessionCardProps {
 
 function SessionCard({
   session,
-  isSelected,
-  onSelectChange,
+  isSelected: _isSelected,
+  onSelectChange: _onSelectChange,
   onSendEncouragement,
   sending,
 }: SessionCardProps) {
-  const avg = Math.round(
+  const _avg = Math.round(
     (session.product_accuracy +
       session.tone_rapport +
       session.addressed_concern +

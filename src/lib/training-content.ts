@@ -5,7 +5,6 @@
 import { selectTrainingDomain, TrainingDomain } from '@/lib/adaptive-weighting';
 import { getScheduleStatus } from '@/lib/schedule-awareness';
 import { getRandomMood, Mood } from '@/lib/persona-moods';
-import { getExpandedGradingSchema } from '@/lib/scoring-expansion';
 import { SessionMode } from '@/types/database';
 
 export interface TrainingContent {
@@ -206,9 +205,9 @@ function buildSystemPrompt(
   domain: TrainingDomain,
   mode: SessionMode,
   mood: Mood,
-  featureFlags: Record<string, unknown>
+  _featureFlags: Record<string, unknown>
 ): string {
-  let systemPrompt = `You are an AI customer in a car dealership training scenario.
+  const systemPrompt = `You are an AI customer in a car dealership training scenario.
 
 # Your Role
 ${DOMAIN_PROMPTS[domain][mode]}

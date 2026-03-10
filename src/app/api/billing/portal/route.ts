@@ -1,7 +1,7 @@
 import { createBillingPortalSession } from '@/lib/stripe';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
-export async function POST(request: Request) {
+export async function POST(_request: Request) {
   try {
     // Get session
     const supabase = await createServerSupabaseClient();
@@ -26,11 +26,11 @@ export async function POST(request: Request) {
       .eq('id', dealership_id)
       .single();
 
-    if (dealershipError || !(dealership as any)?.stripe_customer_id) {
+    if (dealershipError || !(dealership as Record<string, unknown>)?.stripe_customer_id) {
       return Response.json({ error: 'No billing information found' }, { status: 404 });
     }
 
-    const { url } = await createBillingPortalSession((dealership as any).stripe_customer_id);
+    const { url } = await createBillingPortalSession((dealership as Record<string, unknown>).stripe_customer_id as string);
 
     return Response.json({ portalUrl: url });
   } catch (error) {

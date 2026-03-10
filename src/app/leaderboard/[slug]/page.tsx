@@ -63,14 +63,14 @@ export default async function LeaderboardPage({
     }
   > = {};
 
-  (results ?? []).forEach((result: any) => {
-    const userId = result.user_id;
-    const userName = result.users?.full_name ?? 'Unknown';
+  (results ?? []).forEach((result: Record<string, unknown>) => {
+    const userId = result.user_id as string;
+    const userName = ((result.users as Record<string, unknown>)?.full_name ?? 'Unknown') as string;
     const avgScore =
-      (result.product_accuracy +
-        result.tone_rapport +
-        result.addressed_concern +
-        result.close_attempt) /
+      ((result.product_accuracy as number) +
+        (result.tone_rapport as number) +
+        (result.addressed_concern as number) +
+        (result.close_attempt as number)) /
       4;
 
     if (!userScores[userId]) {
