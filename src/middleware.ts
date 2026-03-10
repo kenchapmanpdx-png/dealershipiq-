@@ -10,9 +10,9 @@ import { updateSession } from '@/lib/supabase/middleware';
 
 // Routes that require authentication
 const PROTECTED_ROUTES = ['/dashboard'];
-const PROTECTED_API_ROUTES = ['/api/dashboard', '/api/admin'];
+const PROTECTED_API_ROUTES = ['/api/dashboard', '/api/users', '/api/push', '/api/ask', '/api/admin'];
 const AUTH_ROUTES = ['/login', '/reset-password', '/update-password'];
-const PUBLIC_API_ROUTES = ['/api/webhooks', '/api/cron', '/api/auth'];
+const PUBLIC_API_ROUTES = ['/api/webhooks', '/api/cron', '/api/auth', '/api/leaderboard'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
