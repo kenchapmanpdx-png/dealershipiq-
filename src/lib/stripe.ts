@@ -1,6 +1,22 @@
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+let _stripe: Stripe | null = null;
+function getStripe(): Stripe {
+  if (!_stripe) {
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+  }
+  return _stripe;
+}
+
+// Legacy alias
+const stripe = new Proxy({} as Stripe, {
+  get(_target, prop) {
+    const client = getStripe();
+    const value = (client as unknown as Record<string | symbol, unknown>)[prop];
+    if (typeof value === 'function') return value.bind(client);
+    return value;
+  },
+});
 
 export async function createCheckoutSession(options: {
   dealershipName: string;
