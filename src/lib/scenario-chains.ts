@@ -180,7 +180,7 @@ export async function generateChainScenario(
   try {
     const response = await getOpenAICompletion(
       prompt,
-      'gpt-4o',
+      'gpt-5.4',
       {
         temperature: 0.7,
         max_tokens: 300,
