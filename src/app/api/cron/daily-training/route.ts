@@ -110,13 +110,14 @@ function selectTrainingMode(): string {
   return MODES[dayOfYear % MODES.length];
 }
 
-function getTrainingQuestion(mode: string, dealershipName: string): string {
+function getTrainingQuestion(mode: string, _dealershipName: string): string {
   // TODO: Replace with prompt_versions table lookup + priority vector selection
-  // These are placeholder questions for initial testing
+  // Questions are written as if the customer is talking directly to the salesperson.
+  // No meta-framing, no labels, no "How would you respond?" — just the customer's words.
   const questions: Record<string, string> = {
-    roleplay: `[${dealershipName} Training] A customer says: "I found this car $2,000 cheaper at another dealership." How would you respond?`,
-    quiz: `[${dealershipName} Training] Quick quiz: What are the top 3 features you should highlight when presenting the safety package on our best-selling SUV?`,
-    objection: `[${dealershipName} Training] The customer says: "I need to think about it and talk to my spouse." What's your best response?`,
+    roleplay: `Hey, I found this exact car listed for $2,000 less at the dealership across town. Can you match that price or should I just go there?`,
+    quiz: `Quick — what are the top 3 safety features on our best-selling SUV? Name them like you're talking to a customer on the lot.`,
+    objection: `I really like it, but I need to think about it and talk to my spouse first. Can you hold it for me?`,
   };
   return questions[mode] ?? questions.roleplay;
 }
