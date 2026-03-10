@@ -23,6 +23,14 @@
     {
       "path": "/api/cron/dunning-check",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/daily-challenge",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/expire-challenges",
+      "schedule": "0 * * * *"
     }
   ]
 }
