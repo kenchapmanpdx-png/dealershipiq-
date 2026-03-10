@@ -24,9 +24,8 @@ export const maxDuration = 300; // 5 minutes
  */
 export async function GET(request: NextRequest) {
   // Verify cron secret
-  const authError = verifyCronSecret(request);
-  if (authError) {
-    return authError;
+  if (!verifyCronSecret(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
@@ -95,26 +94,22 @@ export async function GET(request: NextRequest) {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function handleMorningChallenge(
-  dealership: any,
+  dealership: Record<string, unknown>,
   todayDate: string,
-  results: any
+  results: Record<string, unknown>
 ): Promise<void> {
   // Check if challenge already exists for today
-  const existing = await getDailyChallengeByChallengeDate(dealership.id, todayDate);
+  const existing = await getDailyChallengeByChallengeDate(dealership.id as string, todayDate);
 
-  let challengeId: string;
-
-  if (existing) {
-    challengeId = existing.id;
-  } else {
+  if (!existing) {
     // Create new challenge
-    const scenario = await generateChallengeScenario(dealership.id);
-    challengeId = await createDailyChallenge(dealership.id, scenario);
+    const scenario = await generateChallengeScenario(dealership.id as string);
+    await createDailyChallenge(dealership.id as string, scenario);
   }
 
   // Get eligible users for this dealership
   const { getEligibleUsersForChallenge } = await import('@/lib/service-db');
-  const eligibleUsers = await getEligibleUsersForChallenge(dealership.id);
+  const eligibleUsers = await getEligibleUsersForChallenge(dealership.id as string);
 
   // Send challenge to each employee
   for (const user of eligibleUsers) {
@@ -127,24 +122,24 @@ Check your skills against your team!
 
 Reply with your answer and earn points on today's leaderboard.`;
 
-      await sendSms(user.phone, message);
-      results.morning.sent++;
+      await sendSms(user.phone as string, message);
+      (results.morning as Record<string, number>).sent++;
     } catch (error) {
       console.error(`Failed to send challenge SMS to ${user.phone}:`, error);
-      results.morning.failed++;
+      (results.morning as Record<string, number>).failed++;
     }
   }
 
-  results.morning.created++;
+  (results.morning as Record<string, number>).created++;
 }
 
 async function handleEveningChallenge(
-  dealership: any,
+  dealership: Record<string, unknown>,
   todayDate: string,
-  results: any
+  results: Record<string, unknown>
 ): Promise<void> {
   // Get today's challenge
-  const challenge = await getDailyChallengeByChallengeDate(dealership.id, todayDate);
+  const challenge = await getDailyChallengeByChallengeDate(dealership.id as string, todayDate);
 
   if (!challenge) {
     // No challenge today, skip
@@ -152,8 +147,8 @@ async function handleEveningChallenge(
   }
 
   // Get results and top performers
-  const allResults = await getChallengeResults(challenge.id);
-  const topThree = await getTopPerformers(challenge.id, 3);
+  const allResults = await getChallengeResults(challenge.id as string);
+  const topThree = await getTopPerformers(challenge.id as string, 3);
 
   if (topThree.length === 0) {
     // No submissions, skip
@@ -162,25 +157,25 @@ async function handleEveningChallenge(
 
   // Get eligible users to send top 3 message to everyone
   const { getEligibleUsersForChallenge } = await import('@/lib/service-db');
-  const eligibleUsers = await getEligibleUsersForChallenge(dealership.id);
+  const eligibleUsers = await getEligibleUsersForChallenge(dealership.id as string);
 
-  const leaderboardMessage = formatTopPerformersMessage(dealership.name, topThree, todayDate);
+  const leaderboardMessage = formatTopPerformersMessage(dealership.name as string, topThree, todayDate);
 
   // Send to all team members
   for (const user of eligibleUsers) {
     try {
-      await sendSms(user.phone, leaderboardMessage);
-      results.evening.messagesent++;
+      await sendSms(user.phone as string, leaderboardMessage);
+      (results.evening as Record<string, number>).messagesent++;
     } catch (error) {
       console.error(
         `Failed to send evening leaderboard message to ${user.phone}:`,
         error
       );
-      results.evening.failed++;
+      (results.evening as Record<string, number>).failed++;
     }
   }
 
-  results.evening.graded = allResults.length;
+  (results.evening as Record<string, number>).graded = allResults.length;
 }
 
 /**

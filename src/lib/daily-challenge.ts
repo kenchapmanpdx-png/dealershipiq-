@@ -11,7 +11,6 @@ import {
   createDailyChallenge as createDailyChallengeDb,
   getDailyChallenge,
   updateDailyChallenge,
-  getEligibleUsersForChallenge,
 } from './service-db';
 
 export interface DailyChallengeContext {
@@ -159,7 +158,7 @@ export async function getTopPerformers(challengeId: string, count: number = 3) {
 /**
  * Generate today's challenge scenario
  */
-export async function generateChallengeScenario(dealershipId: string): Promise<string> {
+export async function generateChallengeScenario(_dealershipId: string): Promise<string> {
   const prompt = `You are an automotive sales trainer. Create an engaging, team-friendly sales challenge scenario.
 
 The scenario should:
@@ -239,7 +238,7 @@ export function formatLeaderboard(
 async function gradeResponse(
   scenario: string,
   response: string,
-  rubric: Record<string, unknown>
+  _rubric: Record<string, unknown>
 ): Promise<Record<string, number>> {
   const prompt = `You are an automotive sales trainer grading a daily challenge response.
 

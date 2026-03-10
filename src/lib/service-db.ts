@@ -406,11 +406,11 @@ export async function getManagersForDealership(
 
   if (error) throw error;
 
-  return (data ?? []).map((user: any) => ({
-    id: user.id,
-    full_name: user.full_name,
-    phone: user.phone,
-    role: user.dealership_memberships?.[0]?.role ?? 'manager',
+  return (data ?? []).map((user: Record<string, unknown>) => ({
+    id: user.id as string,
+    full_name: user.full_name as string,
+    phone: user.phone as string,
+    role: ((user.dealership_memberships as Array<Record<string, unknown>>)?.[0]?.role ?? 'manager') as string,
   }));
 }
 
@@ -473,25 +473,25 @@ export async function getDailyDigestStats(
     { fullName: string; scores: number[] }
   > = {};
 
-  (results ?? []).forEach((r: any) => {
-    const userId = r.user_id;
-    const fullName = r.users?.full_name ?? 'Unknown';
+  (results ?? []).forEach((r: Record<string, unknown>) => {
+    const userId = r.user_id as string;
+    const fullName = (r.users as Record<string, unknown>)?.full_name ?? 'Unknown';
     const avgScore =
-      (r.product_accuracy +
-        r.tone_rapport +
-        r.addressed_concern +
-        r.close_attempt) /
+      ((r.product_accuracy as number) +
+        (r.tone_rapport as number) +
+        (r.addressed_concern as number) +
+        (r.close_attempt as number)) /
       4;
 
     if (!userScores[userId]) {
-      userScores[userId] = { fullName, scores: [] };
+      userScores[userId] = { fullName: fullName as string, scores: [] };
     }
     userScores[userId].scores.push(avgScore);
   });
 
   // Find top and lowest performers
   const performers = Object.entries(userScores)
-    .map(([_, data]) => ({
+    .map(([_userId, data]) => ({
       fullName: data.fullName,
       avgScore:
         data.scores.reduce((a, b) => a + b, 0) / data.scores.length,
@@ -510,11 +510,11 @@ export async function getDailyDigestStats(
     close_attempt: [],
   };
 
-  (results ?? []).forEach((r: any) => {
-    allScores.product_accuracy.push(r.product_accuracy);
-    allScores.tone_rapport.push(r.tone_rapport);
-    allScores.addressed_concern.push(r.addressed_concern);
-    allScores.close_attempt.push(r.close_attempt);
+  (results ?? []).forEach((r: Record<string, unknown>) => {
+    allScores.product_accuracy.push(r.product_accuracy as number);
+    allScores.tone_rapport.push(r.tone_rapport as number);
+    allScores.addressed_concern.push(r.addressed_concern as number);
+    allScores.close_attempt.push(r.close_attempt as number);
   });
 
   const avgScores: Record<string, number> = {};
@@ -599,7 +599,7 @@ export async function getRedFlagUsers(
 
     if (!sevenDayError) {
       const sessions = sevenDaySessions ?? [];
-      const completed = sessions.filter((s: any) => s.status === 'completed').length;
+      const completed = sessions.filter((s: Record<string, unknown>) => s.status === 'completed').length;
       const completionRate = sessions.length > 0 ? completed / sessions.length : 0;
 
       if (sessions.length > 0 && completionRate < 0.3) {
@@ -612,7 +612,6 @@ export async function getRedFlagUsers(
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
-    const now = new Date();
 
     const { data: previousWeek, error: prevWeekError } = await serviceClient
       .from('training_results')
@@ -636,24 +635,24 @@ export async function getRedFlagUsers(
       if (prevScores.length > 0 && currScores.length > 0) {
         const prevAvg =
           prevScores.reduce(
-            (sum: number, r: any) =>
+            (sum: number, r: Record<string, unknown>) =>
               sum +
-              (r.product_accuracy +
-                r.tone_rapport +
-                r.addressed_concern +
-                r.close_attempt) /
+              ((r.product_accuracy as number) +
+                (r.tone_rapport as number) +
+                (r.addressed_concern as number) +
+                (r.close_attempt as number)) /
                 4,
             0
           ) / prevScores.length;
 
         const currAvg =
           currScores.reduce(
-            (sum: number, r: any) =>
+            (sum: number, r: Record<string, unknown>) =>
               sum +
-              (r.product_accuracy +
-                r.tone_rapport +
-                r.addressed_concern +
-                r.close_attempt) /
+              ((r.product_accuracy as number) +
+                (r.tone_rapport as number) +
+                (r.addressed_concern as number) +
+                (r.close_attempt as number)) /
                 4,
             0
           ) / currScores.length;
@@ -889,7 +888,7 @@ export async function getPastDueDealerships() {
 
   if (error) throw error;
 
-  return (data ?? []).map((d: any) => ({
+  return (data ?? []).map((d: Record<string, unknown>) => ({
     id: d.id as string,
     name: d.name as string,
     subscriptionStatus: d.subscription_status as string,
@@ -966,7 +965,8 @@ export async function createDealershipWithManager(
 
 // ─── Scenario Chains (Progressive Scenario Chains) ─────────────────────────
 
-export async function getScenarioChain(chainId: string): Promise<any> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getScenarioChain(chainId: string): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('scenario_chains')
     .select('*')
@@ -980,7 +980,8 @@ export async function getScenarioChain(chainId: string): Promise<any> {
 export async function getScenarioChainByUserDealership(
   userId: string,
   dealershipId: string
-): Promise<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('scenario_chains')
     .select('*')
@@ -1067,7 +1068,8 @@ export async function createDailyChallenge(data: {
   return result.id;
 }
 
-export async function getDailyChallenge(challengeId: string): Promise<any> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getDailyChallenge(challengeId: string): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('daily_challenges')
     .select('*')
@@ -1081,7 +1083,8 @@ export async function getDailyChallenge(challengeId: string): Promise<any> {
 export async function getDailyChallengeByChallengeDate(
   dealershipId: string,
   challengeDate: string
-): Promise<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('daily_challenges')
     .select('*')
@@ -1137,7 +1140,8 @@ export async function createPeerChallenge(data: {
   return result.id;
 }
 
-export async function getPeerChallenge(challengeId: string): Promise<any> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getPeerChallenge(challengeId: string): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('peer_challenges')
     .select('*')
@@ -1148,6 +1152,7 @@ export async function getPeerChallenge(challengeId: string): Promise<any> {
   return data;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getPeerChallengesForUser(userId: string, dealershipId: string): Promise<any[]> {
   const { data, error } = await serviceClient
     .from('peer_challenges')
@@ -1182,6 +1187,7 @@ export async function updatePeerChallenge(
   if (error) throw error;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getExpiredPeerChallenges(): Promise<any[]> {
   const now = new Date();
 
@@ -1222,7 +1228,8 @@ export async function createCustomTrainingContent(data: {
   return result.id;
 }
 
-export async function getCustomTrainingContent(contentId: string): Promise<any> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getCustomTrainingContent(contentId: string): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('custom_training_content')
     .select('*')
@@ -1250,6 +1257,7 @@ export async function updateCustomTrainingContent(
   if (error) throw error;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getPendingApprovals(dealershipId: string): Promise<any[]> {
   const { data, error } = await serviceClient
     .from('custom_training_content')
@@ -1262,6 +1270,7 @@ export async function getPendingApprovals(dealershipId: string): Promise<any[]> 
   return data || [];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getApprovedContent(dealershipId: string): Promise<any[]> {
   const { data, error } = await serviceClient
     .from('custom_training_content')
@@ -1276,7 +1285,8 @@ export async function getApprovedContent(dealershipId: string): Promise<any[]> {
 
 // ─── Helper: Get user by name (for peer challenges) ────────────────────────
 
-export async function getUserByName(fullName: string, dealershipId: string): Promise<any> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getUserByName(fullName: string, dealershipId: string): Promise<any | null> {
   // Search for user by full_name in this dealership's members
   const { data, error } = await serviceClient
     .from('dealership_memberships')
@@ -1290,8 +1300,8 @@ export async function getUserByName(fullName: string, dealershipId: string): Pro
 
   if (data) {
     const record = Array.isArray(data) ? data[0] : data;
-    if (record && (record as any).users) {
-      const users = (record as any).users;
+    if (record && (record as Record<string, unknown>).users) {
+      const users = (record as Record<string, unknown>).users as Record<string, unknown>;
       return {
         id: users.id as string,
         fullName: users.full_name as string,
@@ -1305,6 +1315,7 @@ export async function getUserByName(fullName: string, dealershipId: string): Pro
 
 // ─── Helper: Get eligible users for daily challenge ───────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getEligibleUsersForChallenge(dealershipId: string): Promise<any[]> {
   const { data, error } = await serviceClient
     .from('dealership_memberships')
@@ -1315,9 +1326,9 @@ export async function getEligibleUsersForChallenge(dealershipId: string): Promis
 
   if (error) throw error;
 
-  return (data || []).map((m: any) => ({
+  return (data || []).map((m: Record<string, unknown>) => ({
     userId: m.user_id as string,
-    fullName: m.users.full_name as string,
-    phone: m.users.phone as string,
+    fullName: (m.users as Record<string, unknown>).full_name as string,
+    phone: (m.users as Record<string, unknown>).phone as string,
   }));
 }

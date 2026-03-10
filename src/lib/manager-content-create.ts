@@ -10,7 +10,6 @@
 import { getOpenAICompletion } from './openai';
 import {
   createCustomTrainingContent,
-  getCustomTrainingContent,
   updateCustomTrainingContent,
   getPendingApprovals,
   getApprovedContent,
@@ -51,7 +50,7 @@ export function parseApprovalKeyword(text: string): 'approve' | 'reject' | null 
  */
 export async function formatScenarioWithAI(
   rawInput: string,
-  dealershipId: string
+  _dealershipId: string
 ): Promise<{
   formattedScenario: string;
   mode: 'roleplay' | 'quiz' | 'objection';

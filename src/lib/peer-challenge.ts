@@ -244,7 +244,7 @@ export async function getChallenge(
 /**
  * Generate a scenario for peer challenge
  */
-async function generateChallengeScenario(dealershipId: string): Promise<string> {
+async function generateChallengeScenario(_dealershipId: string): Promise<string> {
   const prompt = `You are an automotive sales trainer. Create a realistic, challenging sales scenario for peer-to-peer competition.
 
 The scenario should:

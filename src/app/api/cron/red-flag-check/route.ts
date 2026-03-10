@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { sendSms } from '@/lib/sms';
 import {
-  getDealershipsByTimezoneHour,
   getRedFlagUsers,
   getManagersForDealership,
   insertTranscriptLog,

@@ -109,8 +109,8 @@ export async function POST(request: NextRequest) {
 
     for (const targetUser of targetUsers ?? []) {
       // Verify user belongs to this dealership
-      const memberships = targetUser.dealership_memberships as any[] || [];
-      if (!memberships.some((m: any) => m.dealership_id === dealershipId)) {
+      const memberships = (targetUser.dealership_memberships ?? []) as Array<Record<string, unknown>>;
+      if (!memberships.some((m: Record<string, unknown>) => m.dealership_id === dealershipId)) {
         result.failed++;
         result.users.push({
           user_id: targetUser.id,

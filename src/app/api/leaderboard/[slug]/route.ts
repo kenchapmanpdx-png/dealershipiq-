@@ -87,26 +87,26 @@ export async function GET(
     }
 
     // Calculate scores and sort
-    const entries: Array<{ user: any; score: number }> = (users ?? [])
-      .map((user: any) => {
-        const results = user.training_results ?? [];
+    const entries: Array<{ user: Record<string, unknown>; score: number }> = (users ?? [])
+      .map((user: Record<string, unknown>) => {
+        const results = (user.training_results ?? []) as Array<Record<string, unknown>>;
         const avgScore = results.length > 0
-          ? results.reduce((sum: number, r: any) =>
-              sum + (r.product_accuracy + r.tone_rapport + r.addressed_concern + r.close_attempt) / 4,
+          ? results.reduce((sum: number, r: Record<string, unknown>) =>
+              sum + ((r.product_accuracy as number) + (r.tone_rapport as number) + (r.addressed_concern as number) + (r.close_attempt as number)) / 4,
               0
             ) / results.length
           : 0;
 
         const lastTraining = results.length > 0
-          ? new Date(Math.max(...results.map((r: any) => new Date(r.created_at).getTime())))
+          ? new Date(Math.max(...results.map((r: Record<string, unknown>) => new Date(r.created_at as string).getTime())))
               .toISOString()
           : null;
 
         return {
           user: {
-            id: user.id,
-            full_name: user.full_name,
-            phone: user.phone,
+            user_id: user.id as string,
+            user_name: user.full_name as string,
+            phone: user.phone as string,
             total_sessions: results.length,
             average_score: Math.round(avgScore * 10) / 10,
             last_training_at: lastTraining,
@@ -117,10 +117,18 @@ export async function GET(
       .sort((a, b) => b.score - a.score); // Descending
 
     // Assign ranks
-    const leaderboard: LeaderboardEntry[] = entries.map((entry, index) => ({
-      ...entry.user,
-      rank: index + 1,
-    }));
+    const leaderboard: LeaderboardEntry[] = entries.map((entry, index) => {
+      const user = entry.user as Record<string, unknown>;
+      return {
+        user_id: user.user_id as string,
+        user_name: user.user_name as string,
+        phone: user.phone as string,
+        total_sessions: user.total_sessions as number,
+        average_score: user.average_score as number,
+        last_training_at: user.last_training_at as string | null,
+        rank: index + 1,
+      };
+    });
 
     const response: LeaderboardResponse = {
       dealership: {

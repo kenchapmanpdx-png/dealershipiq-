@@ -45,13 +45,13 @@ export default function DashboardPage() {
       // Calculate overview stats
       const totalReps = team.length;
       const activeToday = team.filter(
-        (rep: any) =>
+        (rep: Record<string, unknown>) =>
           rep.last_training_at &&
-          isToday(new Date(rep.last_training_at))
+          isToday(new Date(rep.last_training_at as string))
       ).length;
       const avgScore =
         team.length > 0
-          ? (team.reduce((sum: number, rep: any) => sum + rep.average_score, 0) /
+          ? (team.reduce((sum: number, rep: Record<string, unknown>) => sum + (rep.average_score as number), 0) /
               team.length) * 100
           : 0;
 
@@ -62,18 +62,18 @@ export default function DashboardPage() {
 
       const recentActivity: Activity[] = sessions
         .slice(0, 5)
-        .map((session: any) => ({
-          id: session.id,
-          userName: session.user_name,
+        .map((session: Record<string, unknown>) => ({
+          id: session.id as string,
+          userName: session.user_name as string,
           action: `Completed ${session.mode} training`,
           score: Math.round(
-            (session.product_accuracy +
-              session.tone_rapport +
-              session.addressed_concern +
-              session.close_attempt) /
+            ((session.product_accuracy as number) +
+              (session.tone_rapport as number) +
+              (session.addressed_concern as number) +
+              (session.close_attempt as number)) /
               4
           ),
-          timestamp: session.created_at,
+          timestamp: session.created_at as string,
         }));
 
       setData({

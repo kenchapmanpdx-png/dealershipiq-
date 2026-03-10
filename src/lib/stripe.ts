@@ -78,8 +78,8 @@ export async function getSubscriptionStatus(customerId: string) {
   if (!subscriptions.data.length) return null;
 
   const subscription = subscriptions.data[0];
-  const periodEnd = (subscription as any).current_period_end;
-  const periodStart = (subscription as any).current_period_start;
+  const periodEnd = (subscription as unknown as Record<string, unknown>).current_period_end as number;
+  const periodStart = (subscription as unknown as Record<string, unknown>).current_period_start as number;
   return {
     id: subscription.id,
     status: subscription.status as

@@ -1,7 +1,7 @@
 import { getSubscriptionStatus } from '@/lib/stripe';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
-export async function GET(request: Request) {
+export async function GET(_request: Request) {
   try {
     // Get session
     const supabase = await createServerSupabaseClient();
@@ -32,15 +32,15 @@ export async function GET(request: Request) {
 
     // Get Stripe subscription status if customer exists
     let stripeStatus = null;
-    if ((dealership as any).stripe_customer_id) {
-      stripeStatus = await getSubscriptionStatus((dealership as any).stripe_customer_id);
+    if ((dealership as Record<string, unknown>).stripe_customer_id) {
+      stripeStatus = await getSubscriptionStatus((dealership as Record<string, unknown>).stripe_customer_id as string);
     }
 
     return Response.json({
       dealershipId: dealership_id,
-      subscriptionStatus: (dealership as any).subscription_status,
-      maxLocations: (dealership as any).max_locations,
-      currentPeriodEnd: (dealership as any).current_period_end,
+      subscriptionStatus: (dealership as Record<string, unknown>).subscription_status,
+      maxLocations: (dealership as Record<string, unknown>).max_locations,
+      currentPeriodEnd: (dealership as Record<string, unknown>).current_period_end,
       stripe: stripeStatus,
     });
   } catch (error) {

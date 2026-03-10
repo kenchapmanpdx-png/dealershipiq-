@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
     const eligible = await getEligibleUsers(dealership.id);
     let sent = 0;
-    let skipped = 0;
+    const skipped = 0;
     let errors = 0;
 
     for (const user of eligible) {

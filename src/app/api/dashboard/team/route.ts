@@ -65,25 +65,25 @@ export async function GET() {
     }
 
     // Transform data
-    const team: TeamMember[] = (users ?? []).map((user: any) => {
-      const results = user.training_results ?? [];
+    const team: TeamMember[] = (users ?? []).map((user: Record<string, unknown>) => {
+      const results = (user.training_results ?? []) as Array<Record<string, unknown>>;
       const avgScore = results.length > 0
-        ? results.reduce((sum: number, r: any) =>
-            sum + (r.product_accuracy + r.tone_rapport + r.addressed_concern + r.close_attempt) / 4,
+        ? results.reduce((sum: number, r: Record<string, unknown>) =>
+            sum + ((r.product_accuracy as number) + (r.tone_rapport as number) + (r.addressed_concern as number) + (r.close_attempt as number)) / 4,
             0
           ) / results.length
         : 0;
 
       const lastTraining = results.length > 0
-        ? new Date(Math.max(...results.map((r: any) => new Date(r.created_at).getTime())))
+        ? new Date(Math.max(...results.map((r: Record<string, unknown>) => new Date(r.created_at as string).getTime())))
             .toISOString()
         : null;
 
       return {
-        id: user.id,
-        full_name: user.full_name,
-        phone: user.phone,
-        status: user.status,
+        id: user.id as string,
+        full_name: user.full_name as string,
+        phone: user.phone as string,
+        status: user.status as string,
         total_sessions: results.length,
         average_score: Math.round(avgScore * 10) / 10,
         last_training_at: lastTraining,
