@@ -15,10 +15,16 @@
   3. Better Stack: Create uptime monitor for webhook endpoint
 - **Recommendation:** Run Sentry wizard after Phase 2 merge. Axiom and Better Stack can be Phase 2.1 follow-up.
 
-## NR-003: Sinch credentials needed for SMS testing
-- **Status:** Blocked on credentials
-- **Context:** All SMS code references `SINCH_PROJECT_ID`, `SINCH_APP_ID`, `SINCH_KEY_ID`, `SINCH_KEY_SECRET`, `SINCH_WEBHOOK_SECRET`.
-- **Action needed:** Provide Sinch Conversation API credentials and set in Vercel env vars.
+## NR-003: Sinch credentials — RESOLVED
+- **Status:** RESOLVED 03/10/2026
+- **Context:** All Sinch credentials set in Vercel. Webhook configured. Test number `+12029983810` activated.
+- **Remaining limitation:** Trial account ($2.00 credit). Outbound SMS only to verified number `+13604485632`. To go production: upgrade account, register 10DLC, rent production number.
+
+## NR-007: Sinch trial account upgrade needed for production
+- **Status:** Blocked — requires Ken's action
+- **Context:** Sinch account is in test mode. $2.00 credit. Test number expires 03/24/2026. Outbound SMS restricted to verified numbers only.
+- **Action needed:** Upgrade Sinch account (billing), register 10DLC campaign (required for US A2P SMS), rent a production 10DLC number.
+- **Recommendation:** Verify end-to-end flow with trial first, then upgrade. Budget ~$2/month for number + per-message costs.
 
 ## NR-004: OpenAI API key needed for grading
 - **Status:** Blocked on credentials

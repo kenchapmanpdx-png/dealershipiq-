@@ -136,9 +136,9 @@ Date: 03/10/2026
 
 **Git auto-deploy:** WORKING. Confirmed via Vercel API — pushes to main trigger production deploys, branch pushes trigger preview deploys. GitHub integration metadata present on all recent deployments.
 
-### Sinch Conversation API Configuration (COMPLETE)
+### Sinch Conversation API Configuration (UPDATED 03/10/2026)
 
-**Sinch Project:** My first project (USD $2.00 test credits)
+**Sinch Project:** My first project (USD $2.00 test credits — TRIAL ACCOUNT)
 
 **Conversation API App:** DealershipIQ
 - App ID: `01KKCA66G864KM336AZFT79X5K`
@@ -146,9 +146,18 @@ Date: 03/10/2026
 
 **Webhook:**
 - ID: `01KKCB5EYBDXWN7K0BPEED6RV8`
-- Target: `https://dealershipiq-wua7.vercel.app/api/webhooks/sms/sinch-v2`
+- Target: `https://dealershipiq-wua7.vercel.app/api/webhooks/sms/sinch` (FIXED — was `/sinch-v2`)
 - Triggers: MESSAGE_INBOUND, MESSAGE_DELIVERY
 - HMAC secret configured
+
+**Phone Number:**
+- Old (invalid): `+12085797336` — was never a provisioned number
+- New (test): `+12029983810` — activated 03/10/2026, expires 03/24/2026, $0/month
+- Capabilities: SMS + VOICE
+- Linked to service plan `bed87a6bcbdc4ea6ab4ece8d6d999a56`
+
+**Verified Numbers (for outbound in trial mode):**
+- `+13604485632` — Ken's phone
 
 **Access Key:** DealershipIQ Production
 - Created: 03/10/2026
@@ -167,35 +176,35 @@ Date: 03/10/2026
 | NEXT_PUBLIC_BASE_URL | Pre-existing (11/27/25) |
 | SINCH_SERVICE_PLAN_ID | Pre-existing (11/26/25, MVP) |
 | SINCH_API_TOKEN | Pre-existing (11/26/25, MVP) |
-| SINCH_PHONE_NUMBER | Pre-existing (11/26/25, MVP) |
+| SINCH_PHONE_NUMBER | Updated 03/10/2026 → `+12029983810` |
 | ADMIN_API_KEY | Pre-existing (11/26/25) |
 
-### Open PRs (awaiting Ken's review)
+### SMS Diagnosis (03/10/2026)
 
-**PR #6 — fix(lint): resolve all 85 ESLint errors, re-enable build checks**
-Branch: `fix/eslint-cleanup`
-- Fixed all 85 ESLint errors across 30 files (no-unused-vars, no-explicit-any, prefer-const)
-- Fixed cron auth bug: verifyCronSecret returns boolean, not Response — daily-challenge and expire-challenges routes were returning `true` on success
-- Added auth route group layout with force-dynamic (prevents SSR env var errors)
-- Re-enabled eslint + typescript checks in next.config.mjs
-- All quality gates pass: tsc --noEmit, next lint, next build
+**Problem:** User texted `+12085797336` and got no response.
 
-**PR #7 — feat(seo): add metadata, Open Graph, JSON-LD, sitemap, robots.txt**
-Branch: `feat/seo-improvements`
-- Replaced default "Create Next App" metadata with DealershipIQ branding
-- Added Open Graph, Twitter Card, JSON-LD structured data
-- Added robots.ts (blocks /api/ and /dashboard/) and sitemap.ts
+**Root causes found (3):**
+1. **Webhook URL wrong:** Sinch webhook pointed at `/api/webhooks/sms/sinch-v2` but the actual route is at `/api/webhooks/sms/sinch`. All inbound webhooks were returning 404. FIXED — updated via Sinch API.
+2. **No phone number provisioned:** `+12085797336` (from old MVP env var) was never an active number in this Sinch project. Zero active numbers existed. FIXED — activated free test number `+12029983810`.
+3. **Trial account limitations:** Sinch account is in test mode with $2.00 credit. Outbound SMS can only be sent to verified numbers (`+13604485632`). Inbound SMS to the test number should work.
+
+**Additional findings:**
+- `channel_known_id` on the Conversation API app is empty — API won't accept updates to this field. SMS routing works through service plan → Conversation API adapter regardless.
+- `processed_webhooks`, `sms_inbound_jobs`, `sms_webhook_quarantine` tables don't exist in Supabase (never migrated). Current webhook route uses in-memory idempotency, so not blocking — but needed for durability.
+- Zero messages in both REST API and Conversation API inbounds — confirms the user's text never reached Sinch.
+
+### Merged PRs
+
+**PR #1–#5:** Phase 1–6 implementations (merged prior to this session)
+**PR #6 — fix(lint): resolve all 85 ESLint errors, re-enable build checks** — MERGED
+**PR #7 — feat(seo): add metadata, Open Graph, JSON-LD, sitemap, robots.txt** — MERGED
 
 ## What's Next
-1. Merge PR #6 and PR #7
-2. End-to-end testing: Send SMS → verify Sinch webhook fires → AI grades → response sent
-3. Test Phase 6 features:
-   - Scenario chains: Create chain → advance to step 2 → check narrative continuity
-   - Daily challenges: Create challenge → submit responses → verify leaderboard grading
-   - Peer challenges: Test CHALLENGE keyword parsing → expiration handling
-   - Manager content: Test CREATE: keyword → AI formatting → approval flow
-4. Integration testing: Verify crons fire correctly on Vercel (daily-challenge, expire-challenges, etc.)
-5. Post-merge: Advanced account settings, or Phase 7 features
+1. **Test SMS end-to-end:** Ken texts `+12029983810` → verify webhook fires → check Vercel function logs → verify AI grading and response
+2. **Trial limitation:** Outbound SMS (AI responses) will only deliver to `+13604485632`. To send to other numbers, Sinch account must be upgraded from trial.
+3. Create webhook infrastructure migration (processed_webhooks, sms_inbound_jobs, sms_webhook_quarantine)
+4. Test Phase 6 features (scenario chains, daily challenges, peer challenges, manager content)
+5. Integration testing: Verify crons fire correctly on Vercel
 
 ## Blocked Items
-None. All phases complete, migrations applied, production deployed. Two PRs awaiting review.
+- **SMS outbound limited to verified number only** — Sinch trial mode. Ken's phone (`+13604485632`) is the only verified number. To go live: upgrade Sinch account, register 10DLC campaign, rent a production number.
