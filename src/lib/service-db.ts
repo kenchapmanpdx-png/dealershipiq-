@@ -819,3 +819,145 @@ export async function upsertEmployeeSchedule(
 
   if (error) throw error;
 }
+
+// ─── Billing functions ──────────────────────────────────────────────
+
+export async function updateDealershipBilling(
+  dealershipId: string,
+  billing: {
+    stripeCustomerId?: string;
+    subscriptionStatus?: string;
+    subscriptionId?: string;
+    maxLocations?: number;
+    currentPeriodEnd?: string;
+    pastDueSince?: string | null;
+  }
+): Promise<void> {
+  const updateData: Record<string, unknown> = {};
+
+  if (billing.stripeCustomerId !== undefined) {
+    updateData.stripe_customer_id = billing.stripeCustomerId;
+  }
+  if (billing.subscriptionStatus !== undefined) {
+    updateData.subscription_status = billing.subscriptionStatus;
+  }
+  if (billing.subscriptionId !== undefined) {
+    updateData.subscription_id = billing.subscriptionId;
+  }
+  if (billing.maxLocations !== undefined) {
+    updateData.max_locations = billing.maxLocations;
+  }
+  if (billing.currentPeriodEnd !== undefined) {
+    updateData.current_period_end = billing.currentPeriodEnd;
+  }
+  if (billing.pastDueSince !== undefined) {
+    updateData.past_due_since = billing.pastDueSince;
+  }
+
+  const { error } = await serviceClient
+    .from('dealerships')
+    .update(updateData)
+    .eq('id', dealershipId);
+
+  if (error) throw error;
+}
+
+export async function getDealershipByStripeCustomer(stripeCustomerId: string) {
+  const { data, error } = await serviceClient
+    .from('dealerships')
+    .select('id, name, subscription_status, stripe_customer_id')
+    .eq('stripe_customer_id', stripeCustomerId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    subscriptionStatus: data.subscription_status as string,
+  };
+}
+
+export async function getPastDueDealerships() {
+  const { data, error } = await serviceClient
+    .from('dealerships')
+    .select('id, name, subscription_status, past_due_since, stripe_customer_id')
+    .eq('subscription_status', 'past_due')
+    .not('past_due_since', 'is', null)
+    .order('past_due_since', { ascending: true });
+
+  if (error) throw error;
+
+  return (data ?? []).map((d: any) => ({
+    id: d.id as string,
+    name: d.name as string,
+    subscriptionStatus: d.subscription_status as string,
+    pastDueSince: d.past_due_since as string,
+    stripeCustomerId: d.stripe_customer_id as string,
+  }));
+}
+
+export async function createDealershipWithManager(
+  dealership: {
+    name: string;
+    timezone: string;
+    stripeCustomerId?: string;
+  },
+  manager: {
+    email: string;
+    fullName: string;
+    phone: string;
+  }
+): Promise<{ dealershipId: string; userId: string }> {
+  // Create dealership
+  const dealershipSlug = dealership.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const { data: dealershipData, error: dealershipError } = await serviceClient
+    .from('dealerships')
+    .insert({
+      name: dealership.name,
+      slug: dealershipSlug,
+      timezone: dealership.timezone,
+      stripe_customer_id: dealership.stripeCustomerId || null,
+      subscription_status: dealership.stripeCustomerId ? 'active' : 'trialing',
+    })
+    .select('id')
+    .single();
+
+  if (dealershipError) throw dealershipError;
+  const dealershipId = dealershipData.id as string;
+
+  // Create user (manager)
+  const { data: userData, error: userError } = await serviceClient
+    .from('users')
+    .insert({
+      phone: manager.phone,
+      full_name: manager.fullName,
+      language: 'en',
+      status: 'active',
+      last_active_dealership_id: dealershipId,
+    })
+    .select('id')
+    .single();
+
+  if (userError) throw userError;
+  const userId = userData.id as string;
+
+  // Create dealership membership
+  const { error: membershipError } = await serviceClient
+    .from('dealership_memberships')
+    .insert({
+      user_id: userId,
+      dealership_id: dealershipId,
+      role: 'owner',
+      is_primary: true,
+    });
+
+  if (membershipError) throw membershipError;
+
+  return { dealershipId, userId };
+}
