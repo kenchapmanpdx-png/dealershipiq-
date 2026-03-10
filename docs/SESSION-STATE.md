@@ -183,15 +183,20 @@ Date: 03/10/2026
 
 **Problem:** User texted `+12085797336` and got no response.
 
-**Root causes found (3):**
+**Root causes found (6):**
 1. **Webhook URL wrong:** Sinch webhook pointed at `/api/webhooks/sms/sinch-v2` but the actual route is at `/api/webhooks/sms/sinch`. All inbound webhooks were returning 404. FIXED — updated via Sinch API.
 2. **No phone number provisioned:** `+12085797336` (from old MVP env var) was never an active number in this Sinch project. Zero active numbers existed. FIXED — activated free test number `+12029983810`.
 3. **Trial account limitations:** Sinch account is in test mode with $2.00 credit. Outbound SMS can only be sent to verified numbers (`+13604485632`). Inbound SMS to the test number should work.
+4. **Supabase URL/key mismatch:** `NEXT_PUBLIC_SUPABASE_URL` pointed to old project `hbhcwbqxiumfauidtnbz` but `SUPABASE_SERVICE_ROLE_KEY` was for new project `nnelylyialhnyytfeoom`. Caused "Invalid API key" on every DB call. FIXED — updated URL and anon key in Vercel to match new project.
+5. **Missing phone column in insertTranscriptLog:** `sms_transcript_log` table has `phone TEXT NOT NULL` but the `insertTranscriptLog` function never passed it. Caused PostgreSQL 23502 (NOT NULL violation) on every transcript insert. FIXED — added `phone` param to function and all 13 call sites.
+6. **Sinch webhook killed by 404s:** The original wrong webhook URL (/sinch-v2) returned 404s which caused Sinch to permanently disable the callback. Even after fixing the URL, no new webhooks fired. FIXED — deleted old webhook and created new one (ID: `01KKCPP5P16MDCD6J0147V3VZS`).
 
 **Additional findings:**
 - `channel_known_id` on the Conversation API app is empty — API won't accept updates to this field. SMS routing works through service plan → Conversation API adapter regardless.
 - `processed_webhooks`, `sms_inbound_jobs`, `sms_webhook_quarantine` tables don't exist in Supabase (never migrated). Current webhook route uses in-memory idempotency, so not blocking — but needed for durability.
 - Zero messages in both REST API and Conversation API inbounds — confirms the user's text never reached Sinch.
+- Trial account overrides outbound SMS body to "Test message from Sinch." — custom message content not delivered until account upgraded.
+- SMS delivery to verified number failing with code 61 (unroutable). Delivery reports webhook correctly, logged in DB. Needs investigation — may be trial routing limitation.
 
 ### Merged PRs
 
@@ -199,12 +204,22 @@ Date: 03/10/2026
 **PR #6 — fix(lint): resolve all 85 ESLint errors, re-enable build checks** — MERGED
 **PR #7 — feat(seo): add metadata, Open Graph, JSON-LD, sitemap, robots.txt** — MERGED
 
+### Webhook Status (03/10/2026 — Latest)
+- Delivery report webhooks: WORKING (4 successful hits, delivery reports logged in DB)
+- HMAC verification: PASSING
+- Supabase auth: WORKING (new project URL + key matched)
+- Transcript logging: WORKING (phone column populated)
+- Inbound message processing: UNTESTED (need Ken to text `+12029983810` again)
+- New webhook ID: `01KKCPP5P16MDCD6J0147V3VZS` (replaced killed webhook)
+
 ## What's Next
-1. **Test SMS end-to-end:** Ken texts `+12029983810` → verify webhook fires → check Vercel function logs → verify AI grading and response
-2. **Trial limitation:** Outbound SMS (AI responses) will only deliver to `+13604485632`. To send to other numbers, Sinch account must be upgraded from trial.
-3. Create webhook infrastructure migration (processed_webhooks, sms_inbound_jobs, sms_webhook_quarantine)
-4. Test Phase 6 features (scenario chains, daily challenges, peer challenges, manager content)
-5. Integration testing: Verify crons fire correctly on Vercel
+1. **Ken texts `+12029983810`** — verify full inbound flow: webhook → user lookup → active session → AI grading → response SMS
+2. **Investigate SMS delivery code 61** — verified number +13604485632 getting "Failed" delivery. May be trial routing limitation or test number issue.
+3. **Trial limitation:** Outbound SMS body overridden to "Test message from Sinch." and delivery failing. Upgrade Sinch account to fix.
+4. Create webhook infrastructure migration (processed_webhooks, sms_inbound_jobs, sms_webhook_quarantine)
+5. Test Phase 6 features (scenario chains, daily challenges, peer challenges, manager content)
+6. Integration testing: Verify crons fire correctly on Vercel
 
 ## Blocked Items
-- **SMS outbound limited to verified number only** — Sinch trial mode. Ken's phone (`+13604485632`) is the only verified number. To go live: upgrade Sinch account, register 10DLC campaign, rent a production number.
+- **SMS outbound delivery failing (code 61)** — Even to verified number. Trial account limitation. Need account upgrade.
+- **SMS outbound body overridden** — Trial mode replaces message body with "Test message from Sinch." Custom content not delivered.

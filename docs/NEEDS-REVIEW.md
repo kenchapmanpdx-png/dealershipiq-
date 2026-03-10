@@ -22,9 +22,14 @@
 
 ## NR-007: Sinch trial account upgrade needed for production
 - **Status:** Blocked — requires Ken's action
-- **Context:** Sinch account is in test mode. $2.00 credit. Test number expires 03/24/2026. Outbound SMS restricted to verified numbers only.
+- **Context:** Sinch account is in test mode. $2.00 credit. Test number expires 03/24/2026. Outbound SMS restricted to verified numbers only. Delivery failing with code 61 even to verified number. Message body overridden to "Test message from Sinch."
 - **Action needed:** Upgrade Sinch account (billing), register 10DLC campaign (required for US A2P SMS), rent a production 10DLC number.
-- **Recommendation:** Verify end-to-end flow with trial first, then upgrade. Budget ~$2/month for number + per-message costs.
+- **Recommendation:** Upgrade is now CRITICAL — trial mode prevents any meaningful testing. Budget ~$2/month for number + per-message costs.
+
+## NR-008: Supabase project mismatch fixed — verify old project cleanup
+- **Status:** Informational
+- **Context:** Vercel env vars pointed to THREE different Supabase projects: `hbhcwbqxiumfauidtnbz` (NEXT_PUBLIC_SUPABASE_URL), `bjcqstoekfdxsosssgbl` (old MVP), and `nnelylyialhnyytfeoom` (current). Fixed to all point to `nnelylyialhnyytfeoom`. The old projects may have stale data or incur costs.
+- **Recommendation:** Delete unused Supabase projects after confirming no dependency.
 
 ## NR-004: OpenAI API key needed for grading
 - **Status:** Blocked on credentials
