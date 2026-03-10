@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
           direction: 'outbound',
           messageBody: question,
           sinchMessageId: sinchResponse.message_id,
+          phone: user.phone,
           sessionId: session.id,
         });
 

@@ -97,6 +97,7 @@ export async function PUT(
       direction: 'outbound',
       messageBody: messageText,
       sinchMessageId: smsResponse.message_id,
+      phone: targetUser.phone,
     });
 
     return NextResponse.json({

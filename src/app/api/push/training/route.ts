@@ -142,6 +142,7 @@ export async function POST(request: NextRequest) {
           direction: 'outbound',
           messageBody: questionText,
           sinchMessageId: smsResponse.message_id,
+          phone: targetUser.phone,
           sessionId: session.id,
         });
 

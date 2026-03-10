@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
             direction: 'outbound',
             messageBody: digestMessage,
             sinchMessageId: smsResponse.message_id,
+            phone: manager.phone,
           });
 
           managersNotified++;

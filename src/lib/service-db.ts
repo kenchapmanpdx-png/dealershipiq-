@@ -120,6 +120,7 @@ export async function updateSessionStatus(sessionId: string, status: string) {
 export async function insertTranscriptLog(entry: {
   userId: string;
   dealershipId: string;
+  phone: string;
   direction: 'inbound' | 'outbound';
   messageBody: string;
   sinchMessageId?: string;
@@ -131,6 +132,7 @@ export async function insertTranscriptLog(entry: {
     .insert({
       user_id: entry.userId,
       dealership_id: entry.dealershipId,
+      phone: entry.phone,
       direction: entry.direction,
       message_body: entry.messageBody,
       sinch_message_id: entry.sinchMessageId ?? null,

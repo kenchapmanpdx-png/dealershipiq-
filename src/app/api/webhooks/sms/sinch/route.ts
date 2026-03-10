@@ -73,6 +73,7 @@ async function handleDeliveryReport(report: SinchDeliveryReport) {
   await insertTranscriptLog({
     userId: user.id,
     dealershipId: user.dealershipId,
+    phone,
     direction: 'outbound',
     messageBody: `[DELIVERY_REPORT: ${status}]`,
     sinchMessageId: message_id,
@@ -110,6 +111,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   await insertTranscriptLog({
     userId: user.id,
     dealershipId: user.dealershipId,
+    phone,
     direction: 'inbound',
     messageBody: text,
     sinchMessageId: messageId,
@@ -128,6 +130,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     await insertTranscriptLog({
       userId: user.id,
       dealershipId: user.dealershipId,
+      phone,
       direction: 'outbound',
       messageBody: helpMsg,
     });
@@ -207,6 +210,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       await insertTranscriptLog({
         userId: user.id,
         dealershipId: user.dealershipId,
+        phone,
         direction: 'outbound',
         messageBody: result.feedback,
         sessionId: session.id,
@@ -227,6 +231,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       await insertTranscriptLog({
         userId: user.id,
         dealershipId: user.dealershipId,
+        phone,
         direction: 'outbound',
         messageBody: errorMsg,
         sessionId: session.id,
@@ -250,6 +255,7 @@ async function handleNaturalOptOut(
   await insertTranscriptLog({
     userId: user.id,
     dealershipId: user.dealershipId,
+    phone,
     direction: 'outbound',
     messageBody: confirmMsg,
   });
@@ -275,6 +281,7 @@ async function handleResubscribe(
   await insertTranscriptLog({
     userId: user.id,
     dealershipId: user.dealershipId,
+    phone,
     direction: 'outbound',
     messageBody: welcomeMsg,
   });

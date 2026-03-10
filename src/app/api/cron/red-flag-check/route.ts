@@ -91,6 +91,7 @@ export async function GET(request: NextRequest) {
             direction: 'outbound',
             messageBody: alertMessage,
             sinchMessageId: smsResponse.message_id,
+            phone: manager.phone,
             metadata: {
               alert_type: 'red_flag',
               flagged_count: flaggedList.length,
