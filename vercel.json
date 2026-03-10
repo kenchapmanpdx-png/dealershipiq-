@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-training",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/orphaned-sessions",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-optouts",
+      "schedule": "0 */6 * * *"
+    }
+  ]
+}
