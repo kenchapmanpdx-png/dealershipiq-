@@ -4,19 +4,25 @@
 // kills callbacks on non-429 4xx responses.
 // Processing runs synchronously before returning 200 (Vercel Hobby plan
 // does not support @vercel/functions waitUntil).
+//
+// Multi-exchange flow (3 exchanges per session):
+//   step 0,1: Generate AI follow-up, keep session active
+//   step 2:   Final grade, Never Naked feedback, complete session
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySinchWebhookSignature } from '@/lib/sinch-auth';
 import { sendSms, detectKeyword, helpResponse } from '@/lib/sms';
-import { gradeResponse, ERROR_SMS } from '@/lib/openai';
-import { assertTransition } from '@/lib/state-machine';
+import { gradeResponse, generateFollowUp, ERROR_SMS } from '@/lib/openai';
+import { assertTransition, isFinalExchange } from '@/lib/state-machine';
 import {
   getUserByPhone,
   getActiveSession,
   updateSessionStatus,
+  updateSessionStep,
   insertTranscriptLog,
   checkOptOut,
   insertTrainingResult,
+  getSessionTranscript,
 } from '@/lib/service-db';
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
 
@@ -25,10 +31,8 @@ const processedMessages = new Set<string>();
 const MAX_PROCESSED_CACHE = 10_000;
 
 export async function POST(request: NextRequest) {
-  // Read raw body for HMAC verification
   const rawBody = await request.text();
 
-  // Verify HMAC signature
   const signature = request.headers.get('x-sinch-webhook-signature');
   const nonce = request.headers.get('x-sinch-webhook-signature-nonce');
   const timestamp = request.headers.get('x-sinch-webhook-signature-timestamp');
@@ -45,8 +49,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' });
   }
 
-  // Process synchronously, then return 200.
-  // Wrapped in try/catch so we ALWAYS return 200 regardless of errors.
   try {
     if ('message_delivery_report' in payload) {
       await handleDeliveryReport(payload as SinchDeliveryReport);
@@ -63,7 +65,6 @@ export async function POST(request: NextRequest) {
 // --- Delivery Report Handler ---
 async function handleDeliveryReport(report: SinchDeliveryReport) {
   const { status, channel_identity, message_id } = report.message_delivery_report;
-  // Only log DELIVERED or FAILED (Build Master: no intermediate states for SMS)
   if (status !== 'DELIVERED' && status !== 'FAILED') return;
 
   const phone = channel_identity.identity;
@@ -89,7 +90,6 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   if (processedMessages.has(messageId)) return;
   processedMessages.add(messageId);
   if (processedMessages.size > MAX_PROCESSED_CACHE) {
-    // Evict oldest entries (simple approach — Redis in Phase 2F replaces this)
     const entries = Array.from(processedMessages);
     for (let i = 0; i < 1000; i++) processedMessages.delete(entries[i]);
   }
@@ -99,10 +99,8 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
 
   if (!text.trim()) return;
 
-  // Look up user by phone
   const user = await getUserByPhone(phone);
   if (!user) {
-    // Unknown phone — log and ignore
     console.warn(`Inbound SMS from unknown phone: ${phone.slice(0, 6)}****`);
     return;
   }
@@ -138,8 +136,6 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   }
 
   if (keyword === 'opt_out') {
-    // Natural language opt-out — register locally and via Sinch
-    // Sinch exact-match keywords (STOP etc) never reach us
     await handleNaturalOptOut(user, phone);
     return;
   }
@@ -149,21 +145,16 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     return;
   }
 
-  // --- Advisory Lock (prevent concurrent processing for same user) ---
-  // Build Master 2B: try_lock_user advisory lock — if false, drop
+  // --- Advisory Lock ---
   const { tryLockUser } = await import('@/lib/service-db');
   const locked = await tryLockUser(phone);
-  if (!locked) {
-    // Another worker is processing this user — drop
-    return;
-  }
+  if (!locked) return;
 
   // --- Route to State Machine ---
   try {
     const session = await getActiveSession(user.id, user.dealershipId);
 
     if (!session) {
-      // No active session — let the user know
       await sendSms(phone, "No active training session right now. Your next question will arrive at the scheduled time!");
       await insertTranscriptLog({
         userId: user.id,
@@ -175,78 +166,162 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       return;
     }
 
-    // Reject if session is in grading state
     if (session.status === 'grading') {
       await sendSms(phone, "Still processing your last response — hang tight!");
       return;
     }
 
     if (session.status !== 'active') {
-      return; // Not expecting a response
+      return;
     }
 
-    // Transition: active → grading
-    assertTransition(session.status, 'grading');
-    await updateSessionStatus(session.id, 'grading');
+    // --- Multi-Exchange Logic ---
+    const mode = session.mode as 'roleplay' | 'quiz' | 'objection';
+    const stepIndex = session.stepIndex;
 
-    // --- AI Grading ---
-    try {
-      const result = await gradeResponse({
-        scenario: session.questionText,
-        employeeResponse: text,
-        mode: session.mode as 'roleplay' | 'quiz' | 'objection',
-        promptVersionId: session.promptVersionId ?? undefined,
-      });
-
-      // Store grading result
-      await insertTrainingResult({
-        userId: user.id,
-        dealershipId: user.dealershipId,
-        sessionId: session.id,
-        mode: session.mode,
-        productAccuracy: result.product_accuracy,
-        toneRapport: result.tone_rapport,
-        addressedConcern: result.addressed_concern,
-        closeAttempt: result.close_attempt,
-        feedback: result.feedback,
-        model: result.model,
-        promptVersionId: result.promptVersionId,
-      });
-
-      // Send feedback SMS
-      await sendSms(phone, result.feedback);
-      await insertTranscriptLog({
-        userId: user.id,
-        dealershipId: user.dealershipId,
-        phone,
-        direction: 'outbound',
-        messageBody: result.feedback,
-        sessionId: session.id,
-      });
-
-      // Transition: grading → completed
-      assertTransition('grading', 'completed');
-      await updateSessionStatus(session.id, 'completed');
-    } catch (gradingErr) {
-      console.error('AI grading failed:', gradingErr);
-
-      // Transition: grading → error
-      await updateSessionStatus(session.id, 'error');
-
-      // Send error SMS (no dead ends)
-      const errorMsg = ERROR_SMS.ai_timeout;
-      await sendSms(phone, errorMsg);
-      await insertTranscriptLog({
-        userId: user.id,
-        dealershipId: user.dealershipId,
-        phone,
-        direction: 'outbound',
-        messageBody: errorMsg,
-        sessionId: session.id,
-      });
+    if (isFinalExchange(stepIndex)) {
+      // FINAL EXCHANGE — grade all exchanges
+      await handleFinalExchange(session, user, phone, text, mode);
+    } else {
+      // MID-EXCHANGE — generate follow-up, keep session active
+      await handleMidExchange(session, user, phone, text, mode, stepIndex);
     }
   } catch (err) {
     console.error('State machine error:', err);
+  }
+}
+
+// --- Final exchange: grade everything, send Never Naked feedback ---
+async function handleFinalExchange(
+  session: { id: string; status: string; questionText: string; mode: string; promptVersionId: string | null },
+  user: { id: string; dealershipId: string },
+  phone: string,
+  text: string,
+  mode: 'roleplay' | 'quiz' | 'objection'
+) {
+  assertTransition(session.status as 'active', 'grading');
+  await updateSessionStatus(session.id, 'grading');
+
+  try {
+    // Get full conversation history for grading context
+    const history = await getSessionTranscript(session.id);
+
+    const result = await gradeResponse({
+      scenario: session.questionText,
+      employeeResponse: text,
+      mode,
+      promptVersionId: session.promptVersionId ?? undefined,
+      conversationHistory: history,
+    });
+
+    await insertTrainingResult({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      sessionId: session.id,
+      mode: session.mode,
+      productAccuracy: result.product_accuracy,
+      toneRapport: result.tone_rapport,
+      addressedConcern: result.addressed_concern,
+      closeAttempt: result.close_attempt,
+      feedback: result.feedback,
+      model: result.model,
+      promptVersionId: result.promptVersionId,
+    });
+
+    // Grading feedback is EXEMPT from quiet hours — send immediately
+    await sendSms(phone, result.feedback);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: result.feedback,
+      sessionId: session.id,
+    });
+
+    assertTransition('grading', 'completed');
+    await updateSessionStatus(session.id, 'completed');
+  } catch (gradingErr) {
+    console.error('AI grading failed:', gradingErr);
+    await updateSessionStatus(session.id, 'error');
+
+    const errorMsg = ERROR_SMS.ai_timeout;
+    await sendSms(phone, errorMsg);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: errorMsg,
+      sessionId: session.id,
+    });
+  }
+}
+
+// --- Mid-exchange: generate AI follow-up, advance step, keep active ---
+async function handleMidExchange(
+  session: { id: string; status: string; questionText: string; mode: string },
+  user: { id: string; dealershipId: string },
+  phone: string,
+  text: string,
+  mode: 'roleplay' | 'quiz' | 'objection',
+  stepIndex: number
+) {
+  try {
+    const history = await getSessionTranscript(session.id);
+
+    const followUp = await generateFollowUp({
+      scenario: session.questionText,
+      mode,
+      conversationHistory: history,
+      currentResponse: text,
+      stepIndex,
+    });
+
+    // For objection mode: send coaching first, then customer follow-up
+    if (mode === 'objection' && followUp.coaching) {
+      const coachingMsg = followUp.coaching;
+      await sendSms(phone, coachingMsg);
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: coachingMsg,
+        sessionId: session.id,
+      });
+      // Small delay so messages arrive in order
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    // Send customer follow-up
+    await sendSms(phone, followUp.customerMessage);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: followUp.customerMessage,
+      sessionId: session.id,
+    });
+
+    // Advance step — session stays active
+    await updateSessionStep(session.id, stepIndex + 1);
+  } catch (err) {
+    console.error('Follow-up generation failed:', err);
+
+    // Fallback: skip to final grade on error
+    await updateSessionStatus(session.id, 'error');
+    const errorMsg = ERROR_SMS.ai_timeout;
+    await sendSms(phone, errorMsg);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: errorMsg,
+      sessionId: session.id,
+    });
   }
 }
 

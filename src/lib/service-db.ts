@@ -10,9 +10,10 @@ import { serviceClient } from '@/lib/supabase/service';
 // ─── Dealership lookups ────────────────────────────────────────────────
 // Used by: daily training cron (hourly timezone scan)
 // Exception to Rule 2: cross-tenant query (finds all dealerships by timezone hour)
-export async function getDealershipsByTimezoneHour(hour: number) {
+export async function getDealershipsReadyForTraining() {
   // Cross-tenant query — approved exception.
-  // The hourly cron needs to find all dealerships where current local hour = training hour.
+  // The hourly cron finds all dealerships where current local hour matches
+  // their configured training_send_hour (default 10, range 9-12).
   const { data, error } = await serviceClient
     .from('dealerships')
     .select('id, name, timezone, settings')
@@ -20,7 +21,35 @@ export async function getDealershipsByTimezoneHour(hour: number) {
 
   if (error) throw error;
 
-  // Filter in-app: check if current hour in each dealership's timezone matches
+  return (data ?? []).filter((d) => {
+    try {
+      const now = new Date();
+      const localHour = parseInt(
+        new Intl.DateTimeFormat('en-US', {
+          hour: 'numeric',
+          hour12: false,
+          timeZone: d.timezone,
+        }).format(now)
+      );
+      // Use configured send hour from settings JSONB, default 10, clamped 9-12
+      const settings = (d.settings ?? {}) as Record<string, unknown>;
+      const sendHour = Math.max(9, Math.min(12, Number(settings.training_send_hour ?? 10)));
+      return localHour === sendHour;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** @deprecated Use getDealershipsReadyForTraining() for training cron. This remains for non-training crons. */
+export async function getDealershipsByTimezoneHour(hour: number) {
+  const { data, error } = await serviceClient
+    .from('dealerships')
+    .select('id, name, timezone, settings')
+    .not('timezone', 'is', null);
+
+  if (error) throw error;
+
   return (data ?? []).filter((d) => {
     try {
       const now = new Date();
@@ -88,7 +117,7 @@ export async function getUserByPhone(phone: string) {
 export async function getActiveSession(userId: string, dealershipId: string) {
   const { data, error } = await serviceClient
     .from('conversation_sessions')
-    .select('id, status, question_text, mode, prompt_version_id, created_at')
+    .select('id, status, question_text, mode, prompt_version_id, step_index, created_at')
     .eq('dealership_id', dealershipId)
     .eq('user_id', userId)
     .in('status', ['pending', 'active', 'grading'])
@@ -105,7 +134,43 @@ export async function getActiveSession(userId: string, dealershipId: string) {
     questionText: data.question_text as string,
     mode: data.mode as string,
     promptVersionId: data.prompt_version_id as string | null,
+    stepIndex: (data.step_index as number) ?? 0,
   };
+}
+
+// ─── Session step management (multi-exchange) ─────────────────────────
+
+export async function updateSessionStep(sessionId: string, stepIndex: number) {
+  const { error } = await serviceClient
+    .from('conversation_sessions')
+    .update({ step_index: stepIndex, updated_at: new Date().toISOString() })
+    .eq('id', sessionId);
+
+  if (error) throw error;
+}
+
+// ─── Session transcript (for AI context in multi-exchange) ─────────────
+
+export interface TranscriptEntry {
+  direction: 'inbound' | 'outbound';
+  messageBody: string;
+  createdAt: string;
+}
+
+export async function getSessionTranscript(sessionId: string): Promise<TranscriptEntry[]> {
+  const { data, error } = await serviceClient
+    .from('sms_transcript_log')
+    .select('direction, message_body, created_at')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => ({
+    direction: row.direction as 'inbound' | 'outbound',
+    messageBody: row.message_body as string,
+    createdAt: row.created_at as string,
+  }));
 }
 
 export async function updateSessionStatus(sessionId: string, status: string) {

@@ -1,14 +1,15 @@
 // Daily training cron — hourly Vercel cron (0 * * * *)
 // Build Master: Phase 2A.2
-// Each invocation: find dealerships where current local hour = training hour (default 9 AM)
+// Each invocation: find dealerships where current local hour = configured training hour
+// Training runs Monday-Friday ONLY. No weekends.
 // Stagger sends 5-15 min per dealership to avoid carrier rate limits
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
-import { isWithinQuietHours } from '@/lib/quiet-hours';
+import { isWithinSendWindow, isWeekday } from '@/lib/quiet-hours';
 import { sendSms } from '@/lib/sms';
 import {
-  getDealershipsByTimezoneHour,
+  getDealershipsReadyForTraining,
   getEligibleUsers,
   createConversationSession,
   updateSessionStatus,
@@ -21,14 +22,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Find dealerships where current local hour = 9 AM (training hour)
-  const dealerships = await getDealershipsByTimezoneHour(9);
+  // Find dealerships where current local hour = their configured training_send_hour
+  const dealerships = await getDealershipsReadyForTraining();
 
   const results: Array<{ dealershipId: string; sent: number; skipped: number; errors: number }> = [];
 
   for (const dealership of dealerships) {
-    // Double-check quiet hours (handles edge cases around DST transitions)
-    if (!isWithinQuietHours(dealership.timezone)) {
+    // Skip weekends — training is Mon-Fri only
+    if (!isWeekday(dealership.timezone)) {
+      results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0 });
+      continue;
+    }
+
+    // Double-check send window (handles edge cases around DST transitions)
+    if (!isWithinSendWindow(dealership.timezone)) {
       results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0 });
       continue;
     }
@@ -40,12 +47,10 @@ export async function GET(request: NextRequest) {
 
     for (const user of eligible) {
       try {
-        // TODO: Select training question based on mode rotation + priority vectors
-        // For now, use a placeholder question
         const mode = selectTrainingMode();
-        const question = getTrainingQuestion(mode, dealership.name);
+        const question = getTrainingQuestion(mode);
 
-        // Create session in pending state
+        // Create session in pending state, step_index defaults to 0
         const session = await createConversationSession({
           userId: user.id,
           dealershipId: dealership.id,
@@ -59,7 +64,6 @@ export async function GET(request: NextRequest) {
         // Transition: pending → active
         await updateSessionStatus(session.id, 'active');
 
-        // Log outbound
         await insertTranscriptLog({
           userId: user.id,
           dealershipId: dealership.id,
@@ -100,17 +104,21 @@ export async function GET(request: NextRequest) {
 
 // --- Training mode rotation ---
 // Build Master: Roleplay → Quiz → Objection → Roleplay
+// Weekday-based rotation (skips weekends)
 const MODES = ['roleplay', 'quiz', 'objection'] as const;
 
 function selectTrainingMode(): string {
-  // Simple round-robin based on day of year
+  // Weekday-based rotation: count weekdays since epoch
+  const now = new Date();
   const dayOfYear = Math.floor(
-    (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
+    (Date.now() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000
   );
-  return MODES[dayOfYear % MODES.length];
+  // Approximate weekday count (close enough for rotation)
+  const weekdayCount = Math.floor(dayOfYear * 5 / 7);
+  return MODES[weekdayCount % MODES.length];
 }
 
-function getTrainingQuestion(mode: string, _dealershipName: string): string {
+function getTrainingQuestion(mode: string): string {
   // TODO: Replace with prompt_versions table lookup + priority vector selection
   // Questions are written as if the customer is talking directly to the salesperson.
   // No meta-framing, no labels, no "How would you respond?" — just the customer's words.
