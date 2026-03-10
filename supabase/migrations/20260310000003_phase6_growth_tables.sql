@@ -95,70 +95,70 @@ ALTER TABLE custom_training_content ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "scenario_chains_dealership_isolation"
   ON scenario_chains
   FOR SELECT
-  USING (dealership_id = auth.jwt()->'dealership_id'::uuid);
+  USING (dealership_id = (auth.jwt()->>'dealership_id')::uuid);
 
 CREATE POLICY "scenario_chains_insert_own"
   ON scenario_chains
   FOR INSERT
-  WITH CHECK (dealership_id = auth.jwt()->'dealership_id'::uuid);
+  WITH CHECK (dealership_id = (auth.jwt()->>'dealership_id')::uuid);
 
 CREATE POLICY "scenario_chains_update_own"
   ON scenario_chains
   FOR UPDATE
-  USING (dealership_id = auth.jwt()->'dealership_id'::uuid);
+  USING (dealership_id = (auth.jwt()->>'dealership_id')::uuid);
 
 -- Daily challenges: dealership isolation, readable by all members
 CREATE POLICY "daily_challenges_dealership_isolation"
   ON daily_challenges
   FOR SELECT
-  USING (dealership_id = auth.jwt()->'dealership_id'::uuid);
+  USING (dealership_id = (auth.jwt()->>'dealership_id')::uuid);
 
 CREATE POLICY "daily_challenges_insert_manager"
   ON daily_challenges
   FOR INSERT
   WITH CHECK (
-    dealership_id = auth.jwt()->'dealership_id'::uuid
+    dealership_id = (auth.jwt()->>'dealership_id')::uuid
     AND auth.jwt()->>'user_role' IN ('owner', 'manager')
   );
 
 CREATE POLICY "daily_challenges_update_manager"
   ON daily_challenges
   FOR UPDATE
-  USING (dealership_id = auth.jwt()->'dealership_id'::uuid)
+  USING (dealership_id = (auth.jwt()->>'dealership_id')::uuid)
   WITH CHECK (auth.jwt()->>'user_role' IN ('owner', 'manager'));
 
 -- Peer challenges: dealership isolation, users involved can view
 CREATE POLICY "peer_challenges_dealership_isolation"
   ON peer_challenges
   FOR SELECT
-  USING (dealership_id = auth.jwt()->'dealership_id'::uuid);
+  USING (dealership_id = (auth.jwt()->>'dealership_id')::uuid);
 
 CREATE POLICY "peer_challenges_insert_own"
   ON peer_challenges
   FOR INSERT
-  WITH CHECK (dealership_id = auth.jwt()->'dealership_id'::uuid);
+  WITH CHECK (dealership_id = (auth.jwt()->>'dealership_id')::uuid);
 
 CREATE POLICY "peer_challenges_update_participant"
   ON peer_challenges
   FOR UPDATE
-  USING (dealership_id = auth.jwt()->'dealership_id'::uuid);
+  USING (dealership_id = (auth.jwt()->>'dealership_id')::uuid);
 
 -- Custom training content: dealership isolation, managers only
 CREATE POLICY "custom_training_dealership_isolation"
   ON custom_training_content
   FOR SELECT
-  USING (dealership_id = auth.jwt()->'dealership_id'::uuid);
+  USING (dealership_id = (auth.jwt()->>'dealership_id')::uuid);
 
 CREATE POLICY "custom_training_insert_manager"
   ON custom_training_content
   FOR INSERT
   WITH CHECK (
-    dealership_id = auth.jwt()->'dealership_id'::uuid
+    dealership_id = (auth.jwt()->>'dealership_id')::uuid
     AND auth.jwt()->>'user_role' IN ('owner', 'manager')
   );
 
 CREATE POLICY "custom_training_update_manager"
   ON custom_training_content
   FOR UPDATE
-  USING (dealership_id = auth.jwt()->'dealership_id'::uuid)
+  USING (dealership_id = (auth.jwt()->>'dealership_id')::uuid)
   WITH CHECK (auth.jwt()->>'user_role' IN ('owner', 'manager'));
