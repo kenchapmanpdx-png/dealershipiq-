@@ -196,6 +196,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
         userId: user.id,
         dealershipId: user.dealershipId,
         sessionId: session.id,
+        mode: session.mode,
         productAccuracy: result.product_accuracy,
         toneRapport: result.tone_rapport,
         addressedConcern: result.addressed_concern,

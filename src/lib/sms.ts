@@ -1,58 +1,56 @@
-// Sinch Conversation API SMS send + helpers
+// Sinch SMS send + helpers
 // Build Master: Phase 2A, 2A.2
 // All outbound sends go through this module.
 // Rule: service-db.ts handles DB, this handles SMS transport.
+//
+// Uses the SMS REST API (XMS) directly instead of the Conversation API.
+// Reason: Conversation API outbound fails with delivery code 61 because
+// the XMS adapter cannot resolve the sender number (channel_known_id empty
+// and not settable via API). The REST API sends successfully.
 
-import { getSinchAccessToken } from '@/lib/sinch-auth';
-import type { SinchSendMessageRequest, SinchSendMessageResponse } from '@/types/sinch';
-
-const SINCH_REGION = 'https://us.conversation.api.sinch.com';
+export interface SmsSendResult {
+  id: string;
+  message_id: string; // alias for id — compatibility with callers expecting Conversation API format
+  to: string[];
+  from: string;
+}
 
 export async function sendSms(
   phone: string,
   text: string,
-  metadata?: string
-): Promise<SinchSendMessageResponse> {
-  const projectId = process.env.SINCH_PROJECT_ID;
-  const appId = process.env.SINCH_APP_ID;
-  if (!projectId || !appId) {
-    throw new Error('SINCH_PROJECT_ID and SINCH_APP_ID must be set');
+  _metadata?: string
+): Promise<SmsSendResult> {
+  const servicePlanId = process.env.SINCH_SERVICE_PLAN_ID;
+  const apiToken = process.env.SINCH_API_TOKEN;
+  const fromNumber = process.env.SINCH_PHONE_NUMBER;
+
+  if (!servicePlanId || !apiToken || !fromNumber) {
+    throw new Error('SINCH_SERVICE_PLAN_ID, SINCH_API_TOKEN, and SINCH_PHONE_NUMBER must be set');
   }
 
-  const token = await getSinchAccessToken();
-
-  const body: SinchSendMessageRequest = {
-    app_id: appId,
-    recipient: {
-      identified_by: {
-        channel_identities: [{ channel: 'SMS', identity: phone }],
-      },
-    },
-    message: {
-      text_message: { text },
-    },
-    channel_priority_order: ['SMS'],
-    ...(metadata ? { message_metadata: metadata } : {}),
-  };
+  // Strip leading + from phone numbers for XMS API
+  const to = phone.replace(/^\+/, '');
+  const from = fromNumber.replace(/^\+/, '');
 
   const res = await fetch(
-    `${SINCH_REGION}/v1/projects/${projectId}/messages:send`,
+    `https://us.sms.api.sinch.com/xms/v1/${servicePlanId}/batches`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${apiToken}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ from, to: [to], body: text }),
     }
   );
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`Sinch send failed: ${res.status} ${errBody}`);
+    throw new Error(`Sinch SMS send failed: ${res.status} ${errBody}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  return { ...data, message_id: data.id };
 }
 
 // --- GSM-7 validation ---

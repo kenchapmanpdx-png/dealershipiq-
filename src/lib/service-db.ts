@@ -158,6 +158,7 @@ export async function insertTrainingResult(result: {
   userId: string;
   dealershipId: string;
   sessionId: string;
+  mode: string;
   productAccuracy: number;
   toneRapport: number;
   addressedConcern: number;
@@ -172,6 +173,7 @@ export async function insertTrainingResult(result: {
       user_id: result.userId,
       dealership_id: result.dealershipId,
       session_id: result.sessionId,
+      mode: result.mode,
       product_accuracy: result.productAccuracy,
       tone_rapport: result.toneRapport,
       addressed_concern: result.addressedConcern,
