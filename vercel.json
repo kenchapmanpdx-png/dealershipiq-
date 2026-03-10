@@ -2,35 +2,35 @@
   "crons": [
     {
       "path": "/api/cron/daily-training",
-      "schedule": "0 * * * *"
+      "schedule": "0 13 * * *"
     },
     {
       "path": "/api/cron/orphaned-sessions",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 4 * * *"
     },
     {
       "path": "/api/cron/sync-optouts",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 5 * * *"
     },
     {
       "path": "/api/cron/daily-digest",
-      "schedule": "0 * * * *"
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/api/cron/red-flag-check",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/cron/dunning-check",
-      "schedule": "0 10 * * *"
+      "schedule": "0 16 * * *"
     },
     {
       "path": "/api/cron/daily-challenge",
-      "schedule": "0 * * * *"
+      "schedule": "0 13 * * *"
     },
     {
       "path": "/api/cron/expire-challenges",
-      "schedule": "0 * * * *"
+      "schedule": "0 20 * * *"
     }
   ]
 }
