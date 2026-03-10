@@ -1,8 +1,8 @@
 # Session State
 
 ## Current Phase
-Phase 3: Manager Dashboard
-Status: Core code complete, committing
+Phase 4: Training Intelligence
+Status: Core features built, ready for service-db migration
 
 ## What's Built
 
@@ -31,8 +31,30 @@ Branch: `feat/phase3-manager-dashboard`
 
 **tsc --noEmit:** PASSING
 
+### Phase 4 — Training Intelligence (CORE FEATURES COMPLETE)
+Branch: `feat/phase4-training-intelligence`
+
+**Libraries (7):**
+1. `src/lib/adaptive-weighting.ts` — Per-employee priority vectors across domains (objection_handling, product_knowledge, closing_technique, competitive_positioning, financing)
+2. `src/lib/schedule-awareness.ts` — SMS-based schedule parsing (OFF, VACATION keywords) + availability checking
+3. `src/lib/persona-moods.ts` — 10 customer mood types (friendly, impatient, skeptical, enthusiastic, price_focused, indecisive, knowledgeable, emotional, time_pressured, comparison_shopper)
+4. `src/lib/scoring-expansion.ts` — Behavioral scoring dimensions (urgency, competitive_positioning)
+5. `src/lib/training-content.ts` — Integrates all above to generate personalized roleplay/quiz/objection scenarios
+6. `src/types/vehicle.ts` — Vehicle reference data types (makes, models, trims, features, selling points, competitive sets)
+
+**Database (1 migration pending):**
+- `supabase/migrations/20260310000001_phase4_vehicle_tables.sql` — 6 tables: makes, models, trims, trim_features, selling_points, competitive_sets (global reference, public read)
+
+**Service-db additions (8 functions):**
+- getEmployeePriorityVector, upsertPriorityVector, getLastTrainingDomain, getAdaptiveWeightingConfig
+- getEmployeeSchedule, upsertEmployeeSchedule
+
+**tsc --noEmit:** PASSING
+
 ## What's Next
-1. Phase 4: Training Intelligence (adaptive weighting, schedule awareness)
+1. Run migration `20260310000001_phase4_vehicle_tables.sql` on Supabase
+2. Commit Phase 4 (feature branch)
+3. Phase 5: SMS Webhook Integration (use adaptive weighting + content generation)
 
 ## Blocked Items
 See `docs/NEEDS-REVIEW.md` for credential dependencies.
