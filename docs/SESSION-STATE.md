@@ -133,7 +133,8 @@ Date: 03/10/2026
 **Known non-blocking warnings:**
 - `@vercel/functions` module not found (dynamic require in try/catch)
 - `jose` CompressionStream/DecompressionStream Edge Runtime warnings
-- Git auto-deploy not triggering (CLI deploy works as workaround)
+
+**Git auto-deploy:** WORKING. Confirmed via Vercel API — pushes to main trigger production deploys, branch pushes trigger preview deploys. GitHub integration metadata present on all recent deployments.
 
 ### Sinch Conversation API Configuration (COMPLETE)
 
@@ -169,17 +170,32 @@ Date: 03/10/2026
 | SINCH_PHONE_NUMBER | Pre-existing (11/26/25, MVP) |
 | ADMIN_API_KEY | Pre-existing (11/26/25) |
 
+### Open PRs (awaiting Ken's review)
+
+**PR #6 — fix(lint): resolve all 85 ESLint errors, re-enable build checks**
+Branch: `fix/eslint-cleanup`
+- Fixed all 85 ESLint errors across 30 files (no-unused-vars, no-explicit-any, prefer-const)
+- Fixed cron auth bug: verifyCronSecret returns boolean, not Response — daily-challenge and expire-challenges routes were returning `true` on success
+- Added auth route group layout with force-dynamic (prevents SSR env var errors)
+- Re-enabled eslint + typescript checks in next.config.mjs
+- All quality gates pass: tsc --noEmit, next lint, next build
+
+**PR #7 — feat(seo): add metadata, Open Graph, JSON-LD, sitemap, robots.txt**
+Branch: `feat/seo-improvements`
+- Replaced default "Create Next App" metadata with DealershipIQ branding
+- Added Open Graph, Twitter Card, JSON-LD structured data
+- Added robots.ts (blocks /api/ and /dashboard/) and sitemap.ts
+
 ## What's Next
-1. End-to-end testing: Send SMS → verify Sinch webhook fires → AI grades → response sent
-2. Test Phase 6 features:
+1. Merge PR #6 and PR #7
+2. End-to-end testing: Send SMS → verify Sinch webhook fires → AI grades → response sent
+3. Test Phase 6 features:
    - Scenario chains: Create chain → advance to step 2 → check narrative continuity
    - Daily challenges: Create challenge → submit responses → verify leaderboard grading
    - Peer challenges: Test CHALLENGE keyword parsing → expiration handling
    - Manager content: Test CREATE: keyword → AI formatting → approval flow
-3. Integration testing: Verify crons fire correctly on Vercel (daily-challenge, expire-challenges, etc.)
-4. Fix ESLint warnings (92+ issues suppressed during build)
-5. Investigate Vercel Git auto-deploy (deploy hooks accepted but no deployments created)
-6. Post-Phase 6: Landing page SEO, advanced account settings, or Phase 7 features
+4. Integration testing: Verify crons fire correctly on Vercel (daily-challenge, expire-challenges, etc.)
+5. Post-merge: Advanced account settings, or Phase 7 features
 
 ## Blocked Items
-None. All phases complete, migrations applied, production deployed.
+None. All phases complete, migrations applied, production deployed. Two PRs awaiting review.
