@@ -961,3 +961,363 @@ export async function createDealershipWithManager(
 
   return { dealershipId, userId };
 }
+
+// ─── Phase 6: Growth Features ───────────────────────────────────────────────
+
+// ─── Scenario Chains (Progressive Scenario Chains) ─────────────────────────
+
+export async function getScenarioChain(chainId: string): Promise<any> {
+  const { data, error } = await serviceClient
+    .from('scenario_chains')
+    .select('*')
+    .eq('id', chainId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  return data;
+}
+
+export async function getScenarioChainByUserDealership(
+  userId: string,
+  dealershipId: string
+): Promise<any> {
+  const { data, error } = await serviceClient
+    .from('scenario_chains')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('dealership_id', dealershipId)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  return data;
+}
+
+export async function createScenarioChain(
+  userId: string,
+  dealershipId: string,
+  chain: {
+    currentStep: number;
+    maxSteps: number;
+    narrativeContext: Record<string, unknown>;
+    stepResults: Record<string, unknown>[];
+    status: string;
+  }
+): Promise<string> {
+  const { data, error } = await serviceClient
+    .from('scenario_chains')
+    .insert({
+      user_id: userId,
+      dealership_id: dealershipId,
+      current_step: chain.currentStep,
+      max_steps: chain.maxSteps,
+      narrative_context: chain.narrativeContext,
+      step_results: chain.stepResults,
+      status: chain.status,
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return data.id;
+}
+
+export async function updateScenarioChain(
+  chainId: string,
+  updates: Record<string, unknown>
+): Promise<void> {
+  const updateData: Record<string, unknown> = {};
+
+  if (updates.currentStep !== undefined) updateData.current_step = updates.currentStep;
+  if (updates.narrativeContext !== undefined) updateData.narrative_context = updates.narrativeContext;
+  if (updates.stepResults !== undefined) updateData.step_results = updates.stepResults;
+  if (updates.status !== undefined) updateData.status = updates.status;
+  if (updates.updatedAt !== undefined) updateData.updated_at = updates.updatedAt;
+
+  const { error } = await serviceClient
+    .from('scenario_chains')
+    .update(updateData)
+    .eq('id', chainId);
+
+  if (error) throw error;
+}
+
+// ─── Daily Challenges ─────────────────────────────────────────────────────
+
+export async function createDailyChallenge(data: {
+  dealershipId: string;
+  challengeDate: string;
+  scenarioText: string;
+  gradingRubric: Record<string, unknown>;
+  results: unknown[];
+}): Promise<string> {
+  const { data: result, error } = await serviceClient
+    .from('daily_challenges')
+    .insert({
+      dealership_id: data.dealershipId,
+      challenge_date: data.challengeDate,
+      scenario_text: data.scenarioText,
+      grading_rubric: data.gradingRubric,
+      results: data.results,
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return result.id;
+}
+
+export async function getDailyChallenge(challengeId: string): Promise<any> {
+  const { data, error } = await serviceClient
+    .from('daily_challenges')
+    .select('*')
+    .eq('id', challengeId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  return data;
+}
+
+export async function getDailyChallengeByChallengeDate(
+  dealershipId: string,
+  challengeDate: string
+): Promise<any> {
+  const { data, error } = await serviceClient
+    .from('daily_challenges')
+    .select('*')
+    .eq('dealership_id', dealershipId)
+    .eq('challenge_date', challengeDate)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  return data;
+}
+
+export async function updateDailyChallenge(
+  challengeId: string,
+  updates: Record<string, unknown>
+): Promise<void> {
+  const updateData: Record<string, unknown> = {};
+
+  if (updates.results !== undefined) updateData.results = updates.results;
+  if (updates.scenarioText !== undefined) updateData.scenario_text = updates.scenarioText;
+
+  const { error } = await serviceClient
+    .from('daily_challenges')
+    .update(updateData)
+    .eq('id', challengeId);
+
+  if (error) throw error;
+}
+
+// ─── Peer Challenges ──────────────────────────────────────────────────────
+
+export async function createPeerChallenge(data: {
+  dealershipId: string;
+  challengerId: string;
+  challengedId: string;
+  scenarioText: string;
+  status: string;
+  expiresAt: string;
+}): Promise<string> {
+  const { data: result, error } = await serviceClient
+    .from('peer_challenges')
+    .insert({
+      dealership_id: data.dealershipId,
+      challenger_id: data.challengerId,
+      challenged_id: data.challengedId,
+      scenario_text: data.scenarioText,
+      status: data.status,
+      expires_at: data.expiresAt,
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return result.id;
+}
+
+export async function getPeerChallenge(challengeId: string): Promise<any> {
+  const { data, error } = await serviceClient
+    .from('peer_challenges')
+    .select('*')
+    .eq('id', challengeId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  return data;
+}
+
+export async function getPeerChallengesForUser(userId: string, dealershipId: string): Promise<any[]> {
+  const { data, error } = await serviceClient
+    .from('peer_challenges')
+    .select('*')
+    .eq('dealership_id', dealershipId)
+    .or(`challenger_id.eq.${userId},challenged_id.eq.${userId}`)
+    .in('status', ['pending', 'active']);
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function updatePeerChallenge(
+  challengeId: string,
+  updates: Record<string, unknown>
+): Promise<void> {
+  const updateData: Record<string, unknown> = {};
+
+  if (updates.challenger_response !== undefined)
+    updateData.challenger_response = updates.challenger_response;
+  if (updates.challenged_response !== undefined)
+    updateData.challenged_response = updates.challenged_response;
+  if (updates.challenger_score !== undefined) updateData.challenger_score = updates.challenger_score;
+  if (updates.challenged_score !== undefined) updateData.challenged_score = updates.challenged_score;
+  if (updates.status !== undefined) updateData.status = updates.status;
+
+  const { error } = await serviceClient
+    .from('peer_challenges')
+    .update(updateData)
+    .eq('id', challengeId);
+
+  if (error) throw error;
+}
+
+export async function getExpiredPeerChallenges(): Promise<any[]> {
+  const now = new Date();
+
+  const { data, error } = await serviceClient
+    .from('peer_challenges')
+    .select('*')
+    .in('status', ['pending', 'active'])
+    .lt('expires_at', now.toISOString());
+
+  if (error) throw error;
+  return data || [];
+}
+
+// ─── Custom Training Content ──────────────────────────────────────────────
+
+export async function createCustomTrainingContent(data: {
+  dealershipId: string;
+  createdBy: string;
+  rawInput: string;
+  formattedScenario: string;
+  mode: string;
+  status: string;
+}): Promise<string> {
+  const { data: result, error } = await serviceClient
+    .from('custom_training_content')
+    .insert({
+      dealership_id: data.dealershipId,
+      created_by: data.createdBy,
+      raw_input: data.rawInput,
+      formatted_scenario: data.formattedScenario,
+      mode: data.mode,
+      status: data.status,
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return result.id;
+}
+
+export async function getCustomTrainingContent(contentId: string): Promise<any> {
+  const { data, error } = await serviceClient
+    .from('custom_training_content')
+    .select('*')
+    .eq('id', contentId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  return data;
+}
+
+export async function updateCustomTrainingContent(
+  contentId: string,
+  updates: Record<string, unknown>
+): Promise<void> {
+  const updateData: Record<string, unknown> = {};
+
+  if (updates.status !== undefined) updateData.status = updates.status;
+  if (updates.formattedScenario !== undefined) updateData.formatted_scenario = updates.formattedScenario;
+
+  const { error } = await serviceClient
+    .from('custom_training_content')
+    .update(updateData)
+    .eq('id', contentId);
+
+  if (error) throw error;
+}
+
+export async function getPendingApprovals(dealershipId: string): Promise<any[]> {
+  const { data, error } = await serviceClient
+    .from('custom_training_content')
+    .select('*')
+    .eq('dealership_id', dealershipId)
+    .eq('status', 'pending_approval')
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getApprovedContent(dealershipId: string): Promise<any[]> {
+  const { data, error } = await serviceClient
+    .from('custom_training_content')
+    .select('*')
+    .eq('dealership_id', dealershipId)
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+// ─── Helper: Get user by name (for peer challenges) ────────────────────────
+
+export async function getUserByName(fullName: string, dealershipId: string): Promise<any> {
+  // Search for user by full_name in this dealership's members
+  const { data, error } = await serviceClient
+    .from('dealership_memberships')
+    .select('users!inner(id, full_name, phone)')
+    .eq('dealership_id', dealershipId)
+    .ilike('users.full_name', `%${fullName}%`)
+    .limit(1)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') throw error;
+
+  if (data) {
+    const record = Array.isArray(data) ? data[0] : data;
+    if (record && (record as any).users) {
+      const users = (record as any).users;
+      return {
+        id: users.id as string,
+        fullName: users.full_name as string,
+        phone: users.phone as string,
+      };
+    }
+  }
+
+  return null;
+}
+
+// ─── Helper: Get eligible users for daily challenge ───────────────────────
+
+export async function getEligibleUsersForChallenge(dealershipId: string): Promise<any[]> {
+  const { data, error } = await serviceClient
+    .from('dealership_memberships')
+    .select('user_id, users!inner(id, full_name, phone, status)')
+    .eq('dealership_id', dealershipId)
+    .eq('users.status', 'active')
+    .eq('role', 'salesperson');
+
+  if (error) throw error;
+
+  return (data || []).map((m: any) => ({
+    userId: m.user_id as string,
+    fullName: m.users.full_name as string,
+    phone: m.users.phone as string,
+  }));
+}
