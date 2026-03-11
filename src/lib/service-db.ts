@@ -118,7 +118,7 @@ export async function getUserByPhone(phone: string) {
 export async function getActiveSession(userId: string, dealershipId: string) {
   const { data, error } = await serviceClient
     .from('conversation_sessions')
-    .select('id, status, question_text, mode, prompt_version_id, step_index, persona_mood, created_at')
+    .select('id, status, question_text, mode, prompt_version_id, step_index, persona_mood, training_domain, created_at')
     .eq('dealership_id', dealershipId)
     .eq('user_id', userId)
     .in('status', ['pending', 'active', 'grading'])
@@ -137,6 +137,7 @@ export async function getActiveSession(userId: string, dealershipId: string) {
     promptVersionId: data.prompt_version_id as string | null,
     stepIndex: (data.step_index as number) ?? 0,
     personaMood: (data.persona_mood as string | null) ?? null,
+    trainingDomain: (data.training_domain as string | null) ?? null,
   };
 }
 
@@ -235,6 +236,7 @@ export async function insertTrainingResult(result: {
   promptVersionId?: string;
   urgencyCreation?: number | null;
   competitivePositioning?: number | null;
+  trainingDomain?: string;
 }) {
   const insertData: Record<string, unknown> = {
     user_id: result.userId,
@@ -255,6 +257,11 @@ export async function insertTrainingResult(result: {
   }
   if (result.competitivePositioning != null) {
     insertData.competitive_positioning = result.competitivePositioning;
+  }
+
+  // Phase 4B: training domain tracking
+  if (result.trainingDomain) {
+    insertData.training_domain = result.trainingDomain;
   }
 
   const { error } = await serviceClient
@@ -334,6 +341,7 @@ export async function createConversationSession(entry: {
   promptVersionId?: string;
   personaMood?: string | null;
   difficultyCoefficient?: number;
+  trainingDomain?: string;
 }) {
   const insertData: Record<string, unknown> = {
     user_id: entry.userId,
@@ -350,6 +358,11 @@ export async function createConversationSession(entry: {
   }
   if (entry.difficultyCoefficient != null && entry.difficultyCoefficient !== 1.0) {
     insertData.difficulty_coefficient = entry.difficultyCoefficient;
+  }
+
+  // Phase 4B: training domain
+  if (entry.trainingDomain) {
+    insertData.training_domain = entry.trainingDomain;
   }
 
   const { data, error } = await serviceClient
@@ -892,7 +905,7 @@ export async function upsertPriorityVector(
       user_id: userId,
       dealership_id: dealershipId,
       weights,
-      updated_at: new Date().toISOString(),
+      last_updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,dealership_id' }
   );
@@ -956,14 +969,16 @@ export async function getEmployeeSchedule(
   userId: string,
   dealershipId: string
 ): Promise<{
-  daysOff: string[];
+  recurringDaysOff: number[];
+  oneOffAbsences: string[];
   vacationStart: string | null;
   vacationEnd: string | null;
-  lastUpdated: string;
+  lastConfirmedAt: string;
+  updatedAt: string;
 } | null> {
   const { data, error } = await serviceClient
     .from('employee_schedules')
-    .select('days_off, vacation_start, vacation_end, updated_at')
+    .select('recurring_days_off, one_off_absences, vacation_start, vacation_end, last_confirmed_at, updated_at')
     .eq('dealership_id', dealershipId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -972,10 +987,12 @@ export async function getEmployeeSchedule(
   if (!data) return null;
 
   return {
-    daysOff: data.days_off as string[],
+    recurringDaysOff: (data.recurring_days_off as number[]) ?? [],
+    oneOffAbsences: (data.one_off_absences as string[]) ?? [],
     vacationStart: data.vacation_start as string | null,
     vacationEnd: data.vacation_end as string | null,
-    lastUpdated: data.updated_at as string,
+    lastConfirmedAt: data.last_confirmed_at as string,
+    updatedAt: data.updated_at as string,
   };
 }
 
@@ -983,23 +1000,36 @@ export async function upsertEmployeeSchedule(
   userId: string,
   dealershipId: string,
   schedule: {
-    daysOff: string[];
-    vacationStart: string | null;
-    vacationEnd: string | null;
-    lastUpdated: string;
+    recurringDaysOff?: number[];
+    oneOffAbsences?: string[];
+    vacationStart?: string | null;
+    vacationEnd?: string | null;
   }
 ): Promise<void> {
-  const { error } = await serviceClient.from('employee_schedules').upsert(
-    {
-      user_id: userId,
-      dealership_id: dealershipId,
-      days_off: schedule.daysOff,
-      vacation_start: schedule.vacationStart,
-      vacation_end: schedule.vacationEnd,
-      updated_at: schedule.lastUpdated,
-    },
-    { onConflict: 'user_id,dealership_id' }
-  );
+  const now = new Date().toISOString();
+  const insertData: Record<string, unknown> = {
+    user_id: userId,
+    dealership_id: dealershipId,
+    last_confirmed_at: now,
+    updated_at: now,
+  };
+
+  if (schedule.recurringDaysOff !== undefined) {
+    insertData.recurring_days_off = schedule.recurringDaysOff;
+  }
+  if (schedule.oneOffAbsences !== undefined) {
+    insertData.one_off_absences = schedule.oneOffAbsences;
+  }
+  if (schedule.vacationStart !== undefined) {
+    insertData.vacation_start = schedule.vacationStart;
+  }
+  if (schedule.vacationEnd !== undefined) {
+    insertData.vacation_end = schedule.vacationEnd;
+  }
+
+  const { error } = await serviceClient.from('employee_schedules').upsert(insertData, {
+    onConflict: 'user_id,dealership_id',
+  });
 
   if (error) throw error;
 }
@@ -1538,4 +1568,123 @@ export async function updateUserStatus(userId: string, status: string) {
     .eq('id', userId);
 
   if (error) throw error;
+}
+
+// ─── Phase 4B: Vehicle Data Queries ───────────────────────────────────
+
+export interface VehicleModel {
+  id: string;
+  name: string;
+  body_type: string;
+  make: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface CompetitiveSetRecord {
+  id: string;
+  competitor_model_id: string;
+  comparison_notes: string;
+  competitor: VehicleModel;
+}
+
+export interface SellingPointRecord {
+  id: string;
+  category: string;
+  point: string;
+  source: string;
+}
+
+/**
+ * Get all vehicle models for a dealership (for question generation context)
+ */
+export async function getVehicleModelsForDealership(
+  dealershipId: string
+): Promise<VehicleModel[]> {
+  // This query should eventually be tied to dealership inventory
+  // For now, return all models to avoid complex dealership_vehicles relationship
+  const { data, error } = await serviceClient
+    .from('models')
+    .select(`
+      id,
+      name,
+      body_type,
+      makes ( id, name )
+    `)
+    .limit(50);
+
+  if (error) throw error;
+  if (!data) return [];
+
+  return (data ?? []).map((m: Record<string, unknown>) => ({
+    id: m.id as string,
+    name: m.name as string,
+    body_type: m.body_type as string,
+    make: {
+      id: ((m.makes as Record<string, unknown>)?.id as string) ?? '',
+      name: ((m.makes as Record<string, unknown>)?.name as string) ?? '',
+    },
+  }));
+}
+
+/**
+ * Get competitive set for a vehicle model
+ */
+export async function getCompetitiveSet(modelId: string): Promise<CompetitiveSetRecord[]> {
+  const { data, error } = await serviceClient
+    .from('competitive_sets')
+    .select(`
+      id,
+      competitor_model_id,
+      comparison_notes,
+      models!competitor_model_id (
+        id,
+        name,
+        body_type,
+        makes ( id, name )
+      )
+    `)
+    .eq('model_id', modelId);
+
+  if (error) throw error;
+  if (!data) return [];
+
+  return (data ?? []).map((cs: Record<string, unknown>) => {
+    const m = cs.models as Record<string, unknown>;
+    return {
+      id: cs.id as string,
+      competitor_model_id: cs.competitor_model_id as string,
+      comparison_notes: cs.comparison_notes as string,
+      competitor: {
+        id: m.id as string,
+        name: m.name as string,
+        body_type: m.body_type as string,
+        make: {
+          id: ((m.makes as Record<string, unknown>)?.id as string) ?? '',
+          name: ((m.makes as Record<string, unknown>)?.name as string) ?? '',
+        },
+      } as VehicleModel,
+    };
+  });
+}
+
+/**
+ * Get selling points for a vehicle model
+ */
+export async function getSellingPoints(modelId: string): Promise<SellingPointRecord[]> {
+  const { data, error } = await serviceClient
+    .from('selling_points')
+    .select('id, category, point, source')
+    .eq('model_id', modelId);
+
+  if (error) throw error;
+  if (!data) return [];
+
+  return (data ?? []).map((sp: Record<string, unknown>) => ({
+    id: sp.id as string,
+    category: sp.category as string,
+    point: sp.point as string,
+    source: sp.source as string,
+  }));
 }

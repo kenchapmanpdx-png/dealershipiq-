@@ -24,6 +24,12 @@ import {
   buildPersonaContext,
   getStreakMilestone,
 } from '@/lib/persona-moods';
+import {
+  selectTrainingDomain,
+} from '@/lib/adaptive-weighting';
+import {
+  isScheduledOff,
+} from '@/lib/schedule-awareness';
 import type { PersonaMood } from '@/lib/persona-moods';
 
 export async function GET(request: NextRequest) {
@@ -54,13 +60,29 @@ export async function GET(request: NextRequest) {
 
     const eligible = await getEligibleUsers(dealership.id);
     let sent = 0;
-    const skipped = 0;
+    let skipped = 0;
     let errors = 0;
 
     for (const user of eligible) {
       try {
+        // Phase 4C: Check if user is scheduled off
+        const scheduledOff = await isScheduledOff(user.id, dealership.id, new Date());
+        if (scheduledOff) {
+          skipped++;
+          continue;
+        }
+
         const mode = selectTrainingMode();
         const firstName = extractFirstName(user.full_name);
+
+        // Phase 4D: Select training domain using adaptive weighting
+        let trainingDomain: string | undefined;
+        try {
+          trainingDomain = await selectTrainingDomain(user.id, dealership.id);
+        } catch (domainErr) {
+          console.error(`Domain selection failed for ${user.id}:`, domainErr);
+          // Fall through without domain — graceful degradation
+        }
 
         // Phase 4A: Persona mood selection (tenure-based)
         let personaMood: PersonaMood | null = null;
@@ -106,6 +128,7 @@ export async function GET(request: NextRequest) {
           mode,
           questionText: question,
           personaMood,
+          trainingDomain,
         });
 
         // Send SMS

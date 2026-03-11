@@ -9,10 +9,26 @@ import {
 export type ScheduleStatus = 'working' | 'day_off' | 'vacation' | 'gone_dark';
 
 export interface EmployeeSchedule {
-  daysOff: string[]; // 'MON', 'TUE', etc. or ISO date 'YYYY-MM-DD'
+  recurringDaysOff: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
+  oneOffAbsences: string[]; // ISO dates 'YYYY-MM-DD'
   vacationStart: string | null; // ISO date
   vacationEnd: string | null; // ISO date
-  lastUpdated: string; // ISO timestamp
+  lastConfirmedAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
+}
+
+// Helper: convert day name (MON, TUE, etc.) to 0-6 (0=Sun, 1=Mon, ..., 6=Sat)
+function dayNameToNumber(dayName: string): number {
+  const days: Record<string, number> = {
+    SUN: 0,
+    MON: 1,
+    TUE: 2,
+    WED: 3,
+    THU: 4,
+    FRI: 5,
+    SAT: 6,
+  };
+  return days[dayName.toUpperCase()] ?? -1;
 }
 
 export interface ParseResult {
@@ -24,8 +40,8 @@ export interface ParseResult {
 
 // Parse SMS keywords for schedule updates
 // Supported formats:
-// - "OFF MON TUE" → adds Monday and Tuesday to days off
-// - "OFF TODAY" → adds today to days off
+// - "OFF MON TUE" → adds Monday and Tuesday to recurring days off
+// - "OFF TODAY" → adds today to one-off absences
 // - "VACATION BACK 3/15" → sets vacation until March 15
 export function parseScheduleKeyword(text: string): ParseResult {
   const upper = text.toUpperCase().trim();
@@ -39,7 +55,7 @@ export function parseScheduleKeyword(text: string): ParseResult {
       const today = new Date().toISOString().split('T')[0];
       return {
         success: true,
-        data: { daysOff: [today] },
+        data: { oneOffAbsences: [today] },
         message: 'Marked today as day off.',
       };
     }
@@ -50,10 +66,14 @@ export function parseScheduleKeyword(text: string): ParseResult {
     const validDays = parts.filter((p) => dayNames.includes(p));
 
     if (validDays.length > 0) {
+      const dayNumbers = validDays
+        .map(dayNameToNumber)
+        .filter((n) => n >= 0);
+
       return {
         success: true,
-        data: { daysOff: validDays },
-        message: `Added ${validDays.join(', ')} to days off.`,
+        data: { recurringDaysOff: dayNumbers },
+        message: `Added ${validDays.join(', ')} to recurring days off.`,
       };
     }
 
@@ -124,15 +144,15 @@ export async function isScheduledOff(
   if (!schedule) return false;
 
   const dateStr = date.toISOString().split('T')[0];
-  const dayOfWeek = date.toLocaleString('en-US', { weekday: 'short' }).toUpperCase();
+  const dayOfWeekNum = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
 
-  // Check specific date off
-  if (schedule.daysOff?.includes(dateStr)) {
+  // Check one-off absence (specific date)
+  if (schedule.oneOffAbsences?.includes(dateStr)) {
     return true;
   }
 
-  // Check day-of-week off
-  if (schedule.daysOff?.includes(dayOfWeek)) {
+  // Check recurring day-of-week off
+  if (schedule.recurringDaysOff?.includes(dayOfWeekNum)) {
     return true;
   }
 
@@ -185,13 +205,23 @@ export async function updateEmployeeSchedule(
   updates: Partial<EmployeeSchedule>
 ): Promise<EmployeeSchedule> {
   const current = await getEmployeeSchedule(userId, dealershipId);
+  const now = new Date().toISOString();
+
   const merged: EmployeeSchedule = {
-    daysOff: updates.daysOff ?? current?.daysOff ?? [],
+    recurringDaysOff: updates.recurringDaysOff ?? current?.recurringDaysOff ?? [],
+    oneOffAbsences: updates.oneOffAbsences ?? current?.oneOffAbsences ?? [],
     vacationStart: updates.vacationStart ?? current?.vacationStart ?? null,
     vacationEnd: updates.vacationEnd ?? current?.vacationEnd ?? null,
-    lastUpdated: new Date().toISOString(),
+    lastConfirmedAt: now,
+    updatedAt: now,
   };
 
-  await upsertEmployeeSchedule(userId, dealershipId, merged);
+  await upsertEmployeeSchedule(userId, dealershipId, {
+    recurringDaysOff: merged.recurringDaysOff,
+    oneOffAbsences: merged.oneOffAbsences,
+    vacationStart: merged.vacationStart,
+    vacationEnd: merged.vacationEnd,
+  });
+
   return merged;
 }

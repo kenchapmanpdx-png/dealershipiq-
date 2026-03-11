@@ -26,7 +26,15 @@ import {
   insertConsentRecord,
   updateUserStatus,
   isFeatureEnabled,
+  getEmployeePriorityVector,
 } from '@/lib/service-db';
+import {
+  parseScheduleKeyword,
+  updateEmployeeSchedule,
+} from '@/lib/schedule-awareness';
+import {
+  updatePriorityVectorAfterGrading,
+} from '@/lib/adaptive-weighting';
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
 
 // Idempotency: track processed message IDs (in-memory for now, Redis in Phase 2F)
@@ -128,6 +136,27 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   const isOptedOut = await checkOptOut(phone, user.dealershipId);
   if (isOptedOut) return;
 
+  // --- Schedule Keyword Detection (before other keywords) ---
+  const scheduleResult = parseScheduleKeyword(text);
+  if (scheduleResult.success) {
+    // Update schedule and send confirmation
+    try {
+      await updateEmployeeSchedule(user.id, user.dealershipId, scheduleResult.data ?? {});
+      await sendSms(phone, scheduleResult.message ?? 'Schedule updated.');
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: scheduleResult.message ?? 'Schedule updated.',
+      });
+    } catch (scheduleErr) {
+      console.error('Schedule update failed:', scheduleErr);
+      await sendSms(phone, 'Could not update schedule. Please try again.');
+    }
+    return;
+  }
+
   // --- Keyword Detection (before routing to state machine) ---
   const keyword = detectKeyword(text);
 
@@ -202,7 +231,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
 
 // --- Final exchange: grade everything, send Never Naked feedback ---
 async function handleFinalExchange(
-  session: { id: string; status: string; questionText: string; mode: string; promptVersionId: string | null; personaMood?: string | null },
+  session: { id: string; status: string; questionText: string; mode: string; promptVersionId: string | null; personaMood?: string | null; trainingDomain?: string | null },
   user: { id: string; dealershipId: string },
   phone: string,
   text: string,
@@ -230,6 +259,13 @@ async function handleFinalExchange(
       scoreBehavioralCompetitive,
     });
 
+    const averageScore = (
+      result.product_accuracy +
+      result.tone_rapport +
+      result.addressed_concern +
+      result.close_attempt
+    ) / 4;
+
     await insertTrainingResult({
       userId: user.id,
       dealershipId: user.dealershipId,
@@ -244,7 +280,23 @@ async function handleFinalExchange(
       promptVersionId: result.promptVersionId,
       urgencyCreation: result.urgency_creation ?? null,
       competitivePositioning: result.competitive_positioning ?? null,
+      trainingDomain: session.trainingDomain ?? undefined,
     });
+
+    // Phase 4D: Update priority vector if domain tracked
+    if (session.trainingDomain) {
+      try {
+        await updatePriorityVectorAfterGrading(
+          user.id,
+          user.dealershipId,
+          session.trainingDomain as any,
+          averageScore
+        );
+      } catch (weightErr) {
+        console.error('Priority vector update failed:', weightErr);
+        // Non-blocking — continue with SMS
+      }
+    }
 
     // Grading feedback is EXEMPT from quiet hours — send immediately
     await sendSms(phone, result.feedback);
