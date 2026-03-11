@@ -1,5 +1,5 @@
 // Daily training cron — hourly Vercel cron (0 * * * *)
-// Build Master: Phase 2A.2
+// Build Master: Phase 2A.2 + Phase 4A (Persona Moods + Engagement)
 // Each invocation: find dealerships where current local hour = configured training hour
 // Training runs Monday-Friday ONLY. No weekends.
 // Stagger sends 5-15 min per dealership to avoid carrier rate limits
@@ -15,7 +15,16 @@ import {
   updateSessionStatus,
   insertTranscriptLog,
   insertDeliveryLog,
+  isFeatureEnabled,
+  getUserTenureWeeks,
+  getUserStreak,
 } from '@/lib/service-db';
+import {
+  selectPersonaMood,
+  buildPersonaContext,
+  getStreakMilestone,
+} from '@/lib/persona-moods';
+import type { PersonaMood } from '@/lib/persona-moods';
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
@@ -40,6 +49,9 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
+    // Phase 4A: Check feature flags for this dealership
+    const personaMoodsEnabled = await isFeatureEnabled(dealership.id, 'persona_moods_enabled');
+
     const eligible = await getEligibleUsers(dealership.id);
     let sent = 0;
     const skipped = 0;
@@ -48,14 +60,52 @@ export async function GET(request: NextRequest) {
     for (const user of eligible) {
       try {
         const mode = selectTrainingMode();
-        const question = getTrainingQuestion(mode);
+        const firstName = extractFirstName(user.full_name);
 
-        // Create session in pending state, step_index defaults to 0
+        // Phase 4A: Persona mood selection (tenure-based)
+        let personaMood: PersonaMood | null = null;
+        let moodSetupHint = '';
+
+        if (personaMoodsEnabled) {
+          try {
+            const tenureWeeks = await getUserTenureWeeks(user.id);
+            const moodSelection = selectPersonaMood(tenureWeeks);
+            personaMood = moodSelection.mood;
+            moodSetupHint = moodSelection.setupHint;
+          } catch (moodErr) {
+            console.error(`Persona mood selection failed for ${user.id}:`, moodErr);
+            // Fall through without mood — graceful degradation
+          }
+        }
+
+        // Phase 4A: Streak milestone
+        let streakPrefix = '';
+        try {
+          const streak = await getUserStreak(user.id, dealership.id);
+          const milestone = getStreakMilestone(streak);
+          if (milestone) {
+            streakPrefix = milestone + ' ';
+          }
+        } catch {
+          // Non-critical — skip streak
+        }
+
+        // Build the training question with persona context
+        const baseQuestion = getTrainingQuestion(mode);
+        const personaContext = buildPersonaContext(personaMood, moodSetupHint);
+
+        // Build the full SMS message
+        // Format: "[streak] Hey {first_name}, [question][persona_context]"
+        const greeting = firstName ? `Hey ${firstName}, ` : '';
+        const question = `${streakPrefix}${greeting}${baseQuestion}${personaContext}`;
+
+        // Create session in pending state
         const session = await createConversationSession({
           userId: user.id,
           dealershipId: dealership.id,
           mode,
           questionText: question,
+          personaMood,
         });
 
         // Send SMS
@@ -123,9 +173,18 @@ function getTrainingQuestion(mode: string): string {
   // Questions are written as if the customer is talking directly to the salesperson.
   // No meta-framing, no labels, no "How would you respond?" — just the customer's words.
   const questions: Record<string, string> = {
-    roleplay: `Hey, I found this exact car listed for $2,000 less at the dealership across town. Can you match that price or should I just go there?`,
-    quiz: `Quick — what are the top 3 safety features on our best-selling SUV? Name them like you're talking to a customer on the lot.`,
+    roleplay: `I found this exact car listed for $2,000 less across town. Can you match that price or should I just go there?`,
+    quiz: `Quick — what are the top 3 safety features on our best-selling SUV? Name them like you're talking to a customer.`,
     objection: `I really like it, but I need to think about it and talk to my spouse first. Can you hold it for me?`,
   };
   return questions[mode] ?? questions.roleplay;
+}
+
+/**
+ * Extract first name from full name. Returns empty string if no name available.
+ */
+function extractFirstName(fullName: string | null | undefined): string {
+  if (!fullName) return '';
+  const parts = fullName.trim().split(/\s+/);
+  return parts[0] || '';
 }

@@ -25,6 +25,7 @@ import {
   getSessionTranscript,
   insertConsentRecord,
   updateUserStatus,
+  isFeatureEnabled,
 } from '@/lib/service-db';
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
 
@@ -201,7 +202,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
 
 // --- Final exchange: grade everything, send Never Naked feedback ---
 async function handleFinalExchange(
-  session: { id: string; status: string; questionText: string; mode: string; promptVersionId: string | null },
+  session: { id: string; status: string; questionText: string; mode: string; promptVersionId: string | null; personaMood?: string | null },
   user: { id: string; dealershipId: string },
   phone: string,
   text: string,
@@ -214,12 +215,19 @@ async function handleFinalExchange(
     // Get full conversation history for grading context
     const history = await getSessionTranscript(session.id);
 
+    // Phase 4A: Check behavioral scoring feature flags
+    const scoreBehavioralUrgency = await isFeatureEnabled(user.dealershipId, 'behavioral_scoring_urgency');
+    const scoreBehavioralCompetitive = await isFeatureEnabled(user.dealershipId, 'behavioral_scoring_competitive');
+
     const result = await gradeResponse({
       scenario: session.questionText,
       employeeResponse: text,
       mode,
       promptVersionId: session.promptVersionId ?? undefined,
       conversationHistory: history,
+      personaMood: session.personaMood,
+      scoreBehavioralUrgency,
+      scoreBehavioralCompetitive,
     });
 
     await insertTrainingResult({
@@ -234,6 +242,8 @@ async function handleFinalExchange(
       feedback: result.feedback,
       model: result.model,
       promptVersionId: result.promptVersionId,
+      urgencyCreation: result.urgency_creation ?? null,
+      competitivePositioning: result.competitive_positioning ?? null,
     });
 
     // Grading feedback is EXEMPT from quiet hours — send immediately
@@ -268,7 +278,7 @@ async function handleFinalExchange(
 
 // --- Mid-exchange: generate AI follow-up, advance step, keep active ---
 async function handleMidExchange(
-  session: { id: string; status: string; questionText: string; mode: string },
+  session: { id: string; status: string; questionText: string; mode: string; personaMood?: string | null },
   user: { id: string; dealershipId: string },
   phone: string,
   text: string,
@@ -284,6 +294,7 @@ async function handleMidExchange(
       conversationHistory: history,
       currentResponse: text,
       stepIndex,
+      personaMood: session.personaMood,
     });
 
     // For objection mode: send coaching first, then customer follow-up

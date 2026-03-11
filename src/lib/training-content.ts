@@ -4,7 +4,24 @@
 
 import { selectTrainingDomain, TrainingDomain } from '@/lib/adaptive-weighting';
 import { getScheduleStatus } from '@/lib/schedule-awareness';
-import { getRandomMood, Mood } from '@/lib/persona-moods';
+import { selectPersonaMood, getMoodPromptModifier } from '@/lib/persona-moods';
+import type { PersonaMood } from '@/lib/persona-moods';
+
+// Compatibility shim for old Mood interface
+interface Mood {
+  name: string;
+  description: string;
+  promptModifier: string;
+}
+
+function getRandomMood(): Mood {
+  const result = selectPersonaMood(3); // Default to tier 2 range
+  return {
+    name: result.mood,
+    description: result.setupHint,
+    promptModifier: getMoodPromptModifier(result.mood as PersonaMood),
+  };
+}
 import { SessionMode } from '@/types/database';
 
 export interface TrainingContent {

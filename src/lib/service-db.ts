@@ -118,7 +118,7 @@ export async function getUserByPhone(phone: string) {
 export async function getActiveSession(userId: string, dealershipId: string) {
   const { data, error } = await serviceClient
     .from('conversation_sessions')
-    .select('id, status, question_text, mode, prompt_version_id, step_index, created_at')
+    .select('id, status, question_text, mode, prompt_version_id, step_index, persona_mood, created_at')
     .eq('dealership_id', dealershipId)
     .eq('user_id', userId)
     .in('status', ['pending', 'active', 'grading'])
@@ -136,6 +136,7 @@ export async function getActiveSession(userId: string, dealershipId: string) {
     mode: data.mode as string,
     promptVersionId: data.prompt_version_id as string | null,
     stepIndex: (data.step_index as number) ?? 0,
+    personaMood: (data.persona_mood as string | null) ?? null,
   };
 }
 
@@ -232,21 +233,33 @@ export async function insertTrainingResult(result: {
   feedback: string;
   model: string;
   promptVersionId?: string;
+  urgencyCreation?: number | null;
+  competitivePositioning?: number | null;
 }) {
+  const insertData: Record<string, unknown> = {
+    user_id: result.userId,
+    dealership_id: result.dealershipId,
+    session_id: result.sessionId,
+    mode: result.mode,
+    product_accuracy: result.productAccuracy,
+    tone_rapport: result.toneRapport,
+    addressed_concern: result.addressedConcern,
+    close_attempt: result.closeAttempt,
+    feedback: result.feedback,
+    prompt_version_id: result.promptVersionId ?? null,
+  };
+
+  // Phase 4A: behavioral scoring (only set if provided)
+  if (result.urgencyCreation != null) {
+    insertData.urgency_creation = result.urgencyCreation;
+  }
+  if (result.competitivePositioning != null) {
+    insertData.competitive_positioning = result.competitivePositioning;
+  }
+
   const { error } = await serviceClient
     .from('training_results')
-    .insert({
-      user_id: result.userId,
-      dealership_id: result.dealershipId,
-      session_id: result.sessionId,
-      mode: result.mode,
-      product_accuracy: result.productAccuracy,
-      tone_rapport: result.toneRapport,
-      addressed_concern: result.addressedConcern,
-      close_attempt: result.closeAttempt,
-      feedback: result.feedback,
-      prompt_version_id: result.promptVersionId ?? null,
-    });
+    .insert(insertData);
 
   if (error) throw error;
 }
@@ -319,17 +332,29 @@ export async function createConversationSession(entry: {
   mode: string;
   questionText: string;
   promptVersionId?: string;
+  personaMood?: string | null;
+  difficultyCoefficient?: number;
 }) {
+  const insertData: Record<string, unknown> = {
+    user_id: entry.userId,
+    dealership_id: entry.dealershipId,
+    mode: entry.mode,
+    question_text: entry.questionText,
+    prompt_version_id: entry.promptVersionId ?? null,
+    status: 'pending',
+  };
+
+  // Phase 4A: persona mood
+  if (entry.personaMood) {
+    insertData.persona_mood = entry.personaMood;
+  }
+  if (entry.difficultyCoefficient != null && entry.difficultyCoefficient !== 1.0) {
+    insertData.difficulty_coefficient = entry.difficultyCoefficient;
+  }
+
   const { data, error } = await serviceClient
     .from('conversation_sessions')
-    .insert({
-      user_id: entry.userId,
-      dealership_id: entry.dealershipId,
-      mode: entry.mode,
-      question_text: entry.questionText,
-      prompt_version_id: entry.promptVersionId ?? null,
-      status: 'pending',
-    })
+    .insert(insertData)
     .select('id')
     .single();
 
@@ -447,6 +472,96 @@ export async function getFeatureFlagConfig(
   if (error) throw error;
   if (!data?.enabled) return null;
   return data.config as Record<string, unknown>;
+}
+
+// ─── Phase 4A: Persona mood + engagement helpers ──────────────────────
+
+/**
+ * Get user tenure in weeks since trainee_start_date (or account creation).
+ * Used for persona mood progression: weeks 1-2 friendly, 3-4 skeptical/rushed, 5+ angry/no-credit.
+ */
+export async function getUserTenureWeeks(userId: string): Promise<number> {
+  const { data, error } = await serviceClient
+    .from('users')
+    .select('trainee_start_date, created_at')
+    .eq('id', userId)
+    .single();
+
+  if (error) throw error;
+
+  const startDate = data.trainee_start_date
+    ? new Date(data.trainee_start_date as string)
+    : new Date(data.created_at as string);
+  const now = new Date();
+  const diffMs = now.getTime() - startDate.getTime();
+  return Math.max(1, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)));
+}
+
+/**
+ * Get user's current training streak (consecutive weekdays with completed sessions).
+ */
+export async function getUserStreak(userId: string, dealershipId: string): Promise<number> {
+  const { data, error } = await serviceClient
+    .from('conversation_sessions')
+    .select('created_at')
+    .eq('user_id', userId)
+    .eq('dealership_id', dealershipId)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(90);
+
+  if (error) throw error;
+  if (!data || data.length === 0) return 0;
+
+  // Count consecutive days (skipping weekends)
+  let streak = 0;
+  let checkDate = new Date();
+
+  // Walk backward day by day
+  for (let i = 0; i < 100; i++) {
+    const dayOfWeek = checkDate.getDay();
+    // Skip weekends
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
+
+    const dateStr = checkDate.toISOString().split('T')[0];
+    const hasSession = data.some((s) => {
+      const sessionDate = new Date(s.created_at as string).toISOString().split('T')[0];
+      return sessionDate === dateStr;
+    });
+
+    if (hasSession) {
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  return streak;
+}
+
+/**
+ * Get user's recent score trend for a specific dimension (last 3 sessions).
+ * Returns array of scores newest-first, e.g. [4.1, 3.8, 3.2]
+ */
+export async function getRecentScoreTrend(
+  userId: string,
+  dealershipId: string,
+  dimension: 'product_accuracy' | 'tone_rapport' | 'addressed_concern' | 'close_attempt' = 'product_accuracy'
+): Promise<number[]> {
+  const { data, error } = await serviceClient
+    .from('training_results')
+    .select(dimension)
+    .eq('user_id', userId)
+    .eq('dealership_id', dealershipId)
+    .order('created_at', { ascending: false })
+    .limit(3);
+
+  if (error) throw error;
+  return (data ?? []).map((r) => (r as Record<string, unknown>)[dimension] as number);
 }
 
 // ─── Daily digest (Phase 3) ────────────────────────────────────────────

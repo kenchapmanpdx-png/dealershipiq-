@@ -1,108 +1,191 @@
-// Persona Mood States for Training Intelligence
-// Prompt-only feature. No new tables. Modifies AI customer tone/behavior.
+// Phase 4A: Persona Mood Selection
+// Tenure-based progression: friendly → skeptical/rushed → angry/no-credit
+// Mood affects AI customer tone, NOT grading criteria.
+// Setup text must be brutally concise (under 40 chars of context).
 
-export type MoodType =
+export type PersonaMood =
   | 'friendly'
-  | 'impatient'
   | 'skeptical'
-  | 'enthusiastic'
-  | 'price_focused'
-  | 'indecisive'
-  | 'knowledgeable'
-  | 'emotional'
-  | 'time_pressured'
-  | 'comparison_shopper';
+  | 'rushed'
+  | 'price_shopping'
+  | 'angry_spouse'
+  | 'no_credit'
+  | 'impatient';
 
-export interface Mood {
-  name: MoodType;
-  description: string;
-  promptModifier: string; // Snippet added to AI customer prompt
+interface MoodConfig {
+  mood: PersonaMood;
+  /** Short customer context injected into scenario prompt. Under 40 chars. */
+  setupHint: string;
+  /** Prompt modifier for AI customer behavior */
+  promptModifier: string;
+  /** Weight for random selection within tier (higher = more likely) */
+  weight: number;
 }
 
-const MOODS: Record<MoodType, Mood> = {
-  friendly: {
-    name: 'friendly',
-    description: 'Warm, easy-going, approachable customer.',
-    promptModifier: `You are a friendly, warm customer. You respond positively to genuine engagement and appreciate personal rapport.
-Ask follow-up questions that show interest in the salesperson's knowledge. Be quick to smile (through your tone) at good points.`,
+// Tier 1: Weeks 1-2 (friendly/neutral only)
+const TIER_1_MOODS: MoodConfig[] = [
+  {
+    mood: 'friendly',
+    setupHint: 'Customer is upbeat and engaged',
+    promptModifier: 'You are a friendly, engaged customer. Respond positively to good rapport. Ask genuine follow-up questions.',
+    weight: 3,
   },
-
-  impatient: {
-    name: 'impatient',
-    description: 'Time-constrained, wants quick answers.',
-    promptModifier: `You are an impatient customer. You are busy and have limited time. You interrupt frequently and prefer concise, direct answers.
-If the salesperson takes too long or goes off-topic, express frustration. Respect salespeople who are efficient and to-the-point.`,
+  {
+    mood: 'price_shopping',
+    setupHint: 'Comparing prices at 3 dealers',
+    promptModifier: 'You are comparison shopping at 3 dealers. Ask about price matching, total cost, and deals. Budget is your main concern.',
+    weight: 1,
   },
+];
 
-  skeptical: {
-    name: 'skeptical',
-    description: 'Doubts claims, demands proof and evidence.',
-    promptModifier: `You are a skeptical customer. You don't trust marketing claims easily. Challenge everything with "Really?" or "How do you know that?"
-Demand specific evidence, comparisons, or data. Respect salespeople who provide honest, verified information.`,
+// Tier 2: Weeks 3-4 (add skeptical, rushed)
+const TIER_2_MOODS: MoodConfig[] = [
+  {
+    mood: 'friendly',
+    setupHint: 'Customer is upbeat and engaged',
+    promptModifier: 'You are a friendly, engaged customer. Respond positively to good rapport. Ask genuine follow-up questions.',
+    weight: 2,
   },
-
-  enthusiastic: {
-    name: 'enthusiastic',
-    description: 'Excited, engaged, asks lots of questions.',
-    promptModifier: `You are an enthusiastic customer. You get excited about features and specs. Ask detailed questions and show genuine interest.
-Respond well to passion and knowledge from the salesperson. Push them to tell you more about unique features.`,
+  {
+    mood: 'skeptical',
+    setupHint: 'Customer doubts your claims',
+    promptModifier: 'You are skeptical. Challenge every claim with "Really?" or "Prove it." Demand specific evidence. Distrust marketing talk.',
+    weight: 2,
   },
-
-  price_focused: {
-    name: 'price_focused',
-    description: 'Primarily concerned with cost and value.',
-    promptModifier: `You are a price-conscious customer. Cost is your primary concern. Frequently ask about discounts, financing options, and total cost of ownership.
-Compare to competitors. Respect salespeople who acknowledge budget constraints and find creative solutions.`,
+  {
+    mood: 'rushed',
+    setupHint: 'Customer has 15 min to decide',
+    promptModifier: 'You have 15 minutes before school pickup. Be impatient with long explanations. Want bottom-line answers fast.',
+    weight: 2,
   },
-
-  indecisive: {
-    name: 'indecisive',
-    description: 'Uncertain, waffles, hard to close.',
-    promptModifier: `You are an indecisive customer. You like the vehicle but keep second-guessing yourself. Express doubts: "I'm not sure..."
-Need reassurance and validation. Hesitate at closing moments. Respect salespeople who confidently guide you toward a decision.`,
+  {
+    mood: 'price_shopping',
+    setupHint: 'Comparing prices at 3 dealers',
+    promptModifier: 'You are comparison shopping at 3 dealers. Ask about price matching, total cost, and deals. Budget is your main concern.',
+    weight: 1,
   },
-
-  knowledgeable: {
-    name: 'knowledgeable',
-    description: 'Well-researched, knows specs and features.',
-    promptModifier: `You are a knowledgeable customer. You have already researched this vehicle extensively. You know competitor specs, MSRP, and features.
-Challenge salespeople on facts. Respect those who are equally knowledgeable or teach you something new.`,
+  {
+    mood: 'impatient',
+    setupHint: 'Customer wants quick answers only',
+    promptModifier: 'You are busy and impatient. Cut off long answers. Respect efficiency. Get frustrated by rambling or vague responses.',
+    weight: 1,
   },
+];
 
-  emotional: {
-    name: 'emotional',
-    description: 'Driven by feelings, desires, lifestyle fit.',
-    promptModifier: `You are an emotional customer. You decide based on how the vehicle makes you feel and how it fits your lifestyle.
-Appeal to your aspirations and lifestyle. Respond well to storytelling and personal connections. Practical specs matter less than the experience.`,
+// Tier 3: Week 5+ (full roster including angry, no-credit)
+const TIER_3_MOODS: MoodConfig[] = [
+  {
+    mood: 'friendly',
+    setupHint: 'Customer is upbeat and engaged',
+    promptModifier: 'You are a friendly, engaged customer. Respond positively to good rapport. Ask genuine follow-up questions.',
+    weight: 1,
   },
-
-  time_pressured: {
-    name: 'time_pressured',
-    description: 'Needs a vehicle urgently, has a deadline.',
-    promptModifier: `You are a time-pressured customer. You need a vehicle by a specific date (e.g., next week for a long trip).
-Express urgency. Appreciate salespeople who acknowledge your timeline and offer expedited solutions. This is your driving constraint.`,
+  {
+    mood: 'skeptical',
+    setupHint: 'Customer doubts your claims',
+    promptModifier: 'You are skeptical. Challenge every claim with "Really?" or "Prove it." Demand specific evidence. Distrust marketing talk.',
+    weight: 2,
   },
-
-  comparison_shopper: {
-    name: 'comparison_shopper',
-    description: 'Compares across multiple dealers and brands.',
-    promptModifier: `You are a comparison shopper. You're also looking at competitors (specific models/dealers).
-Ask how this vehicle compares to alternatives. Respect salespeople who honestly compare their vehicle and own their positioning.`,
+  {
+    mood: 'rushed',
+    setupHint: 'Customer has 15 min to decide',
+    promptModifier: 'You have 15 minutes before school pickup. Be impatient with long explanations. Want bottom-line answers fast.',
+    weight: 2,
   },
-};
+  {
+    mood: 'price_shopping',
+    setupHint: 'Comparing prices at 3 dealers',
+    promptModifier: 'You are comparison shopping at 3 dealers. Ask about price matching, total cost, and deals. Budget is your main concern.',
+    weight: 2,
+  },
+  {
+    mood: 'angry_spouse',
+    setupHint: 'Spouse is against the purchase',
+    promptModifier: 'Your spouse is firmly against this purchase. You like the car but need ammunition to convince them. Ask about value retention, safety, practicality.',
+    weight: 2,
+  },
+  {
+    mood: 'no_credit',
+    setupHint: 'Customer has poor credit history',
+    promptModifier: 'You have a 520 credit score and are embarrassed about it. Dance around the topic. Need help with financing options without judgment.',
+    weight: 1,
+  },
+  {
+    mood: 'impatient',
+    setupHint: 'Customer wants quick answers only',
+    promptModifier: 'You are busy and impatient. Cut off long answers. Respect efficiency. Get frustrated by rambling or vague responses.',
+    weight: 1,
+  },
+];
 
-// Get random mood
-export function getRandomMood(): Mood {
-  const moods = Object.values(MOODS);
-  return moods[Math.floor(Math.random() * moods.length)];
+// All moods for lookup
+const ALL_MOODS: MoodConfig[] = [...TIER_3_MOODS];
+
+function weightedRandom(moods: MoodConfig[]): MoodConfig {
+  const totalWeight = moods.reduce((sum, m) => sum + m.weight, 0);
+  let r = Math.random() * totalWeight;
+  for (const m of moods) {
+    r -= m.weight;
+    if (r <= 0) return m;
+  }
+  return moods[0];
 }
 
-// Get mood by name
-export function getMoodByName(name: MoodType): Mood {
-  return MOODS[name];
+/**
+ * Select a persona mood based on user tenure (weeks in training).
+ */
+export function selectPersonaMood(tenureWeeks: number): {
+  mood: PersonaMood;
+  setupHint: string;
+  promptModifier: string;
+} {
+  let pool: MoodConfig[];
+
+  if (tenureWeeks <= 2) {
+    pool = TIER_1_MOODS;
+  } else if (tenureWeeks <= 4) {
+    pool = TIER_2_MOODS;
+  } else {
+    pool = TIER_3_MOODS;
+  }
+
+  const selected = weightedRandom(pool);
+  return {
+    mood: selected.mood,
+    setupHint: selected.setupHint,
+    promptModifier: selected.promptModifier,
+  };
 }
 
-// Get all moods
-export function getAllMoods(): Mood[] {
-  return Object.values(MOODS);
+/**
+ * Get the prompt modifier for a specific mood name.
+ */
+export function getMoodPromptModifier(mood: PersonaMood): string {
+  const found = ALL_MOODS.find((m) => m.mood === mood);
+  return found?.promptModifier ?? '';
+}
+
+/**
+ * Build the persona context string for injection into scenario generation prompts.
+ * Returns empty string if mood is null/friendly (baseline).
+ */
+export function buildPersonaContext(mood: PersonaMood | null, setupHint?: string): string {
+  if (!mood || mood === 'friendly') return '';
+  return `\n[Customer mood: ${setupHint || mood}]`;
+}
+
+/**
+ * Get streak milestone message prefix, or empty string if no milestone.
+ * Milestones at: 3, 7, 14, 30, 60, 90 days.
+ */
+export function getStreakMilestone(streak: number): string {
+  const milestones: Record<number, string> = {
+    3: '3 DAYS IN! Building a habit.',
+    7: '7-DAY STREAK! Top performers train daily.',
+    14: 'DAY 14: Most quit by Day 7. Not you.',
+    30: '30-DAY STREAK! Top 5% consistency.',
+    60: '60 DAYS STRONG! Elite level.',
+    90: '90-DAY LEGEND! Unstoppable.',
+  };
+  return milestones[streak] ?? '';
 }
