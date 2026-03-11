@@ -269,13 +269,41 @@ Date: 03/10/2026
 
 **tsc --noEmit:** PASSING
 
+### Phase 4B/4C/4D — Vehicle Data, Schedule Awareness, Adaptive Weighting (03/11/2026)
+
+**Phase 4B — Vehicle Data Pipeline:**
+- Vehicle tables (makes, models, trims, trim_features, selling_points, competitive_sets) confirmed applied
+- Added 3 vehicle query functions to service-db: `getVehicleModelsForDealership()`, `getCompetitiveSet()`, `getSellingPoints()`
+- Types in `src/types/vehicle.ts` (VehicleProfile, Make, Model, Trim, etc.)
+- Ready for seed data import and prompt injection integration
+
+**Phase 4C — Schedule Awareness:**
+- Fixed service-db schedule functions to match actual DB schema (`recurring_days_off INTEGER[]`, `one_off_absences DATE[]`)
+- Schedule-awareness.ts: `dayNameToNumber()` conversion, updated `isScheduledOff()` to check both recurring days and one-off absences
+- SMS webhook: OFF/VACATION keywords detected before state machine routing, parsed → schedule updated → confirmation SMS
+- Daily cron: checks `isScheduledOff()` per user before sending, skips if off
+
+**Phase 4D — Adaptive Weighting:**
+- `selectTrainingDomain()` wired into daily cron for per-user domain selection
+- `updatePriorityVectorAfterGrading()` wired into webhook after final exchange grading
+- `training_domain TEXT` column added to `conversation_sessions` and `training_results`
+- Fixed `upsertPriorityVector()` to use correct column name (`last_updated_at`)
+- `getActiveSession()` returns `training_domain` field
+- Average score (accuracy + rapport + concern + close / 4) feeds back into priority vector
+
+**Database (1 migration):**
+- `supabase/migrations/20260311_phase4bcd_columns.sql` — training_domain on conversation_sessions + training_results
+
+**Files modified (4):** service-db.ts, schedule-awareness.ts, daily-training/route.ts, sinch/route.ts
+
+**tsc --noEmit:** PASSING
+
 ## What's Next
-1. **Phase 4B — Vehicle Data Pipeline** — makes/models/trims tables, data import, competitive_sets
-2. **Phase 4C — Schedule Awareness** — honor OFF/VACATION keywords, adjust training timing
-3. **Phase 4D — Adaptive Weighting** — priority vectors, domain rotation based on weak areas
-4. **Phase 4.5 — Coach Mode MVP** — coaching PWA, morning meeting script
-5. Sentry/Axiom observability (NR-002)
-6. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+1. **Vehicle data seeding** — Seed Honda/Toyota/Hyundai/Kia makes/models/trims into vehicle tables
+2. **Prompt injection** — Wire vehicle specs into training scenario generation
+3. **Phase 4.5 — Coach Mode MVP** — coaching PWA, morning meeting script
+4. Sentry/Axiom observability (NR-002)
+5. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.

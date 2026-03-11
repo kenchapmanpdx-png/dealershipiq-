@@ -108,3 +108,15 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** First name greeting, streak milestones, and score trend injection are all prompt-level changes in the daily training cron. No new API routes. Streak calculation walks backward through completed sessions skipping weekends. Milestones at 3/7/14/30/60/90 days with short motivational prefix prepended to training SMS.
 - **Rationale:** Build Master: "implement during 4A — prompt-level changes, near-zero cost." SMS character budget is tight — milestone messages kept under 40 chars.
 - **Affected files:** `src/app/api/cron/daily-training/route.ts`, `src/lib/persona-moods.ts`, `src/lib/service-db.ts`
+
+## D-019: Schedule awareness uses DB schema as-is (recurring_days_off INTEGER[], one_off_absences DATE[])
+- **Date:** 2026-03-11
+- **Decision:** Fixed service-db and schedule-awareness to match actual Phase 1F table schema rather than altering tables. `recurring_days_off` stores 0-6 (Sun-Sat), `one_off_absences` stores ISO date strings. Added `dayNameToNumber()` conversion in schedule-awareness for SMS keyword parsing (OFF MON → 1). Schedule check runs per-user in daily cron before sending.
+- **Rationale:** Phase 1F tables were created months ago with a specific schema. Altering columns risks breaking other references. Adapter pattern in service-db is cleaner.
+- **Affected files:** `src/lib/service-db.ts`, `src/lib/schedule-awareness.ts`, `src/app/api/cron/daily-training/route.ts`
+
+## D-020: Adaptive weighting domain selection in cron, weight updates in webhook
+- **Date:** 2026-03-11
+- **Decision:** `selectTrainingDomain()` called per-user in daily cron (domain selection at send time). `updatePriorityVectorAfterGrading()` called in webhook after final exchange grading (weight update at grade time). Average of 4 core scores feeds priority vector. `training_domain` stored on both `conversation_sessions` and `training_results` for traceability. Graceful degradation: domain selection failure falls back to random mode selection.
+- **Rationale:** Build Master: "Daily training cron queries employee_priority_vectors and calls weighted selection." Weight updates happen naturally after grading in webhook flow. Two-column tracking enables dashboard analytics on domain distribution.
+- **Affected files:** `src/app/api/cron/daily-training/route.ts`, `src/app/api/webhooks/sms/sinch/route.ts`
