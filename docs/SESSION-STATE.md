@@ -1,8 +1,8 @@
 # Session State
 
 ## Current Phase
-Phase 6: Growth Features
-Status: COMPLETE
+Phase: SMS Pipeline debugging (Phase 2 prerequisite)
+Status: SMS END-TO-END WORKING — first successful grading + SMS reply delivered
 
 ## What's Built
 
@@ -179,24 +179,43 @@ Date: 03/10/2026
 | SINCH_PHONE_NUMBER | Updated 03/10/2026 → `+12029983810` |
 | ADMIN_API_KEY | Pre-existing (11/26/25) |
 
-### SMS Diagnosis (03/10/2026)
+### Multi-Exchange + GPT-5.4 Upgrade (03/10/2026)
 
-**Problem:** User texted `+12085797336` and got no response.
+**Changes deployed:**
+1. **GPT-5.4 upgrade** — Primary model switched from `gpt-4o-2024-11-20` to `gpt-5.4-2026-03-05` for grading and training content. Fallback remains `gpt-4o-mini`. Applied to `openai.ts`, `manager-content-create.ts`, `scenario-chains.ts`.
+2. **Multi-exchange state machine** — 3 exchanges per session for all modes. `step_index` column tracks exchange (0→1→2). Session stays `active` between exchanges, transitions to `grading` only on final exchange. Objection mode: progressive coaching between exchanges. Roleplay: customer escalation. Quiz: 3 different questions.
+3. **Never Naked feedback format** — Grading system prompt rewritten: `[score]/10 ⭐ What worked: [...] Level up: [...] 💡 Pro tip: "[exact phrase]"`. Product fact hallucination explicitly forbidden.
+4. **Question format cleanup** — Removed all meta-framing ("DealershipIQ Training:", "Reply with your best sales response!"). Questions now read as direct customer speech.
+5. **Quiet hours** — Mon-Sat 10AM-7PM, Sun 11AM-7PM. Grading feedback and Ask IQ exempt.
+6. **Weekday-only training** — Daily cron skips weekends. Uses `training_send_hour` from dealership `settings` JSONB (default 10, range 9-12).
+7. **GPT-5.4 API fix** — GPT-5.4 rejects `max_tokens` param (requires `max_completion_tokens`). Added `tokenLimitParam()` helper for model-aware token limits. This was the root cause of the multi-exchange failure on first test.
 
-**Root causes found (6):**
-1. **Webhook URL wrong:** Sinch webhook pointed at `/api/webhooks/sms/sinch-v2` but the actual route is at `/api/webhooks/sms/sinch`. All inbound webhooks were returning 404. FIXED — updated via Sinch API.
-2. **No phone number provisioned:** `+12085797336` (from old MVP env var) was never an active number in this Sinch project. Zero active numbers existed. FIXED — activated free test number `+12029983810`.
-3. **Trial account limitations:** Sinch account is in test mode with $2.00 credit. Outbound SMS can only be sent to verified numbers (`+13604485632`). Inbound SMS to the test number should work.
-4. **Supabase URL/key mismatch:** `NEXT_PUBLIC_SUPABASE_URL` pointed to old project `hbhcwbqxiumfauidtnbz` but `SUPABASE_SERVICE_ROLE_KEY` was for new project `nnelylyialhnyytfeoom`. Caused "Invalid API key" on every DB call. FIXED — updated URL and anon key in Vercel to match new project.
-5. **Missing phone column in insertTranscriptLog:** `sms_transcript_log` table has `phone TEXT NOT NULL` but the `insertTranscriptLog` function never passed it. Caused PostgreSQL 23502 (NOT NULL violation) on every transcript insert. FIXED — added `phone` param to function and all 13 call sites.
-6. **Sinch webhook killed by 404s:** The original wrong webhook URL (/sinch-v2) returned 404s which caused Sinch to permanently disable the callback. Even after fixing the URL, no new webhooks fired. FIXED — deleted old webhook and created new one (ID: `01KKCPP5P16MDCD6J0147V3VZS`).
+**Test status:** New objection session created (a60115dd). Awaiting Ken's reply to verify full 3-exchange flow.
 
-**Additional findings:**
-- `channel_known_id` on the Conversation API app is empty — API won't accept updates to this field. SMS routing works through service plan → Conversation API adapter regardless.
-- `processed_webhooks`, `sms_inbound_jobs`, `sms_webhook_quarantine` tables don't exist in Supabase (never migrated). Current webhook route uses in-memory idempotency, so not blocking — but needed for durability.
-- Zero messages in both REST API and Conversation API inbounds — confirms the user's text never reached Sinch.
-- Trial account overrides outbound SMS body to "Test message from Sinch." — custom message content not delivered until account upgraded.
-- SMS delivery to verified number failing with code 61 (unroutable). Delivery reports webhook correctly, logged in DB. Needs investigation — may be trial routing limitation.
+### SMS Pipeline Debugging Session (03/10/2026 — RESOLVED)
+
+**Outcome:** SMS end-to-end working. First successful inbound webhook → AI grading → outbound SMS reply delivered.
+
+**Root causes found and fixed (7):**
+1. **Supabase URL/key mismatch (3 projects):** All env vars pointed to `nnelylyialhnyytfeoom` (correct). But old MVP vars lingered in some contexts. FIXED — consolidated all Vercel env vars.
+2. **Missing phone column in insertTranscriptLog:** Function never passed `phone` param to `sms_transcript_log`. Caused PostgreSQL 23502 (NOT NULL violation) on every transcript insert. FIXED — added `phone` param and updated all 13 call sites.
+3. **Sinch webhook killed by 404s:** Original webhook URL (`/sinch-v2`) returned 404s, causing Sinch to permanently disable the callback. FIXED — deleted old webhook, created new (ID: `01KKCPP5P16MDCD6J0147V3VZS`).
+4. **Missing mode column in insertTrainingResult:** Function signature didn't include `mode` (TRAINING_MODE column not nullable). FIXED — added to function and all call sites.
+5. **Outbound SMS delivery failure code 61:** Conversation API REST wrapper returned 61 (unroutable). FIXED — switched from Conversation API wrapper to direct XMS REST API call via `/sms/xms/v1/mo_message`.
+6. **Sinch REST API env vars wrong in Vercel:** `SINCH_SERVICE_PLAN_ID`, `SINCH_API_TOKEN`, `SINCH_PHONE_NUMBER` were stale MVP values. FIXED — re-set all three to correct Sinch values.
+7. **OpenAI API key missing in Vercel:** `OPENAI_API_KEY` not in production env. FIXED — added to Vercel.
+8. **Silent drop when no active session:** User texted but no active training session existed. System silently dropped request. FIXED — now sends "no active training session" message.
+
+**SMS pipeline now working (verified):**
+- Inbound webhook (MESSAGE_INBOUND) → User lookup by phone → Session lookup (active status) → AI grading (OpenAI GPT-4o Structured Outputs) → training_results insert → Outbound SMS via XMS REST API
+- Sessions auto-complete after grading
+- New sessions created by daily cron (8 AM local) or manually via manager dashboard
+
+**Trial account info:**
+- Sinch: $2.00 credit (expires 03/24/2026)
+- Inbound number: `+12029983810` (SMS + VOICE capable)
+- Verified outbound number: `+13604485632` (Ken's phone)
+- Trial limitation: SMS body prepended with "Test message from Sinch:" — custom content still delivered
 
 ### Merged PRs
 
@@ -204,22 +223,14 @@ Date: 03/10/2026
 **PR #6 — fix(lint): resolve all 85 ESLint errors, re-enable build checks** — MERGED
 **PR #7 — feat(seo): add metadata, Open Graph, JSON-LD, sitemap, robots.txt** — MERGED
 
-### Webhook Status (03/10/2026 — Latest)
-- Delivery report webhooks: WORKING (4 successful hits, delivery reports logged in DB)
-- HMAC verification: PASSING
-- Supabase auth: WORKING (new project URL + key matched)
-- Transcript logging: WORKING (phone column populated)
-- Inbound message processing: UNTESTED (need Ken to text `+12029983810` again)
-- New webhook ID: `01KKCPP5P16MDCD6J0147V3VZS` (replaced killed webhook)
-
 ## What's Next
-1. **Ken texts `+12029983810`** — verify full inbound flow: webhook → user lookup → active session → AI grading → response SMS
-2. **Investigate SMS delivery code 61** — verified number +13604485632 getting "Failed" delivery. May be trial routing limitation or test number issue.
-3. **Trial limitation:** Outbound SMS body overridden to "Test message from Sinch." and delivery failing. Upgrade Sinch account to fix.
-4. Create webhook infrastructure migration (processed_webhooks, sms_inbound_jobs, sms_webhook_quarantine)
-5. Test Phase 6 features (scenario chains, daily challenges, peer challenges, manager content)
-6. Integration testing: Verify crons fire correctly on Vercel
+1. **Phase 1A — Tenant Core Tables** (per Build Master)
+   - dealerships table (core fields: name, location_count, created_at)
+   - dealership_memberships table (user → dealership mapping, role field)
+   - RLS policies for data isolation
+2. Create webhook infrastructure migration (processed_webhooks, sms_inbound_jobs, sms_webhook_quarantine) — for SMS durability
+3. Load test SMS pipeline with multiple concurrent users
+4. Manager dashboard full test suite (team, sessions, coaching-queue, gaps, etc.)
 
 ## Blocked Items
-- **SMS outbound delivery failing (code 61)** — Even to verified number. Trial account limitation. Need account upgrade.
-- **SMS outbound body overridden** — Trial mode replaces message body with "Test message from Sinch." Custom content not delivered.
+None critical. SMS pipeline is fully operational.

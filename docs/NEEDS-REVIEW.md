@@ -1,47 +1,47 @@
 # Needs Review
 
-## NR-001: Upstash Redis credentials needed for rate limiting (Phase 2F)
-- **Status:** Blocked on credentials
+## NR-001: Upstash Redis for rate limiting
+- **Status:** Deferred
 - **Context:** Rate limiting module (`src/lib/rate-limit.ts`) built with fail-open pattern. Passes through all requests when `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` not set.
 - **Action needed:** Create Upstash Redis database, add env vars to Vercel.
-- **Recommendation:** Free tier sufficient for launch. Can defer until after Sinch integration testing.
+- **Recommendation:** Free tier sufficient. Defer until after multi-exchange flow is stable.
 
-## NR-002: Sentry + Axiom setup (Phase 2G observability)
-- **Status:** Blocked on credentials / wizard setup
-- **Context:** Build Master requires Sentry error tracking, Axiom structured logging, Better Stack uptime monitoring.
-- **Action needed:**
-  1. Sentry: `npx @sentry/wizard -i nextjs` (interactive — needs manual run)
-  2. Axiom: Create dataset, get token, install `next-axiom`
-  3. Better Stack: Create uptime monitor for webhook endpoint
-- **Recommendation:** Run Sentry wizard after Phase 2 merge. Axiom and Better Stack can be Phase 2.1 follow-up.
-
-## NR-003: Sinch credentials — RESOLVED
-- **Status:** RESOLVED 03/10/2026
-- **Context:** All Sinch credentials set in Vercel. Webhook configured. Test number `+12029983810` activated.
-- **Remaining limitation:** Trial account ($2.00 credit). Outbound SMS only to verified number `+13604485632`. To go production: upgrade account, register 10DLC, rent production number.
-
-## NR-007: Sinch trial account upgrade needed for production
-- **Status:** Blocked — requires Ken's action
-- **Context:** Sinch account is in test mode. $2.00 credit. Test number expires 03/24/2026. Outbound SMS restricted to verified numbers only. Delivery failing with code 61 even to verified number. Message body overridden to "Test message from Sinch."
-- **Action needed:** Upgrade Sinch account (billing), register 10DLC campaign (required for US A2P SMS), rent a production 10DLC number.
-- **Recommendation:** Upgrade is now CRITICAL — trial mode prevents any meaningful testing. Budget ~$2/month for number + per-message costs.
-
-## NR-008: Supabase project mismatch fixed — verify old project cleanup
-- **Status:** Informational
-- **Context:** Vercel env vars pointed to THREE different Supabase projects: `hbhcwbqxiumfauidtnbz` (NEXT_PUBLIC_SUPABASE_URL), `bjcqstoekfdxsosssgbl` (old MVP), and `nnelylyialhnyytfeoom` (current). Fixed to all point to `nnelylyialhnyytfeoom`. The old projects may have stale data or incur costs.
-- **Recommendation:** Delete unused Supabase projects after confirming no dependency.
-
-## NR-004: OpenAI API key needed for grading
-- **Status:** Blocked on credentials
-- **Context:** `OPENAI_API_KEY` required for AI grading (`src/lib/openai.ts`).
-- **Action needed:** Provide OpenAI API key and set in Vercel env vars.
-
-## NR-005: CRON_SECRET generation
-- **Status:** Can self-resolve
-- **Context:** Cron endpoints require `CRON_SECRET` Bearer token. Generate a 64-char random string.
-- **Recommendation:** Will generate and set in Vercel during deployment phase.
-
-## NR-006: Nightly synthetic test (Phase 2G acceptance criteria)
+## NR-002: Sentry + Axiom observability
 - **Status:** Deferred
-- **Context:** Build Master requires automated nightly test simulating full SMS conversation flow. Needs working Sinch + OpenAI credentials to implement.
-- **Recommendation:** Build after credentials available and basic SMS flow verified manually.
+- **Context:** Build Master requires Sentry error tracking, Axiom structured logging, Better Stack uptime monitoring. None configured.
+- **Action needed:** Sentry wizard (interactive), Axiom dataset + token, Better Stack uptime monitor.
+- **Recommendation:** High priority — runtime errors (like the GPT-5.4 max_tokens bug) are invisible without logging. Only diagnosable by inference from Supabase state.
+
+## NR-003: Sinch credentials
+- **Status:** RESOLVED 2026-03-10
+- **Resolution:** All Sinch credentials set in Vercel. Webhook configured. Test number `+12029983810` activated.
+
+## NR-004: OpenAI API key
+- **Status:** RESOLVED 2026-03-10
+- **Resolution:** `OPENAI_API_KEY` set in Vercel. GPT-5.4 and GPT-4o-mini both verified working.
+
+## NR-005: CRON_SECRET
+- **Status:** RESOLVED (pre-existing)
+- **Resolution:** Already in Vercel env vars since 11/27/25.
+
+## NR-006: Nightly synthetic test
+- **Status:** Deferred
+- **Context:** Build Master requires automated nightly test simulating full SMS conversation flow.
+- **Recommendation:** Build after multi-exchange flow is proven stable. Requires Sentry/logging first to capture failures.
+
+## NR-007: Sinch trial account upgrade for production
+- **Status:** BLOCKED — requires Ken's action
+- **Context:** Trial account: $2.00 credit, test number expires 03/24/2026, outbound restricted to verified numbers, "Test message from Sinch:" prepended to all messages.
+- **Action needed:** Upgrade Sinch account (billing), register 10DLC campaign, rent production number.
+- **Recommendation:** CRITICAL before any real user testing. Budget ~$2/month for number + per-message costs.
+
+## NR-008: Supabase old project cleanup
+- **Status:** Informational
+- **Context:** Old projects `hbhcwbqxiumfauidtnbz` and `bjcqstoekfdxsosssgbl` still exist. May incur costs.
+- **Recommendation:** Delete after confirming no dependency. All env vars now point to `nnelylyialhnyytfeoom`.
+
+## NR-009: Multi-exchange transcript dependency
+- **Status:** Open — monitoring
+- **Context:** Multi-exchange grading uses `getSessionTranscript()` to build full conversation history. Opening question must be logged to `sms_transcript_log` when session is created (by cron or manually). If transcript is empty, grading only sees the final exchange.
+- **Risk:** Manual test sessions created via Supabase API may not have transcript entries for the opening question. Cron-created sessions should be fine since the cron inserts the transcript.
+- **Recommendation:** Verify transcript completeness after next test. Add defensive check in grading if transcript is empty.
