@@ -73,3 +73,15 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** Accept Hobby plan limits: max 1x/day cron frequency, env vars baked at deploy time (changes require redeploy), no serverless concurrency control.
 - **Rationale:** Sufficient for current phase. Upgrade to Pro when load requires it.
 - **Affected files:** `vercel.json`
+
+## D-013: Double opt-in consent SMS flow
+- **Date:** 2026-03-10
+- **Decision:** When a user is added (single add or CSV import), system sends a consent SMS: "[Dealership] uses DealershipIQ for sales training. Reply YES to opt in, or STOP to decline." User stays `pending_consent` until they reply. YES/START → activate + record consent. STOP/NO → mark inactive + register opt-out. Unrecognized replies get a reminder. All messages from `pending_consent` users are intercepted before the training state machine.
+- **Rationale:** TCPA compliance. Can't send training messages without explicit consent. Double opt-in is the standard for A2P SMS programs.
+- **Affected files:** `src/app/api/users/route.ts`, `src/app/api/users/import/route.ts`, `src/app/api/webhooks/sms/sinch/route.ts`, `src/lib/service-db.ts`
+
+## D-014: Non-blocking consent SMS on user creation
+- **Date:** 2026-03-10
+- **Decision:** Consent SMS failures don't block user creation. User is created with `pending_consent` status regardless of SMS delivery. Try/catch wraps the send.
+- **Rationale:** User record integrity matters more than SMS delivery. Manager shouldn't see an error if Sinch is temporarily down. The user can be re-sent consent later.
+- **Affected files:** `src/app/api/users/route.ts`, `src/app/api/users/import/route.ts`

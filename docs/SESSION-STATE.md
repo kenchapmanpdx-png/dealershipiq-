@@ -192,6 +192,23 @@ Date: 03/10/2026
 
 **Test status:** New objection session created (a60115dd). Awaiting Ken's reply to verify full 3-exchange flow.
 
+### Consent SMS + Knowledge Gaps Page (03/10/2026)
+
+**Consent SMS (compliance — double opt-in):**
+- `POST /api/users` and `POST /api/users/import` now send consent SMS after creating user: "[Dealership] uses DealershipIQ for sales training. Reply YES to opt in, or STOP to decline."
+- Webhook intercepts all messages from `pending_consent` users before training state machine. YES/START → activate + record consent + welcome. STOP/NO → inactive + opt-out. Other → reminder.
+- Non-blocking: SMS failure doesn't block user creation.
+- `getUserByPhone` now returns `status` field. Added `getDealershipName()` and `updateUserStatus()` to service-db.
+
+**Knowledge Gaps page:**
+- New page at `/dashboard/gaps` — table of low-confidence Ask IQ queries from past 30 days.
+- Columns: confidence badge (color-coded), question, user, topic, date. Click to expand full question + AI response.
+- Added to dashboard nav bar.
+
+**Phase 3 completion status:**
+- Built: Dashboard (overview, team, sessions, coaching, gaps), daily digest cron, red flag alerts cron, push training API, consent SMS flow, encouragement SMS, CSV import, Ask IQ gaps API + UI, dealership switcher, 60s polling
+- Phase 3 spec coverage: COMPLETE
+
 ### SMS Pipeline Debugging Session (03/10/2026 — RESOLVED)
 
 **Outcome:** SMS end-to-end working. First successful inbound webhook → AI grading → outbound SMS reply delivered.
