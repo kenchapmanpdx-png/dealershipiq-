@@ -90,3 +90,21 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Date:** 2026-03-11
 - **Decision:** Phase 4 scoped to 6 features executed exceptionally well, filtered through vertical-scalability lens (must work for service advisors and F&I, not just sales). Phase 4: Persona Moods (F) + Behavioral Scoring (G), Vehicle Data Pipeline, Schedule Awareness (D), Adaptive Weighting (A) with Rematch + Yesterday on the Floor enhancements. Phase 4.5 (NEW): Coach Mode MVP (text-only, tactical + debrief, training data integration, strict privacy) + Morning Meeting Script (SMS brief + dashboard card). All engagement ideas from three-source creative review (Phantom Up, Streak Freeze, Ghost Closer, etc.) deferred to validated ideas shelf with specific pull triggers. See `DealershipIQ-Phase4-CoachMode-Master-Consolidation-v1.md`.
 - **Rationale:** Solo founder, pre-revenue. Can't be everything to everyone. Features must scale to F&I and service verticals without code changes.
+
+## D-016: Persona mood tenure-based progression tiers
+- **Date:** 2026-03-11
+- **Decision:** Persona moods use 3-tier progression based on user tenure (weeks since `trainee_start_date` or account creation). Tier 1 (weeks 1-2): friendly + price_shopping only. Tier 2 (weeks 3-4): adds skeptical, rushed, impatient. Tier 3 (week 5+): full roster including angry_spouse, no_credit. Weighted random selection within each tier. Mood stored on `conversation_sessions.persona_mood` for analytics.
+- **Rationale:** New trainees need confidence-building scenarios. Harder moods introduced gradually. Build Master spec: "Weeks 1-2: friendly/neutral only. Weeks 3-4: skeptical, rushed. Week 5+: angry, no-credit."
+- **Affected files:** `src/lib/persona-moods.ts`, `src/app/api/cron/daily-training/route.ts`
+
+## D-017: Behavioral scoring as optional 0-2 scale, feature-flag gated
+- **Date:** 2026-03-11
+- **Decision:** `urgency_creation` and `competitive_positioning` use 0-2 integer scale (present/absent/excellent), not 1-5 nuance scale. Only included in grading JSON schema when respective feature flags are enabled per dealership. Dynamic schema construction in `callOpenAIGrading()`. Scores saved to `training_results` columns (nullable — null when flag disabled).
+- **Rationale:** Build Master: "0-2 scale, not 1-5 nuance scale." Per-dealership gating lets us enable gradually. Null columns don't break existing queries.
+- **Affected files:** `src/lib/openai.ts`, `src/app/api/webhooks/sms/sinch/route.ts`, `src/lib/service-db.ts`
+
+## D-018: Engagement micro-details as prompt-level changes
+- **Date:** 2026-03-11
+- **Decision:** First name greeting, streak milestones, and score trend injection are all prompt-level changes in the daily training cron. No new API routes. Streak calculation walks backward through completed sessions skipping weekends. Milestones at 3/7/14/30/60/90 days with short motivational prefix prepended to training SMS.
+- **Rationale:** Build Master: "implement during 4A — prompt-level changes, near-zero cost." SMS character budget is tight — milestone messages kept under 40 chars.
+- **Affected files:** `src/app/api/cron/daily-training/route.ts`, `src/lib/persona-moods.ts`, `src/lib/service-db.ts`

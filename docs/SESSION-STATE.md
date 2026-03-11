@@ -240,14 +240,42 @@ Date: 03/10/2026
 **PR #6 — fix(lint): resolve all 85 ESLint errors, re-enable build checks** — MERGED
 **PR #7 — feat(seo): add metadata, Open Graph, JSON-LD, sitemap, robots.txt** — MERGED
 
+### Phase 4A — Persona Moods + Behavioral Scoring (03/11/2026)
+
+**Database changes (migration run via Supabase SQL Editor):**
+- `conversation_sessions`: Added `persona_mood TEXT`, `difficulty_coefficient FLOAT DEFAULT 1.0`
+- `training_results`: Added `urgency_creation INTEGER`, `competitive_positioning INTEGER`
+- `users`: Added `trainee_start_date DATE`
+- Feature flags inserted: `persona_moods_enabled`, `behavioral_scoring_urgency`, `behavioral_scoring_competitive` (all enabled for test dealership)
+
+**Persona Moods:**
+- 7 moods: friendly, skeptical, rushed, price_shopping, angry_spouse, no_credit, impatient
+- Tenure-based progression: Tier 1 (weeks 1-2: friendly/price_shopping), Tier 2 (weeks 3-4: +skeptical/rushed/impatient), Tier 3 (week 5+: +angry_spouse/no_credit)
+- Mood injected into scenario generation prompts and AI follow-up generation
+- `persona_mood` stored on conversation_sessions for analytics
+
+**Behavioral Scoring:**
+- `urgency_creation` (0-2): 0=none, 1=generic, 2=specific/natural
+- `competitive_positioning` (0-2): 0=none, 1=generic, 2=specific/factual
+- Dynamic JSON schema — behavioral fields only appear in grading schema when feature flags enabled
+- Behavioral scoring addendum appended to grading system prompt when active
+
+**Engagement Micro-Details:**
+- First name greeting: "Hey {first_name}, [scenario]"
+- Streak milestones at 3/7/14/30/60/90 days with motivational prefixes
+- `getUserTenureWeeks()`, `getUserStreak()`, `getRecentScoreTrend()` helpers added to service-db
+
+**Files modified (7):** openai.ts, service-db.ts, persona-moods.ts (rewritten), daily-training/route.ts, sinch/route.ts, training-content.ts, SQL migration
+
+**tsc --noEmit:** PASSING
+
 ## What's Next
-1. **Phase 1A — Tenant Core Tables** (per Build Master)
-   - dealerships table (core fields: name, location_count, created_at)
-   - dealership_memberships table (user → dealership mapping, role field)
-   - RLS policies for data isolation
-2. Create webhook infrastructure migration (processed_webhooks, sms_inbound_jobs, sms_webhook_quarantine) — for SMS durability
-3. Load test SMS pipeline with multiple concurrent users
-4. Manager dashboard full test suite (team, sessions, coaching-queue, gaps, etc.)
+1. **Phase 4B — Vehicle Data Pipeline** — makes/models/trims tables, data import, competitive_sets
+2. **Phase 4C — Schedule Awareness** — honor OFF/VACATION keywords, adjust training timing
+3. **Phase 4D — Adaptive Weighting** — priority vectors, domain rotation based on weak areas
+4. **Phase 4.5 — Coach Mode MVP** — coaching PWA, morning meeting script
+5. Sentry/Axiom observability (NR-002)
+6. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
 
 ## Blocked Items
-None critical. SMS pipeline is fully operational.
+- **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.
