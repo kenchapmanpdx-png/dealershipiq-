@@ -6,6 +6,7 @@ import { selectTrainingDomain, TrainingDomain } from '@/lib/adaptive-weighting';
 import { getScheduleStatus } from '@/lib/schedule-awareness';
 import { selectPersonaMood, getMoodPromptModifier } from '@/lib/persona-moods';
 import type { PersonaMood } from '@/lib/persona-moods';
+import { getVehicleContextForScenario, formatVehiclePrompt } from '@/lib/vehicle-data';
 
 // Compatibility shim for old Mood interface
 interface Mood {
@@ -222,8 +223,13 @@ function buildSystemPrompt(
   domain: TrainingDomain,
   mode: SessionMode,
   mood: Mood,
-  _featureFlags: Record<string, unknown>
+  _featureFlags: Record<string, unknown>,
+  vehiclePrompt?: string
 ): string {
+  const vehicleSection = vehiclePrompt
+    ? `\n\n# Vehicle Data for This Scenario\n${vehiclePrompt}`
+    : '';
+
   const systemPrompt = `You are an AI customer in a car dealership training scenario.
 
 # Your Role
@@ -231,7 +237,7 @@ ${DOMAIN_PROMPTS[domain][mode]}
 
 # Your Mood/Personality
 ${mood.description}
-${mood.promptModifier}
+${mood.promptModifier}${vehicleSection}
 
 # Grading Context
 The salesperson will be evaluated on:
@@ -277,13 +283,26 @@ export async function selectTrainingContent(
   // Get random mood
   const mood = getRandomMood();
 
+  // Fetch vehicle context (feature-flag gated inside)
+  let vehiclePrompt: string | undefined;
+  try {
+    const vehicleCtx = await getVehicleContextForScenario(dealershipId, domain);
+    if (vehicleCtx) {
+      vehiclePrompt = formatVehiclePrompt(vehicleCtx);
+    }
+  } catch (err) {
+    console.error('Vehicle context fetch failed (non-blocking):', err);
+    // Graceful degradation — proceed without vehicle data
+  }
+
   // Build prompts
   const basePrompt = DOMAIN_PROMPTS[domain][mode];
   const systemPrompt = buildSystemPrompt(
     domain,
     mode,
     mood,
-    dealershipFeatureFlags
+    dealershipFeatureFlags,
+    vehiclePrompt
   );
 
   return {
