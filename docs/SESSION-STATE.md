@@ -271,19 +271,25 @@ Date: 03/10/2026
 
 ### Phase 4B/4C/4D — Vehicle Data, Schedule Awareness, Adaptive Weighting (03/11/2026)
 
-**Phase 4B — Vehicle Data Pipeline:**
-- Vehicle tables (makes, models, trims, trim_features, selling_points, competitive_sets) confirmed applied
-- Added 3 vehicle query functions to service-db: `getVehicleModelsForDealership()`, `getCompetitiveSet()`, `getSellingPoints()`
-- Types in `src/types/vehicle.ts` (VehicleProfile, Make, Model, Trim, etc.)
-- Ready for seed data import and prompt injection integration
+**Phase 4B — Vehicle Data Pipeline (COMPLETE):**
+- NEW vehicle tables: makes → models → model_years → trims (trim-level FKs). Dropped old model-level schema.
+- Migration: `supabase/migrations/20260311_phase4b_vehicle_tables_v2.sql` — 8 tables, RLS on dealership_brands only
+- fueleconomy.gov seed: `scripts/seed-vehicle-data.py` — 4 makes, 60 models, 103 model_years, 337 trims (Honda/Toyota/Hyundai/Kia, 2025-2026)
+- LLM competitive intel: `scripts/generate-competitive-intel.py` — 306+ competitive_sets, 1100+ selling_points via GPT-4o-mini
+- Export/import review workflow: `scripts/export-vehicle-intel.py`, `scripts/import-vehicle-intel.py`
+- Prompt integration: `src/lib/vehicle-data.ts` — `getVehicleContextForScenario()` + `formatVehiclePrompt()`, feature-flag gated (`vehicle_data_enabled`)
+- Training content wired: `src/lib/training-content.ts` — vehicle context injected into system prompts when flag enabled
+- Types rewritten: `src/types/vehicle.ts` — TrimWithContext, VehicleContext, CompetitiveSet, SellingPoint
+- Old model-level vehicle functions removed from service-db.ts
+- Feature flag: `vehicle_data_enabled` (default false, enabled for test dealership)
 
-**Phase 4C — Schedule Awareness:**
+**Phase 4C — Schedule Awareness (COMPLETE):**
 - Fixed service-db schedule functions to match actual DB schema (`recurring_days_off INTEGER[]`, `one_off_absences DATE[]`)
 - Schedule-awareness.ts: `dayNameToNumber()` conversion, updated `isScheduledOff()` to check both recurring days and one-off absences
 - SMS webhook: OFF/VACATION keywords detected before state machine routing, parsed → schedule updated → confirmation SMS
 - Daily cron: checks `isScheduledOff()` per user before sending, skips if off
 
-**Phase 4D — Adaptive Weighting:**
+**Phase 4D — Adaptive Weighting (COMPLETE):**
 - `selectTrainingDomain()` wired into daily cron for per-user domain selection
 - `updatePriorityVectorAfterGrading()` wired into webhook after final exchange grading
 - `training_domain TEXT` column added to `conversation_sessions` and `training_results`
@@ -291,19 +297,16 @@ Date: 03/10/2026
 - `getActiveSession()` returns `training_domain` field
 - Average score (accuracy + rapport + concern + close / 4) feeds back into priority vector
 
-**Database (1 migration):**
+**Database (2 migrations):**
 - `supabase/migrations/20260311_phase4bcd_columns.sql` — training_domain on conversation_sessions + training_results
-
-**Files modified (4):** service-db.ts, schedule-awareness.ts, daily-training/route.ts, sinch/route.ts
+- `supabase/migrations/20260311_phase4b_vehicle_tables_v2.sql` — Build Master vehicle schema (8 tables)
 
 **tsc --noEmit:** PASSING
 
 ## What's Next
-1. **Vehicle data seeding** — Seed Honda/Toyota/Hyundai/Kia makes/models/trims into vehicle tables
-2. **Prompt injection** — Wire vehicle specs into training scenario generation
-3. **Phase 4.5 — Coach Mode MVP** — coaching PWA, morning meeting script
-4. Sentry/Axiom observability (NR-002)
-5. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+1. **Phase 4.5 — Coach Mode MVP** — coaching PWA, morning meeting script
+2. Sentry/Axiom observability (NR-002)
+3. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.

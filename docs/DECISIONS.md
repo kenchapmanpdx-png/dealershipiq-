@@ -120,3 +120,21 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** `selectTrainingDomain()` called per-user in daily cron (domain selection at send time). `updatePriorityVectorAfterGrading()` called in webhook after final exchange grading (weight update at grade time). Average of 4 core scores feeds priority vector. `training_domain` stored on both `conversation_sessions` and `training_results` for traceability. Graceful degradation: domain selection failure falls back to random mode selection.
 - **Rationale:** Build Master: "Daily training cron queries employee_priority_vectors and calls weighted selection." Weight updates happen naturally after grading in webhook flow. Two-column tracking enables dashboard analytics on domain distribution.
 - **Affected files:** `src/app/api/cron/daily-training/route.ts`, `src/app/api/webhooks/sms/sinch/route.ts`
+
+## D-021: Vehicle tables — trim-level FKs, drop old model-level schema
+- **Date:** 2026-03-11
+- **Decision:** New schema: makes → models → model_years → trims. competitive_sets uses vehicle_a_trim_id / vehicle_b_trim_id. selling_points uses trim_id. Old model-level vehicle functions removed from service-db. Global reference tables (no RLS) except dealership_brands (tenant-scoped).
+- **Rationale:** Build Master spec requires trim-level granularity for accurate competitive comparisons. Model-level FKs couldn't differentiate between trim variants (e.g., CR-V LX vs CR-V EX-L).
+- **Affected files:** `supabase/migrations/20260311_phase4b_vehicle_tables_v2.sql`, `src/lib/service-db.ts`, `src/types/vehicle.ts`
+
+## D-022: Vehicle context injection — feature-flag gated, graceful degradation
+- **Date:** 2026-03-11
+- **Decision:** `getVehicleContextForScenario()` checks `vehicle_data_enabled` flag per dealership. Returns null when disabled. `training-content.ts` catches errors and proceeds without vehicle data. Vehicle specs injected into system prompt (not user prompt) with explicit instruction to only use provided data.
+- **Rationale:** Vehicle data pipeline is new and may have gaps. Feature flag allows per-dealership rollout. Graceful degradation ensures training never breaks due to vehicle data issues.
+- **Affected files:** `src/lib/vehicle-data.ts`, `src/lib/training-content.ts`
+
+## D-023: Scripts use environment variables only — no hardcoded secrets
+- **Date:** 2026-03-11
+- **Decision:** All Python scripts (seed, generate, export, import) read credentials from env vars only. Empty defaults with early exit if missing. GitHub push protection caught hardcoded keys — removed from history.
+- **Rationale:** Security best practice. GitHub push protection blocks commits with secrets.
+- **Affected files:** `scripts/*.py`
