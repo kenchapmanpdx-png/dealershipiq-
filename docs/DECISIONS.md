@@ -85,3 +85,8 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** Consent SMS failures don't block user creation. User is created with `pending_consent` status regardless of SMS delivery. Try/catch wraps the send.
 - **Rationale:** User record integrity matters more than SMS delivery. Manager shouldn't see an error if Sinch is temporarily down. The user can be re-sent consent later.
 - **Affected files:** `src/app/api/users/route.ts`, `src/app/api/users/import/route.ts`
+
+## D-015: Phase 4 Scope Finalized
+- **Date:** 2026-03-11
+- **Decision:** Phase 4 scoped to 6 features executed exceptionally well, filtered through vertical-scalability lens (must work for service advisors and F&I, not just sales). Phase 4: Persona Moods (F) + Behavioral Scoring (G), Vehicle Data Pipeline, Schedule Awareness (D), Adaptive Weighting (A) with Rematch + Yesterday on the Floor enhancements. Phase 4.5 (NEW): Coach Mode MVP (text-only, tactical + debrief, training data integration, strict privacy) + Morning Meeting Script (SMS brief + dashboard card). All engagement ideas from three-source creative review (Phantom Up, Streak Freeze, Ghost Closer, etc.) deferred to validated ideas shelf with specific pull triggers. See `DealershipIQ-Phase4-CoachMode-Master-Consolidation-v1.md`.
+- **Rationale:** Solo founder, pre-revenue. Can't be everything to everyone. Features must scale to F&I and service verticals without code changes.
