@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { serviceClient } from '@/lib/supabase/service';
+import { sendSms } from '@/lib/sms';
+import { getDealershipName, insertTranscriptLog } from '@/lib/service-db';
 
 interface CreateUserRequest {
   full_name: string;
@@ -149,6 +151,24 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to add user to dealership' },
         { status: 500 }
       );
+    }
+
+    // Send consent SMS (non-blocking — don't fail the add if SMS fails)
+    try {
+      const dealershipName = await getDealershipName(dealershipId);
+      const consentMsg = `${dealershipName} uses DealershipIQ for sales training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
+      const smsResponse = await sendSms(normalizedPhone, consentMsg);
+      await insertTranscriptLog({
+        userId: newUser.id,
+        dealershipId,
+        phone: normalizedPhone,
+        direction: 'outbound',
+        messageBody: consentMsg,
+        sinchMessageId: smsResponse.message_id,
+        metadata: { type: 'consent_request' },
+      });
+    } catch (smsErr) {
+      console.error('Consent SMS failed (user still created):', smsErr);
     }
 
     const response: CreateUserResponse = {

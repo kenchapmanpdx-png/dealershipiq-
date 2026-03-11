@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { serviceClient } from '@/lib/supabase/service';
+import { sendSms } from '@/lib/sms';
+import { getDealershipName, insertTranscriptLog } from '@/lib/service-db';
 
 interface ImportRow {
   full_name: string;
@@ -125,6 +127,14 @@ export async function POST(request: NextRequest) {
       (optOuts ?? []).map((o: Record<string, unknown>) => o.phone)
     );
 
+    // Fetch dealership name for consent SMS
+    let dealershipName = '';
+    try {
+      dealershipName = await getDealershipName(dealershipId);
+    } catch {
+      console.error('Failed to fetch dealership name for consent SMS');
+    }
+
     // Process rows
     const result: ImportResult = {
       imported: 0,
@@ -232,6 +242,27 @@ export async function POST(request: NextRequest) {
           });
 
         if (memberError) throw memberError;
+
+        // Send consent SMS (non-blocking — don't fail the import row if SMS fails)
+        if (dealershipName) {
+          try {
+            const consentMsg = `${dealershipName} uses DealershipIQ for sales training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
+            const smsResponse = await sendSms(normalizedPhone, consentMsg);
+            await insertTranscriptLog({
+              userId: newUser.id,
+              dealershipId,
+              phone: normalizedPhone,
+              direction: 'outbound',
+              messageBody: consentMsg,
+              sinchMessageId: smsResponse.message_id,
+              metadata: { type: 'consent_request' },
+            });
+            // Stagger sends (100ms between) to avoid rate limits
+            await new Promise((r) => setTimeout(r, 100));
+          } catch (smsErr) {
+            console.error(`Consent SMS failed for ${normalizedPhone.slice(0, 6)}****:`, smsErr);
+          }
+        }
 
         seenPhones.add(normalizedPhone);
         result.imported++;

@@ -23,6 +23,8 @@ import {
   checkOptOut,
   insertTrainingResult,
   getSessionTranscript,
+  insertConsentRecord,
+  updateUserStatus,
 } from '@/lib/service-db';
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
 
@@ -114,6 +116,12 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     messageBody: text,
     sinchMessageId: messageId,
   });
+
+  // --- Pending consent flow (double opt-in before any training) ---
+  if (user.status === 'pending_consent') {
+    await handlePendingConsent(user, phone, text);
+    return;
+  }
 
   // Check opt-out status
   const isOptedOut = await checkOptOut(phone, user.dealershipId);
@@ -323,6 +331,67 @@ async function handleMidExchange(
       sessionId: session.id,
     });
   }
+}
+
+// --- Pending consent handler (double opt-in) ---
+async function handlePendingConsent(
+  user: { id: string; dealershipId: string; dealershipName: string },
+  phone: string,
+  text: string
+) {
+  const trimmed = text.trim().toLowerCase();
+
+  if (['yes', 'start', 'y', 'unstop'].includes(trimmed)) {
+    // User consented — activate them
+    await updateUserStatus(user.id, 'active');
+    await insertConsentRecord({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      consentType: 'opt_in',
+      channel: 'sms',
+      consentSource: 'keyword_consent',
+    });
+
+    const welcomeMsg = `Welcome to DealershipIQ training at ${user.dealershipName}! You'll receive daily practice questions. Reply STOP anytime to opt out. Msg&data rates apply.`;
+    await sendSms(phone, welcomeMsg);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: welcomeMsg,
+    });
+    return;
+  }
+
+  if (['stop', 'no', 'cancel', 'n'].includes(trimmed)) {
+    // User declined — mark inactive, register opt-out
+    await updateUserStatus(user.id, 'inactive');
+    const { registerOptOut } = await import('@/lib/service-db');
+    await registerOptOut(phone, user.dealershipId);
+
+    const declineMsg = 'You have opted out of DealershipIQ training. No messages will be sent. Reply START if you change your mind.';
+    await sendSms(phone, declineMsg);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: declineMsg,
+    });
+    return;
+  }
+
+  // Unrecognized reply — remind them
+  const reminderMsg = 'Please reply YES to start receiving DealershipIQ training, or STOP to decline.';
+  await sendSms(phone, reminderMsg);
+  await insertTranscriptLog({
+    userId: user.id,
+    dealershipId: user.dealershipId,
+    phone,
+    direction: 'outbound',
+    messageBody: reminderMsg,
+  });
 }
 
 // --- Natural language opt-out handler ---

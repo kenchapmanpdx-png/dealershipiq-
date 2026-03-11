@@ -105,6 +105,7 @@ export async function getUserByPhone(phone: string) {
     phone: data.phone as string,
     fullName: data.full_name as string,
     language: (data.language as string) ?? 'en',
+    status: (data.status as string) ?? 'active',
     dealershipId: activeMembership.dealership_id,
     dealershipName: activeMembership.dealerships.name,
     dealershipTimezone: activeMembership.dealerships.timezone,
@@ -1400,4 +1401,26 @@ export async function getEligibleUsersForChallenge(dealershipId: string): Promis
     fullName: (m.users as Record<string, unknown>).full_name as string,
     phone: (m.users as Record<string, unknown>).phone as string,
   }));
+}
+
+// ─── Consent SMS ─────────────────────────────────────────────────────
+
+export async function getDealershipName(dealershipId: string): Promise<string> {
+  const { data, error } = await serviceClient
+    .from('dealerships')
+    .select('name')
+    .eq('id', dealershipId)
+    .single();
+
+  if (error) throw error;
+  return data.name as string;
+}
+
+export async function updateUserStatus(userId: string, status: string) {
+  const { error } = await serviceClient
+    .from('users')
+    .update({ status })
+    .eq('id', userId);
+
+  if (error) throw error;
 }
