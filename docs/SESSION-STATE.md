@@ -51,37 +51,51 @@ Branch: `feat/phase4-training-intelligence`
 
 **tsc --noEmit:** PASSING
 
-### Phase 5 — Billing + Self-Service (COMPLETE)
-Branch: `feat/phase5-billing-self-service`
+### Phase 5 — Billing + Self-Service (COMPLETE — REBUILT 03/11/2026)
+Branch: main (direct commit)
 
-**Libraries (2):**
-1. `src/lib/stripe.ts` — Stripe API wrapper (checkout, billing portal, subscription status, webhook signature verification)
-2. `src/lib/dunning.ts` — Dunning stage calculations (6 stages: past_due → 30-day cancellation)
+**Types (1 new):**
+- `src/types/billing.ts` — SubscriptionStatus, DunningStage, BillingState, BillingEvent, CheckoutRequest, DunningTemplate, CostEntry
 
-**API Routes (6):**
-- `POST /api/billing/checkout` — Create Stripe Checkout session (no auth, new signups)
-- `POST /api/billing/portal` — Create Stripe Customer Portal session (auth-protected, manager+)
-- `GET /api/billing/status` — Get subscription status (auth-protected)
-- `POST /api/webhooks/stripe` — Webhook handler (checkout.session.completed, subscription.*, invoice.*)
-- `GET /api/cron/dunning-check` — Daily dunning check (10 AM UTC)
+**Libraries (4 new/rewritten):**
+1. `src/lib/stripe.ts` — REWRITTEN: STRIPE_PRICE_ID env var (not hardcoded), 30-day trial, client_reference_id, automatic_tax, lazy Proxy pattern
+2. `src/lib/billing/subscription.ts` — `checkSubscriptionAccess()` (pilot/trialing/active/past_due+14d grace), `computeDunningStage()`, `daysSinceUTC()`
+3. `src/lib/billing/lookup.ts` — `findDealershipByStripeCustomer()`, `findDealershipBySubscription()`
+4. `src/lib/billing/dunning.ts` — 5 dunning templates (day1/3/14/21/30), `sendDunningEmail()` via Resend, `processDunning()` cron handler, auto-cancel at day 30
 
-**Marketing Pages (3):**
-- `src/app/(marketing)/layout.tsx` — Marketing layout (no sidebar, minimal nav)
-- `src/app/(marketing)/page.tsx` — Landing page (hero, features, pricing)
-- `src/app/(marketing)/signup/page.tsx` — Self-service signup (dealership name, email, locations → Stripe Checkout)
+**API Routes (4 new, 2 rewritten):**
+- `POST /api/billing/checkout` — REWRITTEN: Creates Supabase Auth user → dealership → membership → app_metadata → Stripe Checkout
+- `GET /api/billing/status` — REWRITTEN: Returns full BillingState with dunning_stage, days_remaining_in_trial, is_active
+- `POST /api/webhooks/stripe` — REWRITTEN: 6 event handlers, idempotent via billing_events, Day 1 dunning from webhook
+- `GET /api/admin/costs` — NEW: Ken-only per-dealership cost tracking (SMS + AI, 24h/7d/30d)
+- `POST /api/onboarding/brands` — NEW: Save dealership brands post-checkout
+- `POST /api/onboarding/employees` — NEW: Import employees with phone normalization
 
-**Database (1 migration):**
-- `supabase/migrations/20260310000002_phase5_billing_columns.sql` — Add stripe_customer_id, subscription_status, subscription_id, max_locations, current_period_end, past_due_since to dealerships table
+**Dashboard Pages (2 new):**
+- `src/app/(dashboard)/dashboard/billing/page.tsx` — Subscription status, Customer Portal, trial countdown, pilot badge
+- `src/app/(dashboard)/dashboard/onboarding/page.tsx` — 3-step wizard: brands → employees → done
 
-**Service-db additions (4 functions):**
-- updateDealershipBilling() — Update billing columns
-- getDealershipByStripeCustomer() — Lookup dealership by Stripe customer ID
-- getPastDueDealerships() — Get all dealerships with past_due subscriptions
-- createDealershipWithManager() — Create dealership + manager account from signup
+**Components (1 new):**
+- `src/components/dashboard/BillingBanner.tsx` — Trial countdown (last 7 days), dunning stage banners, canceled state
 
-**npm package:** stripe (20.4.1)
+**Modified files (7):**
+1. `src/app/(dashboard)/layout.tsx` — BillingBanner + Billing nav link (owner-only)
+2. `src/app/(marketing)/signup/page.tsx` — Added password, timezone, 30-day trial messaging
+3. `src/app/api/cron/daily-training/route.ts` — Subscription gating
+4. `src/app/api/cron/daily-digest/route.ts` — Subscription gating
+5. `src/app/api/cron/red-flag-check/route.ts` — Dunning processing piggybacked
+6. `src/app/api/push/training/route.ts` — Subscription gating
+7. `src/app/api/coach/session/route.ts` — Subscription gating
 
-**vercel.json:** Added dunning-check cron (0 10 * * *)
+**Database (1 migration applied to production):**
+- `supabase/migrations/20260311160000_billing_events.sql` — billing_events table (stripe_event_id UNIQUE), is_pilot + trial_ends_at columns, `has_active_subscription()` RLS function, RLS on billing_events, billing_enabled feature flag
+
+**Subscription gating (two layers):**
+- Application: `checkSubscriptionAccess()` on all 5 entry points (2 crons, push training, coach session, RLS function)
+- RLS: `has_active_subscription(d_id)` — pilots, active, trialing, past_due all pass through
+
+**Docs:**
+- `docs/ENVIRONMENTS.md` — Production env var inventory + Phase 5 env vars Ken must set
 
 **tsc --noEmit:** PASSING
 
@@ -375,9 +389,10 @@ Date: 03/10/2026
 **tsc --noEmit:** PASSING
 
 ## What's Next
-1. Sentry/Axiom observability (NR-002)
-2. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
-3. Phase 5+ features as prioritized
+1. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint, flag pilot dealerships (see NR-010, NR-011, NR-012)
+2. Sentry/Axiom observability (NR-002)
+3. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+4. Verify 3-exchange objection flow
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.

@@ -186,3 +186,45 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** Benchmark only runs when `cross_dealership_benchmark` flag enabled AND 3+ active dealerships. Returns only rank + total + brand label. Same-brand ranking used when 5+ same-brand dealerships. Never exposes other dealerships' names, scores, or rep data.
 - **Rationale:** Privacy is paramount. Relative ranking provides competitive motivation without revealing competitors' data.
 - **Affected files:** `src/lib/meeting-script/benchmark.ts`
+
+## D-032: Idempotent webhook processing via billing_events table
+- **Date:** 2026-03-11
+- **Decision:** Every Stripe webhook event checked against `billing_events.stripe_event_id` (UNIQUE constraint) before processing. Skip if exists. Record after processing (success or failure). Error payload stored in billing_events for debugging.
+- **Rationale:** Build Master: "highest-risk code in the system." Stripe may retry webhooks. Duplicate processing would corrupt subscription state.
+- **Affected files:** `src/app/api/webhooks/stripe/route.ts`
+
+## D-033: Two-layer subscription gating (application + RLS)
+- **Date:** 2026-03-11
+- **Decision:** Application layer: `checkSubscriptionAccess()` returns boolean, called on 5 entry points. Pilots always pass. Trialing checks expiry. Active passes. Past_due gets 14-day grace. RLS layer: `has_active_subscription(d_id)` SQL function — lighter check (pilots, active, trialing, past_due all pass; no grace period logic). Application code handles nuance; RLS is the safety net.
+- **Rationale:** Defense in depth. Application code handles business logic (grace periods, dunning). RLS prevents data leaks even if application check is bypassed.
+- **Affected files:** `src/lib/billing/subscription.ts`, `supabase/migrations/20260311160000_billing_events.sql`
+
+## D-034: Dunning piggybacked on red-flag-check cron (no new cron slot)
+- **Date:** 2026-03-11
+- **Decision:** `processDunning()` called at the end of the red-flag-check cron (runs every 6h). No dedicated dunning cron. Day 1 email sent immediately from webhook; Days 3/14/21/30 from cron. Deduplication via billing_events table (dunning_email_{stage}_{dealershipId}).
+- **Rationale:** Cron budget (6/40 on Vercel Hobby). Red-flag-check already runs frequently. Dunning doesn't need its own slot.
+- **Affected files:** `src/app/api/cron/red-flag-check/route.ts`, `src/lib/billing/dunning.ts`
+
+## D-035: STRIPE_PRICE_ID env var, not hardcoded price
+- **Date:** 2026-03-11
+- **Decision:** `createCheckoutSession()` reads `STRIPE_PRICE_ID` from env. No hardcoded $449/mo. Allows price changes without code deploy.
+- **Rationale:** Pricing will change. Env var is a deploy-time config, not a code change.
+- **Affected files:** `src/lib/stripe.ts`
+
+## D-036: Self-service signup creates full account before Stripe Checkout
+- **Date:** 2026-03-11
+- **Decision:** Signup flow: create Supabase Auth user → dealership row (with slug) → user row → membership → set app_metadata → then redirect to Stripe Checkout. `client_reference_id` = dealershipId for webhook correlation. If dealership creation fails, auth user is cleaned up.
+- **Rationale:** Webhook needs a dealership to update. Creating the account first means checkout.session.completed can immediately link Stripe customer to existing dealership. Alternative (create on webhook) risks orphaned Stripe subscriptions.
+- **Affected files:** `src/app/api/billing/checkout/route.ts`
+
+## D-037: Computed dunning stage, not stored in DB
+- **Date:** 2026-03-11
+- **Decision:** `computeDunningStage()` calculates dunning stage at read time from `subscription_status` + `past_due_since` + `daysSinceUTC()`. No dunning_stage column in dealerships table.
+- **Rationale:** Storing stage creates staleness risk. Computing from past_due_since is always correct. Avoids cron job to update stage column.
+- **Affected files:** `src/lib/billing/subscription.ts`
+
+## D-038: is_pilot flag for permanent free access
+- **Date:** 2026-03-11
+- **Decision:** `dealerships.is_pilot` BOOLEAN DEFAULT false. Pilots bypass all subscription checks (application + RLS). Must be set manually in DB by Ken.
+- **Rationale:** Test dealerships and early partners need permanent free access. Flag is simpler than creating fake subscriptions.
+- **Affected files:** `src/lib/billing/subscription.ts`, `supabase/migrations/20260311160000_billing_events.sql`
