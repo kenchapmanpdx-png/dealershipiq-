@@ -137,7 +137,7 @@ Complete rebuild per DealershipIQ-Strategic-Build-Order-v5 spec. Old monolithic 
 3. `src/app/api/cron/orphaned-sessions/route.ts` — Peer challenge expiry piggybacked
 4. `src/lib/service-db.ts` — createConversationSession (+challengeId, scenarioChainId, chainStep), getActiveSession returns challenge/chain fields
 
-**vercel.json:** 7 cron routes (removed daily-challenge + expire-challenges, added challenge-results at 10pm UTC)
+**vercel.json:** 7 cron routes. Vercel Pro upgrade (03/12/2026): daily-training + daily-digest now hourly (`0 * * * *`), red-flag-check every 6h (`0 */6 * * *`), orphaned-sessions every 2h (`0 */2 * * *`). Resolves C-008 timezone limitation.
 
 **tsc --noEmit:** PASSING
 
@@ -452,6 +452,25 @@ Each template: 3 steps, deterministic branching on empathy/close_attempt/product
 
 **Re-audit report:** `docs/AUDIT-RECHECK.md`
 **tsc --noEmit:** PASSING
+
+### Vercel Pro Upgrade (03/12/2026)
+
+**Cron schedule changes:**
+| Cron | Old (Hobby) | New (Pro) | Rationale |
+|------|-------------|-----------|-----------|
+| daily-training | `0 13 * * *` | `0 * * * *` | Hourly — covers all dealership timezones |
+| daily-digest | `0 14 * * *` | `0 * * * *` | Hourly — morning brief at local hour 7 |
+| red-flag-check | `0 15 * * *` | `0 */6 * * *` | Every 6h as originally designed |
+| orphaned-sessions | `0 4 * * *` | `0 */2 * * *` | Every 2h — faster cleanup + peer/chain expiry |
+| sync-optouts | `0 5 * * *` | `0 5 * * *` | No change (daily sufficient) |
+| dunning-check | `0 16 * * *` | `0 16 * * *` | No change (daily sufficient) |
+| challenge-results | `0 22 * * *` | `0 22 * * *` | No change (EOD results) |
+
+**maxDuration changes:**
+- Webhook route: 60s → 300s (Pro max for serverless; GPT-5.4 multi-exchange can stack)
+- All cron routes: 60s (unchanged — sufficient)
+
+**Resolved:** C-008 timezone limitation. H-007 comments removed from daily-training and daily-digest.
 
 ## What's Next
 1. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)

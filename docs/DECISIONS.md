@@ -284,3 +284,9 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** Re-ran full audit after initial 44-issue fix. Found and fixed 5 additional issues.
 - **Fixes:** webhook maxDuration, coach session HMAC verification, hardcoded fallback secret removal, past vacation date validation, RFC 4180 CSV parsing.
 - **Commit:** da036a9
+
+## D-047: Vercel Pro cron schedule upgrade
+- **Date:** 2026-03-12
+- **Decision:** Upgraded Vercel to Pro plan. Changed cron schedules: daily-training + daily-digest to hourly (all timezone coverage), red-flag-check to every 6h, orphaned-sessions to every 2h. Webhook maxDuration bumped to 300s.
+- **Rationale:** Hobby plan limited all crons to once-daily, meaning only one timezone received training at the correct hour. Pro plan ($20/mo) removes this constraint. Code already had timezone filtering logic — just needed the cron to fire hourly.
+- **Resolves:** C-008 (timezone limitation)

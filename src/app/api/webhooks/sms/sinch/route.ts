@@ -2,8 +2,7 @@
 // Build Master: Phase 2A-2E + Phase 6 (Manager Quick-Create, Peer Challenge, Chain hooks)
 // CRITICAL: Always return 200 OK. Never return 4xx — Sinch permanently
 // kills callbacks on non-429 4xx responses.
-// Processing runs synchronously before returning 200 (Vercel Hobby plan
-// does not support @vercel/functions waitUntil).
+// Processing runs synchronously before returning 200.
 //
 // Multi-exchange flow (3 exchanges per session):
 //   step 0,1: Generate AI follow-up, keep session active
@@ -16,7 +15,7 @@
 //   ACCEPT / PASS   — Accept or decline pending peer challenge
 //   1/2/3           — Disambiguation number reply for peer challenge
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySinchWebhookSignature } from '@/lib/sinch-auth';

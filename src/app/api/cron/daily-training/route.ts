@@ -1,14 +1,7 @@
-// Daily training cron — hourly Vercel cron (0 * * * *)
-// Build Master: Phase 2A.2 + Phase 4A (Persona Moods + Engagement) + Phase 5 (subscription gating) + Phase 6 (content priority)
+// Daily training cron — runs every hour (0 * * * *), Vercel Pro
 // Each invocation: find dealerships where current local hour = configured training hour
 // Training runs Monday-Friday ONLY. No weekends.
 // Phase 6 content priority: Manager Quick-Create > Peer Challenge > Chain Step > Daily Challenge > Adaptive
-//
-// H-007 TIMEZONE LIMITATION: Vercel Hobby plan (free) only allows one cron job per interval.
-// This cron fires at 0 13 UTC (1pm UTC = 6am Pacific).
-// getDealershipsReadyForTraining() filters by local_hour to cover all timezones, but misses dealerships
-// that should train at hours other than when this cron fires.
-// SOLUTION: Upgrade to Vercel Pro ($20/mo) for hourly cron flexibility (allows multiple cron rules).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
