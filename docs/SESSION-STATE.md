@@ -344,10 +344,40 @@ Date: 03/10/2026
 
 **tsc --noEmit:** PASSING
 
+### Phase 4.5B — Morning Meeting Script (03/11/2026)
+
+**Database (1 migration applied to production):**
+- `meeting_scripts` table: dealership_id, script_date (unique pair), sms_text, full_script JSONB. RLS enabled (managers see own dealership).
+- `red_flag_events` table: persists red-flag-check cron findings for morning script consumption. RLS enabled.
+- Feature flags: `morning_script_enabled` (true default — replaces digest), `cross_dealership_benchmark` (false default)
+
+**Types (1 new):**
+- `src/types/meeting-script.ts` — MeetingScriptFullScript, MeetingScriptData, MeetingScriptResponse
+
+**Libraries (4 new):**
+1. `src/lib/meeting-script/queries.ts` — 6 data queries: getShoutout (top scorer yesterday), getTeamGap (knowledge gaps + vehicle answer lookup), getCoachingFocus (weakest domain + curated prompt), getAtRiskReps (from red_flag_events, excludes scheduled off), getTeamNumbers (completion rate + delta)
+2. `src/lib/meeting-script/assemble.ts` — buildMeetingSMS (320 char limit, GSM-7), buildFullScript (JSONB), formatDetailsResponse (4-segment expanded)
+3. `src/lib/meeting-script/benchmark.ts` — Cross-dealership ranking, privacy-safe (rank + total only), brand-specific when 5+ same-brand peers
+4. `src/lib/meeting-script/coaching-prompts.ts` — 3 curated prompts per domain (5 domains), {top_model}/{competitor_model} variable substitution from vehicle data
+
+**API Routes (1 new):**
+1. `GET /api/dashboard/meeting-script` — Manager JWT auth, returns today's script or yesterday's fallback
+
+**Components (1 new):**
+1. `src/components/dashboard/MeetingScript.tsx` — 5 sections (shoutout, gap, coaching focus, private at-risk, numbers), time estimate badges, private section visually distinct
+
+**Modified files (4):**
+1. `src/app/api/cron/daily-digest/route.ts` — Timezone filter 8→7, morning_script_enabled flag check, parallel query execution, UPSERT meeting_scripts, backward-compatible legacy digest
+2. `src/app/api/cron/red-flag-check/route.ts` — Persists findings to red_flag_events table
+3. `src/app/api/webhooks/sms/sinch/route.ts` — DETAILS keyword handler for managers (returns expanded script, does not count toward daily cap)
+4. `src/app/(dashboard)/dashboard/page.tsx` — MeetingScript component at top of dashboard
+
+**tsc --noEmit:** PASSING
+
 ## What's Next
-1. **Phase 4.5B — Morning Meeting Script** — SMS brief + dashboard card
-2. Sentry/Axiom observability (NR-002)
-3. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+1. Sentry/Axiom observability (NR-002)
+2. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+3. Phase 5+ features as prioritized
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.

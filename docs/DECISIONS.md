@@ -162,3 +162,27 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** Rep context snapshot uses the 4 scoring dimensions (product_accuracy, tone_rapport, addressed_concern, close_attempt) not training domains (objection_handling, etc.) for trend analysis. These map to actual `training_results` columns.
 - **Rationale:** `getRecentScoreTrend()` accepts scoring dimension names as parameter. Training domains are content categories, not measurable scoring axes.
 - **Affected files:** `src/lib/coach/context.ts`
+
+## D-028: Morning script replaces daily digest, same cron slot
+- **Date:** 2026-03-11
+- **Decision:** Morning meeting script is the UPGRADED daily digest. Same cron, no new slot (budget 6/40). `morning_script_enabled` flag controls behavior: true → morning script, false → legacy digest. Timezone filter changed from hour 8 to hour 7 (arrives before 8am meeting).
+- **Rationale:** Cron budget constraint. One cron handles both formats. Feature flag allows gradual rollout and instant rollback.
+- **Affected files:** `src/app/api/cron/daily-digest/route.ts`
+
+## D-029: No LLM calls in script generation
+- **Date:** 2026-03-11
+- **Decision:** Morning meeting script uses pure query + template + curated prompts. Coaching focus prompts are a hand-curated lookup table (3 per domain, 5 domains). Variable substitution ({top_model}, {competitor_model}) from vehicle data. Random selection for MVP; rotation tracking deferred.
+- **Rationale:** Zero LLM cost for script generation. Curated prompts are more actionable than generated ones. Spec explicitly requires no LLM calls.
+- **Affected files:** `src/lib/meeting-script/coaching-prompts.ts`, `src/lib/meeting-script/assemble.ts`
+
+## D-030: Red flag events persisted for morning script consumption
+- **Date:** 2026-03-11
+- **Decision:** Red-flag-check cron now INSERTs findings into `red_flag_events` table in addition to sending SMS alerts. Morning script queries this table instead of re-running detection logic. Single source of truth for at-risk data.
+- **Rationale:** Spec: "Do NOT re-query the same signals as the red-flag-check cron. Instead, consume the red flag system's output." Persisting eliminates duplicated detection logic.
+- **Affected files:** `src/app/api/cron/red-flag-check/route.ts`, `src/lib/meeting-script/queries.ts`
+
+## D-031: Cross-dealership benchmark — privacy-safe, brand-aware
+- **Date:** 2026-03-11
+- **Decision:** Benchmark only runs when `cross_dealership_benchmark` flag enabled AND 3+ active dealerships. Returns only rank + total + brand label. Same-brand ranking used when 5+ same-brand dealerships. Never exposes other dealerships' names, scores, or rep data.
+- **Rationale:** Privacy is paramount. Relative ranking provides competitive motivation without revealing competitors' data.
+- **Affected files:** `src/lib/meeting-script/benchmark.ts`
