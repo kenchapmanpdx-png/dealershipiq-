@@ -3,9 +3,11 @@
 // Body: { user_ids: string[]; mode?: 'roleplay' | 'quiz' | 'objection'; custom_question?: string }
 // Auth: manager+ role required
 // Creates session + sends SMS to specified users
+// Phase 5: subscription gating
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { serviceClient } from '@/lib/supabase/service';
 import { sendSms } from '@/lib/sms';
 import {
@@ -54,6 +56,15 @@ export async function POST(request: NextRequest) {
     const userRole = user.app_metadata?.user_role as string | undefined;
     if (userRole !== 'manager' && userRole !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // Phase 5: subscription gating
+    const subCheck = await checkSubscriptionAccess(dealershipId);
+    if (!subCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Subscription inactive. Please update billing to send training.' },
+        { status: 403 }
+      );
     }
 
     const body = await request.json() as PushTrainingRequest;

@@ -1,175 +1,326 @@
+// POST /api/webhooks/stripe
+// Phase 5: Stripe webhook handler — 6 event types, idempotent via billing_events table.
+// Every handler: check billing_events for stripe_event_id FIRST, skip if exists.
+// Build Master: "highest-risk code in the system"
+
+import { NextRequest, NextResponse } from 'next/server';
 import { verifyWebhookSignature, Stripe } from '@/lib/stripe';
-import {
-  updateDealershipBilling,
-  getDealershipByStripeCustomer,
-  createDealershipWithManager,
-} from '@/lib/service-db';
+import { serviceClient } from '@/lib/supabase/service';
+import { findDealershipByStripeCustomer } from '@/lib/billing/lookup';
+import { sendDunningEmail } from '@/lib/billing/dunning';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const body = await request.text();
   const signature = request.headers.get('stripe-signature');
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-  if (!signature) {
-    return Response.json({ error: 'Missing stripe-signature' }, { status: 400 });
-  }
-
-  let body: string;
-  try {
-    body = await request.text();
-  } catch {
-    return Response.json({ error: 'Invalid request body' }, { status: 400 });
+  if (!signature || !webhookSecret) {
+    return NextResponse.json({ error: 'Missing signature or secret' }, { status: 400 });
   }
 
   let event: Stripe.Event;
   try {
-    event = verifyWebhookSignature(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET || ''
-    ) as unknown as Stripe.Event;
+    event = verifyWebhookSignature(body, signature, webhookSecret) as Stripe.Event;
   } catch (err) {
-    console.error('Webhook signature verification failed:', err);
-    return Response.json({ error: 'Webhook signature verification failed' }, { status: 401 });
+    console.error('Stripe webhook signature verification failed:', err);
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+  }
+
+  // Idempotency check: skip if already processed
+  const { data: existing } = await serviceClient
+    .from('billing_events')
+    .select('id')
+    .eq('stripe_event_id', event.id)
+    .maybeSingle();
+
+  if (existing) {
+    return NextResponse.json({ received: true, skipped: true });
   }
 
   try {
     switch (event.type) {
       case 'checkout.session.completed':
-        await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
+        await handleCheckoutCompleted(event);
         break;
-
       case 'customer.subscription.created':
-        await handleSubscriptionCreated(event.data.object as Stripe.Subscription);
+        await handleSubscriptionCreated(event);
         break;
-
       case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
+        await handleSubscriptionUpdated(event);
         break;
-
       case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+        await handleSubscriptionDeleted(event);
         break;
-
       case 'invoice.payment_succeeded':
-        await handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
+        await handlePaymentSucceeded(event);
         break;
-
       case 'invoice.payment_failed':
-        await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+        await handlePaymentFailed(event);
         break;
+      default:
+        console.log(`Unhandled Stripe event: ${event.type}`);
     }
 
-    return Response.json({ received: true });
+    // Record processed event
+    await recordEvent(event);
+    return NextResponse.json({ received: true });
   } catch (err) {
-    console.error('Webhook handler error:', err);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
+    console.error(`Stripe webhook handler error for ${event.type}:`, err);
+    await recordEvent(event, err);
+    return NextResponse.json({ error: 'Handler error' }, { status: 500 });
   }
 }
 
-async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
-  const customerId = session.customer as string;
-  const dealershipName = (session.metadata?.dealership_name as string) || 'Dealership';
-  const email = session.customer_email || '';
-  const locationsStr = (session.metadata?.locations as string) || '1';
-  const locations = parseInt(locationsStr, 10) || 1;
+// --- Event Handlers ---
 
-  // Create dealership with manager account
-  const phone = email.split('@')[0]; // Temporary phone placeholder
-  const { dealershipId } = await createDealershipWithManager(
-    {
-      name: dealershipName,
-      timezone: 'America/New_York', // Default, will be updated during onboarding
-      stripeCustomerId: customerId,
-    },
-    {
-      email,
-      fullName: dealershipName.split(' ')[0] || 'Manager',
-      phone,
+async function handleCheckoutCompleted(event: Stripe.Event) {
+  const session = event.data.object as Stripe.Checkout.Session;
+  const dealershipId =
+    session.client_reference_id ??
+    (session.metadata?.dealership_id as string | undefined);
+
+  if (!dealershipId) {
+    console.error('checkout.session.completed: no dealership_id found');
+    return;
+  }
+
+  const customerId =
+    typeof session.customer === 'string'
+      ? session.customer
+      : (session.customer as Stripe.Customer)?.id;
+
+  const subscriptionId =
+    typeof session.subscription === 'string'
+      ? session.subscription
+      : (session.subscription as Stripe.Subscription)?.id;
+
+  const locations = parseInt(session.metadata?.locations ?? '1', 10);
+
+  // Calculate trial end (30 days from now)
+  const trialEndsAt = new Date();
+  trialEndsAt.setDate(trialEndsAt.getDate() + 30);
+
+  await serviceClient
+    .from('dealerships')
+    .update({
+      stripe_customer_id: customerId,
+      subscription_id: subscriptionId,
+      subscription_status: 'trialing',
+      max_locations: locations,
+      trial_ends_at: trialEndsAt.toISOString(),
+    })
+    .eq('id', dealershipId);
+}
+
+async function handleSubscriptionCreated(event: Stripe.Event) {
+  const subscription = event.data.object as Stripe.Subscription;
+  const customerId =
+    typeof subscription.customer === 'string'
+      ? subscription.customer
+      : (subscription.customer as Stripe.Customer)?.id;
+
+  if (!customerId) return;
+
+  const dealership = await findDealershipByStripeCustomer(customerId);
+  if (!dealership) {
+    console.error(`subscription.created: no dealership for customer ${customerId}`);
+    return;
+  }
+
+  const periodEnd = (subscription as unknown as Record<string, unknown>).current_period_end as number;
+  const trialEnd = (subscription as unknown as Record<string, unknown>).trial_end as number | null;
+
+  await serviceClient
+    .from('dealerships')
+    .update({
+      subscription_id: subscription.id,
+      subscription_status: subscription.status,
+      current_period_end: new Date(periodEnd * 1000).toISOString(),
+      trial_ends_at: trialEnd ? new Date(trialEnd * 1000).toISOString() : null,
+    })
+    .eq('id', dealership.id);
+}
+
+async function handleSubscriptionUpdated(event: Stripe.Event) {
+  const subscription = event.data.object as Stripe.Subscription;
+  const customerId =
+    typeof subscription.customer === 'string'
+      ? subscription.customer
+      : (subscription.customer as Stripe.Customer)?.id;
+
+  if (!customerId) return;
+
+  const dealership = await findDealershipByStripeCustomer(customerId);
+  if (!dealership) {
+    console.error(`subscription.updated: no dealership for customer ${customerId}`);
+    return;
+  }
+
+  const periodEnd = (subscription as unknown as Record<string, unknown>).current_period_end as number;
+
+  const updateData: Record<string, unknown> = {
+    subscription_status: subscription.status,
+    current_period_end: new Date(periodEnd * 1000).toISOString(),
+  };
+
+  // Track past_due transition
+  if (subscription.status === 'past_due') {
+    const { data: current } = await serviceClient
+      .from('dealerships')
+      .select('past_due_since')
+      .eq('id', dealership.id)
+      .single();
+
+    if (!current?.past_due_since) {
+      updateData.past_due_since = new Date().toISOString();
     }
-  );
-
-  // Update billing info
-  await updateDealershipBilling(dealershipId, {
-    stripeCustomerId: customerId,
-    subscriptionStatus: 'active',
-    maxLocations: locations,
-  });
-}
-
-async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
-  const customerId = subscription.customer as string;
-
-  const dealership = await getDealershipByStripeCustomer(customerId);
-  if (!dealership) return;
-
-  const locations = subscription.items.data[0]?.quantity || 1;
-  const periodEnd = (subscription as unknown as Record<string, unknown>).current_period_end as number;
-  const currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
-
-  await updateDealershipBilling(dealership.id, {
-    subscriptionStatus: 'active',
-    subscriptionId: subscription.id,
-    maxLocations: locations,
-    currentPeriodEnd,
-    pastDueSince: null,
-  });
-}
-
-async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
-  const customerId = subscription.customer as string;
-
-  const dealership = await getDealershipByStripeCustomer(customerId);
-  if (!dealership) return;
-
-  const locations = subscription.items.data[0]?.quantity || 1;
-  const periodEnd = (subscription as unknown as Record<string, unknown>).current_period_end as number;
-  const currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
-  const subscriptionStatus = subscription.status;
-
-  if (subscriptionStatus === 'past_due' && !dealership.id) {
-    return; // Avoid null reference
+  } else {
+    updateData.past_due_since = null;
   }
 
-  await updateDealershipBilling(dealership.id, {
-    subscriptionStatus,
-    subscriptionId: subscription.id,
-    maxLocations: locations,
-    currentPeriodEnd,
-  });
+  // Update quantity if changed
+  const totalQuantity = subscription.items.data.reduce(
+    (sum, item) => sum + (item.quantity || 1),
+    0
+  );
+  updateData.max_locations = totalQuantity;
+
+  await serviceClient
+    .from('dealerships')
+    .update(updateData)
+    .eq('id', dealership.id);
 }
 
-async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-  const customerId = subscription.customer as string;
+async function handleSubscriptionDeleted(event: Stripe.Event) {
+  const subscription = event.data.object as Stripe.Subscription;
+  const customerId =
+    typeof subscription.customer === 'string'
+      ? subscription.customer
+      : (subscription.customer as Stripe.Customer)?.id;
 
-  const dealership = await getDealershipByStripeCustomer(customerId);
+  if (!customerId) return;
+
+  const dealership = await findDealershipByStripeCustomer(customerId);
   if (!dealership) return;
 
-  await updateDealershipBilling(dealership.id, {
-    subscriptionStatus: 'canceled',
-  });
+  await serviceClient
+    .from('dealerships')
+    .update({
+      subscription_status: 'canceled',
+      subscription_id: null,
+    })
+    .eq('id', dealership.id);
 }
 
-async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
-  const customerId = invoice.customer as string;
+async function handlePaymentSucceeded(event: Stripe.Event) {
+  const invoice = event.data.object as Stripe.Invoice;
+  const customerId =
+    typeof invoice.customer === 'string'
+      ? invoice.customer
+      : (invoice.customer as Stripe.Customer)?.id;
 
-  const dealership = await getDealershipByStripeCustomer(customerId);
+  if (!customerId) return;
+
+  const dealership = await findDealershipByStripeCustomer(customerId);
   if (!dealership) return;
 
-  // Clear past_due flag
-  await updateDealershipBilling(dealership.id, {
-    subscriptionStatus: 'active',
-    pastDueSince: null,
-  });
+  await serviceClient
+    .from('dealerships')
+    .update({
+      subscription_status: 'active',
+      past_due_since: null,
+    })
+    .eq('id', dealership.id);
 }
 
-async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
-  const customerId = invoice.customer as string;
+async function handlePaymentFailed(event: Stripe.Event) {
+  const invoice = event.data.object as Stripe.Invoice;
+  const customerId =
+    typeof invoice.customer === 'string'
+      ? invoice.customer
+      : (invoice.customer as Stripe.Customer)?.id;
 
-  const dealership = await getDealershipByStripeCustomer(customerId);
+  if (!customerId) return;
+
+  const dealership = await findDealershipByStripeCustomer(customerId);
   if (!dealership) return;
 
-  const now = new Date().toISOString();
-  await updateDealershipBilling(dealership.id, {
-    subscriptionStatus: 'past_due',
-    pastDueSince: now,
-  });
+  const { data: current } = await serviceClient
+    .from('dealerships')
+    .select('past_due_since')
+    .eq('id', dealership.id)
+    .single();
+
+  const updateData: Record<string, unknown> = {
+    subscription_status: 'past_due',
+  };
+
+  if (!current?.past_due_since) {
+    updateData.past_due_since = new Date().toISOString();
+  }
+
+  await serviceClient
+    .from('dealerships')
+    .update(updateData)
+    .eq('id', dealership.id);
+
+  // Day 1 dunning email (immediate from webhook)
+  try {
+    const { data: managers } = await serviceClient
+      .from('users')
+      .select('email, full_name')
+      .eq('dealership_id', dealership.id)
+      .in('role', ['manager', 'owner'])
+      .limit(1);
+
+    const manager = managers?.[0];
+    if (manager?.email) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealershipiq-wua7.vercel.app';
+      await sendDunningEmail({
+        to: manager.email as string,
+        managerName: (manager.full_name as string) || 'Manager',
+        dealershipName: dealership.name,
+        portalUrl: `${appUrl}/dashboard/billing`,
+        stage: 'day1',
+      });
+    }
+  } catch (err) {
+    console.error('Day 1 dunning email error:', err);
+  }
+}
+
+// --- Helpers ---
+
+async function recordEvent(event: Stripe.Event, error?: unknown) {
+  try {
+    let dealershipId: string | null = null;
+    const obj = event.data.object as unknown as Record<string, unknown>;
+
+    if (obj.client_reference_id) {
+      dealershipId = obj.client_reference_id as string;
+    } else if (obj.metadata && (obj.metadata as Record<string, unknown>).dealership_id) {
+      dealershipId = (obj.metadata as Record<string, unknown>).dealership_id as string;
+    } else {
+      const customerId =
+        typeof obj.customer === 'string'
+          ? obj.customer
+          : (obj.customer as Record<string, unknown>)?.id as string | undefined;
+      if (customerId) {
+        const d = await findDealershipByStripeCustomer(customerId);
+        if (d) dealershipId = d.id;
+      }
+    }
+
+    await serviceClient.from('billing_events').insert({
+      stripe_event_id: event.id,
+      event_type: event.type,
+      dealership_id: dealershipId,
+      payload: {
+        ...(error ? { error: String(error) } : {}),
+        event_data_type: obj.object,
+      },
+    });
+  } catch (err) {
+    console.error('Failed to record billing event:', err);
+  }
 }

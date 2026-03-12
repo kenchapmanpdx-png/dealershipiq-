@@ -1,9 +1,10 @@
 // Dashboard layout wrapper
 // Server component — checks auth and renders sidebar
-// Build Master: Phase 3
+// Build Master: Phase 3, Phase 5 (billing nav + banner)
 
 import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import BillingBanner from '@/components/dashboard/BillingBanner';
 
 export default async function DashboardLayout({
   children,
@@ -57,6 +58,9 @@ export default async function DashboardLayout({
                 <NavLink href="/dashboard/sessions" label="Sessions" />
                 <NavLink href="/dashboard/coaching" label="Coaching" />
                 <NavLink href="/dashboard/gaps" label="Knowledge Gaps" />
+                {(userRole === 'owner') && (
+                  <NavLink href="/dashboard/billing" label="Billing" />
+                )}
               </div>
             </div>
 
@@ -96,6 +100,7 @@ export default async function DashboardLayout({
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <BillingBanner />
         {children}
       </main>
     </div>

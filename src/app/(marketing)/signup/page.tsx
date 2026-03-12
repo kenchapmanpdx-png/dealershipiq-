@@ -3,12 +3,24 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+const TIMEZONES = [
+  { value: 'America/New_York', label: 'Eastern (ET)' },
+  { value: 'America/Chicago', label: 'Central (CT)' },
+  { value: 'America/Denver', label: 'Mountain (MT)' },
+  { value: 'America/Los_Angeles', label: 'Pacific (PT)' },
+  { value: 'America/Anchorage', label: 'Alaska (AKT)' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii (HT)' },
+];
+
 export default function SignupPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
     dealershipName: '',
+    managerName: '',
     email: '',
+    password: '',
     locations: 1,
+    timezone: 'America/New_York',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,6 +38,12 @@ export default function SignupPage() {
     setLoading(true);
     setError('');
 
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch('/api/billing/checkout', {
         method: 'POST',
@@ -36,11 +54,10 @@ export default function SignupPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error || 'Failed to create checkout session');
+        setError(data.error || 'Failed to create account');
         return;
       }
 
-      // Redirect to Stripe Checkout
       if (data.checkoutUrl) {
         router.push(data.checkoutUrl);
       }
@@ -55,17 +72,20 @@ export default function SignupPage() {
   return (
     <div className="max-w-md mx-auto px-4 py-20">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Get Started</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Get Started</h1>
+        <p className="text-sm text-gray-600 mb-6">
+          30-day free trial. No credit card required to start.
+        </p>
 
         {error && (
-          <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 rounded">
+          <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="dealershipName" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="dealershipName" className="block text-sm font-medium text-gray-700 mb-1">
               Dealership Name
             </label>
             <input
@@ -81,7 +101,23 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="managerName" className="block text-sm font-medium text-gray-700 mb-1">
+              Your Name
+            </label>
+            <input
+              id="managerName"
+              name="managerName"
+              type="text"
+              value={formData.managerName}
+              onChange={handleChange}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g., John Smith"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
               Email Address
             </label>
             <input
@@ -97,38 +133,80 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label htmlFor="locations" className="block text-sm font-medium text-gray-700 mb-2">
-              Number of Locations
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+              Password
             </label>
-            <select
-              id="locations"
-              name="locations"
-              value={formData.locations}
+            <input
+              id="password"
+              name="password"
+              type="password"
+              value={formData.password}
               onChange={handleChange}
+              required
+              minLength={8}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {Array.from({ length: 20 }, (_, i) => i + 1).map((num) => (
-                <option key={num} value={num}>
-                  {num} location{num > 1 ? 's' : ''}
-                </option>
-              ))}
-            </select>
-            <p className="text-sm text-gray-600 mt-1">
-              $449/month per location. Cancel anytime.
-            </p>
+              placeholder="Minimum 8 characters"
+            />
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="locations" className="block text-sm font-medium text-gray-700 mb-1">
+                Locations
+              </label>
+              <select
+                id="locations"
+                name="locations"
+                value={formData.locations}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {Array.from({ length: 20 }, (_, i) => i + 1).map((num) => (
+                  <option key={num} value={num}>
+                    {num}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="timezone" className="block text-sm font-medium text-gray-700 mb-1">
+                Time Zone
+              </label>
+              <select
+                id="timezone"
+                name="timezone"
+                value={formData.timezone}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {TIMEZONES.map((tz) => (
+                  <option key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <p className="text-sm text-gray-600">
+            $449/month per location after trial. Cancel anytime.
+          </p>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-semibold mt-6"
+            className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-semibold mt-2"
           >
-            {loading ? 'Processing...' : 'Start Free Trial'}
+            {loading ? 'Creating account...' : 'Start 30-Day Free Trial'}
           </button>
         </form>
 
-        <p className="text-xs text-gray-600 text-center mt-6">
-          By signing up, you agree to our Terms of Service and Privacy Policy.
+        <p className="text-xs text-gray-500 text-center mt-6">
+          Already have an account?{' '}
+          <a href="/login" className="text-blue-600 hover:underline">
+            Log in
+          </a>
         </p>
       </div>
     </div>

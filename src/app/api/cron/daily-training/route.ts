@@ -1,5 +1,5 @@
 // Daily training cron — hourly Vercel cron (0 * * * *)
-// Build Master: Phase 2A.2 + Phase 4A (Persona Moods + Engagement)
+// Build Master: Phase 2A.2 + Phase 4A (Persona Moods + Engagement) + Phase 5 (subscription gating)
 // Each invocation: find dealerships where current local hour = configured training hour
 // Training runs Monday-Friday ONLY. No weekends.
 // Stagger sends 5-15 min per dealership to avoid carrier rate limits
@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { isWithinSendWindow, isWeekday } from '@/lib/quiet-hours';
 import { sendSms } from '@/lib/sms';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import {
   getDealershipsReadyForTraining,
   getEligibleUsers,
@@ -43,6 +44,13 @@ export async function GET(request: NextRequest) {
   const results: Array<{ dealershipId: string; sent: number; skipped: number; errors: number }> = [];
 
   for (const dealership of dealerships) {
+    // Phase 5: Skip dealerships without active subscription
+    const subCheck = await checkSubscriptionAccess(dealership.id);
+    if (!subCheck.allowed) {
+      results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0 });
+      continue;
+    }
+
     // Skip weekends — training is Mon-Fri only
     if (!isWeekday(dealership.timezone)) {
       results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0 });

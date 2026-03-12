@@ -2,11 +2,12 @@
 // Runs hourly. Fires where local_hour = 7 (brief arrives before 8am meeting).
 // Phase 4.5B: morning_script_enabled → morning meeting script format.
 //             morning_script_enabled = false → old-style daily digest (backward compatible).
-// Build Master: Phase 3 (digest), Phase 4.5A (micro-insight), Phase 4.5B (morning script)
+// Build Master: Phase 3 (digest), Phase 4.5A (micro-insight), Phase 4.5B (morning script), Phase 5 (subscription gating)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { sendSms } from '@/lib/sms';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import {
   getDealershipsByTimezoneHour,
   getManagersForDealership,
@@ -47,6 +48,19 @@ export async function GET(request: NextRequest) {
     let errors = 0;
 
     try {
+      // Phase 5: Skip dealerships without active subscription
+      const subCheck = await checkSubscriptionAccess(dealership.id);
+      if (!subCheck.allowed) {
+        results.push({
+          dealershipId: dealership.id,
+          dealershipName: dealership.name,
+          managersNotified: 0,
+          errors: 0,
+          format: 'legacy_digest',
+        });
+        continue;
+      }
+
       const managers = await getManagersForDealership(dealership.id);
 
       if (managers.length === 0) {

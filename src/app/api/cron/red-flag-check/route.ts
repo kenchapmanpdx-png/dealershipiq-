@@ -1,11 +1,12 @@
 // Red flag detection cron — identifies at-risk reps
 // Runs every 6 hours
-// Build Master: Phase 3, Phase 4.5B (persists to red_flag_events for morning script)
+// Build Master: Phase 3, Phase 4.5B (persists to red_flag_events for morning script), Phase 5 (dunning)
 // Detects: no response >3 days, completion rate <30%, score decline >40%, gone dark
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { sendSms } from '@/lib/sms';
+import { processDunning } from '@/lib/billing/dunning';
 import {
   getRedFlagUsers,
   getManagersForDealership,
@@ -152,9 +153,18 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Phase 5: Process dunning emails for past_due dealerships
+  let dunningResults = { processed: 0, emails_sent: 0, errors: 0 };
+  try {
+    dunningResults = await processDunning();
+  } catch (err) {
+    console.error('Dunning processing error:', err);
+  }
+
   return NextResponse.json({
     dealerships: dealerships?.length ?? 0,
     results,
+    dunning: dunningResults,
   });
 }
 

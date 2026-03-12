@@ -1,11 +1,12 @@
 // POST /api/coach/session — Start or continue a coaching session
-// Phase 4.5A: Coach Mode MVP
+// Phase 4.5A: Coach Mode MVP + Phase 5 (subscription gating)
 // Auth: phone-based session token → user_id
 // Uses GPT-4o for emotional nuance and multi-turn coaching
 
 import { NextRequest, NextResponse } from 'next/server';
 import { serviceClient } from '@/lib/supabase/service';
 import { isFeatureEnabled } from '@/lib/service-db';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { tokenLimitParam } from '@/lib/openai';
 import { buildRepContext, getTenureDescription } from '@/lib/coach/context';
 import { buildCoachSystemPrompt, DOOR_OPENING_MESSAGES, CLASSIFY_EXCHANGE_TOOL } from '@/lib/coach/prompts';
@@ -33,6 +34,15 @@ export async function POST(request: NextRequest) {
       );
     }
     const { userId, dealershipId } = authResult;
+
+    // Phase 5: subscription gating
+    const subCheck = await checkSubscriptionAccess(dealershipId);
+    if (!subCheck.allowed) {
+      return NextResponse.json(
+        { data: null, error: 'Subscription inactive. Coach Mode unavailable.' },
+        { status: 403 }
+      );
+    }
 
     // Feature flag check
     const enabled = await isFeatureEnabled(dealershipId, 'coach_mode_enabled');
