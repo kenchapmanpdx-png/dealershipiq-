@@ -59,8 +59,17 @@
 - **Recommendation:** Free tier (100 emails/day) is more than sufficient. Domain verification recommended for deliverability.
 
 ## NR-012: Pilot dealership flagging
-- **Status:** BLOCKED — requires Ken's action
-- **Context:** Test dealership(s) need `is_pilot = true` to bypass billing. Without this flag, subscription gating will block training for existing test dealership.
-- **Action needed:** Run in Supabase SQL Editor: `UPDATE dealerships SET is_pilot = true WHERE id = '<test_dealership_id>';`
-- **Recommendation:** CRITICAL — do this before next deploy or existing test dealership will lose access. The test dealership has no Stripe subscription.
-- **URGENT:** If this isn't done, the daily training cron will skip the test dealership.
+- **Status:** RESOLVED 2026-03-11
+- **Resolution:** Both existing dealerships flagged as `is_pilot = true` via Supabase Management API.
+
+## NR-013: Phase 6 chain template seeding
+- **Status:** Open — requires action
+- **Context:** Phase 6C Scenario Chains requires rows in `chain_templates` table. Templates define 3-day storylines with step prompts, branch rules, and difficulty levels. Without templates, chains cannot start.
+- **Action needed:** Create seed script (`scripts/seed-chain-templates.ts`) or manually insert templates for objection_handling, product_knowledge, closing_technique at easy/medium/hard difficulty levels.
+- **Recommendation:** Seed 3-5 templates per domain to start. Each template needs step_prompts JSONB with base_prompt, persona, branches, branch_rules for each step.
+
+## NR-014: Phase 6 feature flag enablement for testing
+- **Status:** Open — requires Ken's action
+- **Context:** All Phase 6 features are deployed but OFF by default. Feature flags: manager_quick_create_enabled, daily_challenge_enabled, scenario_chains_enabled, peer_challenge_enabled.
+- **Action needed:** Enable flags for test dealership in Supabase: `UPDATE feature_flags SET enabled = true WHERE dealership_id = '<test_dealership_id>' AND flag_name IN ('manager_quick_create_enabled', 'daily_challenge_enabled', 'scenario_chains_enabled', 'peer_challenge_enabled');`
+- **Recommendation:** Enable one feature at a time for isolated testing. Start with manager_quick_create (simplest flow to verify).

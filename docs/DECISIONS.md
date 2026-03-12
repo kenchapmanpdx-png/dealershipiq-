@@ -228,3 +228,39 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** `dealerships.is_pilot` BOOLEAN DEFAULT false. Pilots bypass all subscription checks (application + RLS). Must be set manually in DB by Ken.
 - **Rationale:** Test dealerships and early partners need permanent free access. Flag is simpler than creating fake subscriptions.
 - **Affected files:** `src/lib/billing/subscription.ts`, `supabase/migrations/20260311160000_billing_events.sql`
+
+## D-039: Phase 6 rebuild — modular file structure
+- **Date:** 2026-03-12
+- **Decision:** Replaced 4 monolithic Phase 6 files with modular structure: `lib/chains/` (branching, templates, lifecycle), `lib/challenges/` (daily, peer), `lib/manager-create/` (generate), `lib/training/` (content-priority). Old files deleted.
+- **Rationale:** v5 spec requires deterministic branching, disambiguation state machine, content priority system — too complex for single files. Modular structure enables independent testing and clearer responsibility.
+- **Affected files:** All Phase 6 libs
+
+## D-040: Content priority system — single selectContent() function
+- **Date:** 2026-03-12
+- **Decision:** Single `selectContent(userId, dealershipId)` in `content-priority.ts` evaluates 5 tiers in order: manager_scenario → peer_challenge → chain_step → daily_challenge → adaptive. Training cron delegates content selection entirely to this function.
+- **Rationale:** Build Master spec requires strict priority ordering. Centralizing prevents priority conflicts between features. Each tier checks feature flags independently.
+- **Affected files:** `src/lib/training/content-priority.ts`, `src/app/api/cron/daily-training/route.ts`
+
+## D-041: Deterministic chain branching (not LLM-driven)
+- **Date:** 2026-03-12
+- **Decision:** Chain step branching uses rule-based evaluation of prior step scores against thresholds in template JSONB. No LLM involved in branch selection. GPT only generates scenario text from the selected branch prompt.
+- **Rationale:** Predictable behavior, testable without API calls, faster execution. LLM-driven branching risks inconsistent story progression.
+- **Affected files:** `src/lib/chains/branching.ts`, `src/lib/chains/templates.ts`
+
+## D-042: Peer challenge disambiguation state machine
+- **Date:** 2026-03-12
+- **Decision:** Peer challenges use 6-state machine: disambiguating → pending → active → completed/expired/declined. Disambiguation (multiple name matches) uses 10-min expiry with numbered options. challenged_id nullable during disambiguation.
+- **Rationale:** Name matching can return multiple users. State machine prevents race conditions and stale challenges.
+- **Affected files:** `src/lib/challenges/peer.ts`, DB migration (peer_challenges ALTERs)
+
+## D-043: Challenge-results cron at 10pm UTC (replaces inline grading)
+- **Date:** 2026-03-12
+- **Decision:** Daily challenge ranking runs as a separate cron (`/api/cron/challenge-results` at 22:00 UTC) rather than inline during training cron. Checks 5pm local per dealership timezone.
+- **Rationale:** Results must be calculated after all responses are in (EOD), not at training send time. Timezone-aware check ensures correct cutoff per dealership.
+- **Affected files:** `src/app/api/cron/challenge-results/route.ts`, `vercel.json`
+
+## D-044: Peer challenge expiry piggybacked on orphaned-sessions cron
+- **Date:** 2026-03-12
+- **Decision:** `expirePeerChallenges()` called from orphaned-sessions cron (runs daily at 4am UTC). Handles all three expiry types: disambiguating (10min), pending (4h), active (4h with default win).
+- **Rationale:** No new cron slot needed. Expiry check is lightweight and runs fine at daily frequency since challenges already have their own expires_at timestamps.
+- **Affected files:** `src/app/api/cron/orphaned-sessions/route.ts`, `src/lib/challenges/peer.ts`

@@ -99,34 +99,45 @@ Branch: main (direct commit)
 
 **tsc --noEmit:** PASSING
 
-### Phase 6 — Growth Features (COMPLETE)
-Branch: `feat/phase6-growth-features`
+### Phase 6 — Growth Features (REBUILT 03/12/2026)
+Branch: main (direct commit c61c2dc)
 
-**Libraries (4):**
-1. `src/lib/scenario-chains.ts` — Progressive 3-day storylines (Day N grading feeds Day N+1 scenario generation)
-2. `src/lib/peer-challenge.ts` — Head-to-head training with CHALLENGE [name] keyword parsing, 4-hour expiry, no-show default wins
-3. `src/lib/daily-challenge.ts` — Team leaderboard push (morning: send challenge + previous day top 3; evening: grade all responses, text top 3)
-4. `src/lib/manager-content-create.ts` — SMS-based content creation (CREATE: scenario idea → AI formats → approval flow)
+Complete rebuild per DealershipIQ-Strategic-Build-Order-v5 spec. Old monolithic files deleted, replaced by modular structure.
 
-**Database (1 migration):**
-- `supabase/migrations/20260310000003_phase6_growth_tables.sql` — 4 tables: scenario_chains, daily_challenges, peer_challenges, custom_training_content (all with RLS policies)
+**Types (2 new):**
+- `src/types/challenges.ts` — ManagerScenario, GradingRubric, GeneratedScenario, DailyChallenge, ChallengeResult, PeerChallenge, DisambiguationOption
+- `src/types/chains.ts` — ChainTemplate, StepPrompt, BranchTemplate, ChainContext, StepResult, ScenarioChain
 
-**Service-db additions (18 functions):**
-- Scenario chains: getScenarioChain, getScenarioChainByUserDealership, createScenarioChain, updateScenarioChain
-- Daily challenges: createDailyChallenge, getDailyChallenge, getDailyChallengeByChallengeDate, updateDailyChallenge
-- Peer challenges: createPeerChallenge, getPeerChallenge, getPeerChallengesForUser, updatePeerChallenge, getExpiredPeerChallenges
-- Custom training: createCustomTrainingContent, getCustomTrainingContent, updateCustomTrainingContent, getPendingApprovals, getApprovedContent
-- Helpers: getUserByName, getEligibleUsersForChallenge
+**Libraries (8 new, 4 deleted):**
+1. `src/lib/manager-create/generate.ts` — 6A: TRAIN: keyword → GPT-5.4 Structured Output → scenario + rubric → NOW confirmation (30-min expiry)
+2. `src/lib/challenges/daily.ts` — 6B: generateDailyChallenge, getYesterdayResults, buildChallengeMorningSMS, rankChallengeResponses, buildResultsSMS
+3. `src/lib/chains/branching.ts` — 6C: Deterministic branch selection from step config + previous scores
+4. `src/lib/chains/templates.ts` — 6C: Template loading, selection (weakest domains + difficulty), variable substitution
+5. `src/lib/chains/lifecycle.ts` — 6C: startChain, continueChain, recordChainStepResult, buildChainCompletionSMS, incrementMissedDay, getActiveChain
+6. `src/lib/challenges/peer.ts` — 6D: CHALLENGE [name] → disambiguation → ACCEPT/PASS → grade both → results. 4h expiry, default wins.
+7. `src/lib/training/content-priority.ts` — Content selection: manager_scenario > peer_challenge > chain_step > daily_challenge > adaptive
+8. Deleted: `src/lib/scenario-chains.ts`, `src/lib/peer-challenge.ts`, `src/lib/daily-challenge.ts`, `src/lib/manager-content-create.ts`
 
-**API Routes (2):**
-- `GET /api/cron/daily-challenge` — Morning: create challenge + send to team; Evening: grade responses + send top 3 leaderboard
-- `GET /api/cron/expire-challenges` — Hourly: mark expired peer challenges, award default wins
+**Database (1 migration applied to production):**
+- `supabase/migrations/20260312000000_phase6_rebuild.sql`
+  - NEW tables: chain_templates, manager_scenarios (with RLS + indexes)
+  - ALTERed: scenario_chains (+chain_template_id, chain_context, total_steps, work_days_without_response, started_at, last_step_at, expanded status CHECK)
+  - ALTERed: daily_challenges (+taxonomy_domain, persona_mood, vehicle_context, winner_user_id, participation_count, status CHECK)
+  - ALTERed: peer_challenges (challenged_id/scenario_text nullable, +grading_rubric, taxonomy_domain, challenger/challenged_session_id, disambiguation_options, accepted_at, completed_at, winner_id, expanded status CHECK)
+  - ALTERed: conversation_sessions (+challenge_id, scenario_chain_id, chain_step)
+  - Feature flags: manager_quick_create_enabled, daily_challenge_enabled (mwf default), scenario_chains_enabled, peer_challenge_enabled (all OFF)
 
-**AI Integration:**
-- Added `getOpenAICompletion()` helper to `src/lib/openai.ts` for generic text completion (not structured output)
-- Supports scenario generation, content formatting, peer challenge grading
+**API Routes (1 new, 2 deleted):**
+- `GET /api/cron/challenge-results` — EOD: ranks daily challenge responses, sends results SMS, updates challenge status
+- Deleted: `/api/cron/daily-challenge`, `/api/cron/expire-challenges`
 
-**vercel.json:** Added 2 new cron routes (daily-challenge, expire-challenges)
+**Modified files (4):**
+1. `src/app/api/cron/daily-training/route.ts` — Rewritten: content-priority system (5 tiers), chain continuation/start logic, challenge-linked sessions
+2. `src/app/api/webhooks/sms/sinch/route.ts` — Phase 6 keywords: TRAIN:, NOW, CHALLENGE [name], ACCEPT, PASS, disambiguation numbers. Post-grading hooks for chain step recording + peer challenge completion.
+3. `src/app/api/cron/orphaned-sessions/route.ts` — Peer challenge expiry piggybacked
+4. `src/lib/service-db.ts` — createConversationSession (+challengeId, scenarioChainId, chainStep), getActiveSession returns challenge/chain fields
+
+**vercel.json:** 7 cron routes (removed daily-challenge + expire-challenges, added challenge-results at 10pm UTC)
 
 **tsc --noEmit:** PASSING
 
@@ -389,10 +400,12 @@ Date: 03/10/2026
 **tsc --noEmit:** PASSING
 
 ## What's Next
-1. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint, flag pilot dealerships (see NR-010, NR-011, NR-012)
-2. Sentry/Axiom observability (NR-002)
-3. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
-4. Verify 3-exchange objection flow
+1. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
+2. **Phase 6 testing:** Enable feature flags on test dealership, seed chain_templates, test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords
+3. **Chain template seeding:** Create initial chain_templates rows (objection_handling, product_knowledge, closing_technique — easy/medium/hard)
+4. Sentry/Axiom observability (NR-002)
+5. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+6. Verify 3-exchange objection flow
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.

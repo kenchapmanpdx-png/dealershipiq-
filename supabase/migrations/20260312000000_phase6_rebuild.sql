@@ -126,7 +126,7 @@ ALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS chain_step INTEGER;
 -- 7. Feature flags (Phase 6 features — default OFF)
 -- ═══════════════════════════════════════════════════════════════════════
 INSERT INTO feature_flags (dealership_id, flag_name, enabled, config)
-SELECT id, 'manager_quick_create_enabled', false, NULL
+SELECT id, 'manager_quick_create_enabled', false, '{}'::jsonb
 FROM dealerships
 WHERE id NOT IN (SELECT dealership_id FROM feature_flags WHERE flag_name = 'manager_quick_create_enabled')
 ON CONFLICT DO NOTHING;
@@ -138,13 +138,13 @@ WHERE id NOT IN (SELECT dealership_id FROM feature_flags WHERE flag_name = 'dail
 ON CONFLICT DO NOTHING;
 
 INSERT INTO feature_flags (dealership_id, flag_name, enabled, config)
-SELECT id, 'scenario_chains_enabled', false, NULL
+SELECT id, 'scenario_chains_enabled', false, '{}'::jsonb
 FROM dealerships
 WHERE id NOT IN (SELECT dealership_id FROM feature_flags WHERE flag_name = 'scenario_chains_enabled')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO feature_flags (dealership_id, flag_name, enabled, config)
-SELECT id, 'peer_challenge_enabled', false, NULL
+SELECT id, 'peer_challenge_enabled', false, '{}'::jsonb
 FROM dealerships
 WHERE id NOT IN (SELECT dealership_id FROM feature_flags WHERE flag_name = 'peer_challenge_enabled')
 ON CONFLICT DO NOTHING;
