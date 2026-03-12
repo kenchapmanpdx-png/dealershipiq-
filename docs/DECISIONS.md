@@ -138,3 +138,27 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** All Python scripts (seed, generate, export, import) read credentials from env vars only. Empty defaults with early exit if missing. GitHub push protection caught hardcoded keys — removed from history.
 - **Rationale:** Security best practice. GitHub push protection blocks commits with secrets.
 - **Affected files:** `scripts/*.py`
+
+## D-024: Coach Mode — GPT-4o for coaching, GPT-4o-mini for classification/compaction
+- **Date:** 2026-03-11
+- **Decision:** GPT-4o for coaching responses (emotional nuance). GPT-4o-mini for sentiment/topic classification and message compaction (speed + cost).
+- **Rationale:** Coaching requires empathy and nuanced language. Classification is mechanical. Cost optimization without quality loss.
+- **Affected files:** `src/app/api/coach/session/route.ts`, `src/lib/coach/compaction.ts`
+
+## D-025: Coach Mode — no RLS, service_role with explicit user_id filtering
+- **Date:** 2026-03-11
+- **Decision:** coach_sessions table has NO RLS. All access via service_role client with explicit `.eq('user_id', userId)` filtering. Phone-based auth token (base64 of userId:dealershipId:firstName:language:timestamp) validated in API routes.
+- **Rationale:** Employees don't have Supabase Auth accounts. Phone-based PWA auth uses custom token. RLS requires `auth.uid()` which doesn't exist for employee sessions.
+- **Affected files:** `supabase/migrations/20260311120000_coach_sessions.sql`, `src/app/api/coach/session/route.ts`
+
+## D-026: Coach Mode — manager NEVER sees individual session content
+- **Date:** 2026-03-11
+- **Decision:** Dashboard coach-themes endpoint returns ONLY aggregated topic/sentiment counts. Minimum 3 unique users required. No session IDs, no message text, no user attribution.
+- **Rationale:** Privacy is core to coaching trust. Build Master: "Manager will never read or review individual coaching sessions."
+- **Affected files:** `src/app/api/dashboard/coach-themes/route.ts`
+
+## D-027: Coach Mode — scoring dimensions for rep context (not training domains)
+- **Date:** 2026-03-11
+- **Decision:** Rep context snapshot uses the 4 scoring dimensions (product_accuracy, tone_rapport, addressed_concern, close_attempt) not training domains (objection_handling, etc.) for trend analysis. These map to actual `training_results` columns.
+- **Rationale:** `getRecentScoreTrend()` accepts scoring dimension names as parameter. Training domains are content categories, not measurable scoring axes.
+- **Affected files:** `src/lib/coach/context.ts`

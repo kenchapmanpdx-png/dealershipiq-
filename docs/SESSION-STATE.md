@@ -303,8 +303,49 @@ Date: 03/10/2026
 
 **tsc --noEmit:** PASSING
 
+### Phase 4.5A — Coach Mode MVP (03/11/2026)
+
+**Database (1 migration applied to production):**
+- `coach_sessions` table: JSONB messages, session_topic, sentiment_trend, coaching_style, door_selected, rep_context_snapshot
+- NO RLS — service_role + explicit user_id filtering (employees are phone-identified, not Supabase Auth)
+- Feature flags: `coach_mode_enabled` (enabled for test dealership), `coach_proactive_outreach` (disabled)
+- 3 indexes: user+created_at, dealership+created_at, session_topic
+
+**Types (1 new):**
+- `src/types/coach.ts` — CoachDoor, SessionTopic, SentimentTrend, CoachingStyle, CoachMessage, CoachSession, RepContextSnapshot, ExchangeClassification
+
+**Libraries (3 new):**
+1. `src/lib/coach/prompts.ts` — Common preamble (9 rules: AI transparency, privacy, pricing guardrails, crisis→988), door-specific prompts (tactical=AAR+word-tracks, debrief=AAR+inner-game, career=GROW), style adaptation, classify exchange tool schema
+2. `src/lib/coach/context.ts` — `buildRepContext()` with parallel fetches (user, dealership, tenure, streak, priority vector, gaps, prev sessions, domain scores), `getTenureDescription()`
+3. `src/lib/coach/compaction.ts` — `needsCompaction()` (>10 messages), `isMaxExchanges()` (>=20 messages), `compactMessages()` (first 8→GPT-4o-mini synopsis + last 4 full), `buildMessageHistory()`
+
+**API Routes (4 new):**
+1. `POST/GET /api/coach/session` — Start/continue sessions, lazy stale close (24h), rate limit 30/hour, GPT-4o for coaching, function calling for sentiment/topic classification, exchange limit 20
+2. `GET /api/coach/context` — Internal route, admin API key auth, returns rep training snapshot
+3. `GET /api/dashboard/coach-themes` — Manager JWT auth, aggregated anonymous themes/sentiment, privacy minimum 3 unique users
+4. `POST /api/app/auth` — Phone + last-4-digits PWA auth, E.164 normalization, base64 session token
+
+**PWA Pages (4 new):**
+1. `src/app/app/[slug]/layout.tsx` — PWA shell with phone auth, session context, bottom tab bar (Ask IQ + Coach, Coach hidden for language=es)
+2. `src/app/app/[slug]/page.tsx` — Ask IQ placeholder
+3. `src/app/app/[slug]/coach/page.tsx` — Coach main: Three Doors entry, session list, chat
+4. `src/app/app/[slug]/coach/[id]/page.tsx` — Continue existing session by URL
+
+**Components (3 new):**
+1. `src/components/coach/ThreeDoors.tsx` — Tactical/debrief/career entry with confidentiality notice
+2. `src/components/coach/ChatInterface.tsx` — Chat UI with optimistic rendering, loading dots, error handling
+3. `src/components/coach/SessionList.tsx` — Recent sessions as cards with topic/date/preview
+
+**Modified files (4):**
+1. `src/app/api/webhooks/sms/sinch/route.ts` — COACH keyword detection, feature flag check, sends coach URL via SMS
+2. `src/app/(dashboard)/dashboard/page.tsx` — Coach themes card with topic breakdown and insufficient_data message
+3. `src/app/api/cron/daily-digest/route.ts` — Weekly micro-insight (Monday only, positive signals, GSM-7), stale session cleanup
+4. `src/lib/openai.ts` — `tokenLimitParam` exported (needed by compaction)
+
+**tsc --noEmit:** PASSING
+
 ## What's Next
-1. **Phase 4.5 — Coach Mode MVP** — coaching PWA, morning meeting script
+1. **Phase 4.5B — Morning Meeting Script** — SMS brief + dashboard card
 2. Sentry/Axiom observability (NR-002)
 3. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
 
