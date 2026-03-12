@@ -25,12 +25,8 @@
       "schedule": "0 16 * * *"
     },
     {
-      "path": "/api/cron/daily-challenge",
-      "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/expire-challenges",
-      "schedule": "0 20 * * *"
+      "path": "/api/cron/challenge-results",
+      "schedule": "0 22 * * *"
     }
   ]
 }

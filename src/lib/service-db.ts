@@ -118,7 +118,7 @@ export async function getUserByPhone(phone: string) {
 export async function getActiveSession(userId: string, dealershipId: string) {
   const { data, error } = await serviceClient
     .from('conversation_sessions')
-    .select('id, status, question_text, mode, prompt_version_id, step_index, persona_mood, training_domain, created_at')
+    .select('id, status, question_text, mode, prompt_version_id, step_index, persona_mood, training_domain, challenge_id, scenario_chain_id, chain_step, created_at')
     .eq('dealership_id', dealershipId)
     .eq('user_id', userId)
     .in('status', ['pending', 'active', 'grading'])
@@ -138,6 +138,9 @@ export async function getActiveSession(userId: string, dealershipId: string) {
     stepIndex: (data.step_index as number) ?? 0,
     personaMood: (data.persona_mood as string | null) ?? null,
     trainingDomain: (data.training_domain as string | null) ?? null,
+    challengeId: (data.challenge_id as string | null) ?? null,
+    scenarioChainId: (data.scenario_chain_id as string | null) ?? null,
+    chainStep: (data.chain_step as number | null) ?? null,
   };
 }
 
@@ -342,6 +345,9 @@ export async function createConversationSession(entry: {
   personaMood?: string | null;
   difficultyCoefficient?: number;
   trainingDomain?: string;
+  challengeId?: string;
+  scenarioChainId?: string;
+  chainStep?: number;
 }) {
   const insertData: Record<string, unknown> = {
     user_id: entry.userId,
@@ -363,6 +369,17 @@ export async function createConversationSession(entry: {
   // Phase 4B: training domain
   if (entry.trainingDomain) {
     insertData.training_domain = entry.trainingDomain;
+  }
+
+  // Phase 6: challenge + chain linkage
+  if (entry.challengeId) {
+    insertData.challenge_id = entry.challengeId;
+  }
+  if (entry.scenarioChainId) {
+    insertData.scenario_chain_id = entry.scenarioChainId;
+  }
+  if (entry.chainStep != null) {
+    insertData.chain_step = entry.chainStep;
   }
 
   const { data, error } = await serviceClient

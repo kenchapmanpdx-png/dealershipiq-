@@ -1,5 +1,5 @@
 // Sinch Conversation API webhook handler
-// Build Master: Phase 2A, 2B, 2C, 2D, 2E
+// Build Master: Phase 2A-2E + Phase 6 (Manager Quick-Create, Peer Challenge, Chain hooks)
 // CRITICAL: Always return 200 OK. Never return 4xx — Sinch permanently
 // kills callbacks on non-429 4xx responses.
 // Processing runs synchronously before returning 200 (Vercel Hobby plan
@@ -8,6 +8,13 @@
 // Multi-exchange flow (3 exchanges per session):
 //   step 0,1: Generate AI follow-up, keep session active
 //   step 2:   Final grade, Never Naked feedback, complete session
+//
+// Phase 6 keywords (checked before state machine):
+//   TRAIN: <text>  — Manager creates training scenario (manager/owner only)
+//   NOW             — Manager confirms immediate push of pending scenario
+//   CHALLENGE <name>— Start peer challenge
+//   ACCEPT / PASS   — Accept or decline pending peer challenge
+//   1/2/3           — Disambiguation number reply for peer challenge
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySinchWebhookSignature } from '@/lib/sinch-auth';
@@ -27,6 +34,7 @@ import {
   updateUserStatus,
   isFeatureEnabled,
   getEmployeePriorityVector,
+  createConversationSession,
 } from '@/lib/service-db';
 import {
   parseScheduleKeyword,
@@ -35,7 +43,33 @@ import {
 import {
   updatePriorityVectorAfterGrading,
 } from '@/lib/adaptive-weighting';
+import {
+  generateScenarioFromManager,
+  storeManagerScenario,
+  getPendingNowConfirmation,
+  markScenarioPushedNow,
+  clearNowConfirmation,
+} from '@/lib/manager-create/generate';
+import {
+  parseChallengeKeyword,
+  findChallengeTarget,
+  checkChallengeAvailability,
+  createPeerChallenge,
+  createDisambiguationChallenge,
+  getPendingDisambiguation,
+  resolveDisambiguation,
+  getPendingChallengeForUser,
+  acceptChallenge,
+  declineChallenge,
+  checkAndCompleteChallenge,
+  buildPeerResultsSMS,
+} from '@/lib/challenges/peer';
+import {
+  recordChainStepResult,
+  buildChainCompletionSMS,
+} from '@/lib/chains/lifecycle';
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
+import type { StepResult } from '@/types/chains';
 
 // Idempotency: track processed message IDs (in-memory for now, Redis in Phase 2F)
 const processedMessages = new Set<string>();
@@ -139,7 +173,6 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   // --- Schedule Keyword Detection (before other keywords) ---
   const scheduleResult = parseScheduleKeyword(text);
   if (scheduleResult.success) {
-    // Update schedule and send confirmation
     try {
       await updateEmployeeSchedule(user.id, user.dealershipId, scheduleResult.data ?? {});
       await sendSms(phone, scheduleResult.message ?? 'Schedule updated.');
@@ -169,7 +202,6 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     if (!coachEnabled) {
       await sendSms(phone, "Coach Mode isn't available yet. Stay tuned!");
     } else {
-      // Build coach URL from dealership slug
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dealershipiq-wua7.vercel.app';
       const slug = user.dealershipId;
       await sendSms(
@@ -184,6 +216,43 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       direction: 'outbound',
       messageBody: 'COACH keyword response',
     });
+    return;
+  }
+
+  // --- Phase 6A: TRAIN: keyword (manager/owner only) ---
+  const trimmedText = text.trim();
+  if (trimmedText.toUpperCase().startsWith('TRAIN:')) {
+    await handleTrainKeyword(user, phone, trimmedText);
+    return;
+  }
+
+  // --- Phase 6A: NOW keyword (manager/owner pending confirmation) ---
+  if (trimmedText.toUpperCase() === 'NOW') {
+    const handled = await handleNowKeyword(user, phone);
+    if (handled) return;
+    // If no pending confirmation, fall through to normal flow
+  }
+
+  // --- Phase 6D: ACCEPT / PASS keywords (peer challenge) ---
+  if (trimmedText.toUpperCase() === 'ACCEPT') {
+    const handled = await handleAcceptKeyword(user, phone);
+    if (handled) return;
+  }
+  if (trimmedText.toUpperCase() === 'PASS') {
+    const handled = await handlePassKeyword(user, phone);
+    if (handled) return;
+  }
+
+  // --- Phase 6D: Disambiguation number reply (1, 2, 3) ---
+  if (/^[1-9]$/.test(trimmedText)) {
+    const handled = await handleDisambiguationReply(user, phone, parseInt(trimmedText, 10));
+    if (handled) return;
+  }
+
+  // --- Phase 6D: CHALLENGE keyword ---
+  const challengeName = parseChallengeKeyword(trimmedText);
+  if (challengeName) {
+    await handleChallengeKeyword(user, phone, challengeName);
     return;
   }
 
@@ -248,10 +317,8 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     const stepIndex = session.stepIndex;
 
     if (isFinalExchange(stepIndex)) {
-      // FINAL EXCHANGE — grade all exchanges
       await handleFinalExchange(session, user, phone, text, mode);
     } else {
-      // MID-EXCHANGE — generate follow-up, keep session active
       await handleMidExchange(session, user, phone, text, mode, stepIndex);
     }
   } catch (err) {
@@ -259,9 +326,470 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   }
 }
 
-// --- Final exchange: grade everything, send Never Naked feedback ---
+// =============================================================================
+// Phase 6 Keyword Handlers
+// =============================================================================
+
+// --- TRAIN: keyword handler (manager creates scenario) ---
+async function handleTrainKeyword(
+  user: { id: string; dealershipId: string; dealershipName: string; role: string },
+  phone: string,
+  text: string
+) {
+  // Manager/owner check
+  if (!['manager', 'owner'].includes(user.role)) {
+    // Non-managers: silently ignore
+    return;
+  }
+
+  const featureEnabled = await isFeatureEnabled(user.dealershipId, 'manager_quick_create_enabled');
+  if (!featureEnabled) {
+    await sendSms(phone, 'Quick-Create is not enabled for your dealership yet.');
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: 'Quick-Create is not enabled for your dealership yet.',
+    });
+    return;
+  }
+
+  // Clear any existing pending NOW confirmation
+  const existingPending = await getPendingNowConfirmation(user.id);
+  if (existingPending) {
+    await clearNowConfirmation(existingPending.id);
+  }
+
+  // Strip TRAIN: prefix
+  const managerInput = text.replace(/^TRAIN:\s*/i, '').trim();
+  if (managerInput.length < 5) {
+    await sendSms(phone, 'Describe the situation after TRAIN: (e.g., "TRAIN: customer wants to trade in a 2019 Civic with high mileage")');
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: 'TRAIN: input too short — prompted for more detail.',
+    });
+    return;
+  }
+
+  try {
+    // Generate scenario via GPT
+    const scenario = await generateScenarioFromManager(managerInput);
+
+    // Store with NOW confirmation pending
+    const scenarioId = await storeManagerScenario({
+      dealershipId: user.dealershipId,
+      createdBy: user.id,
+      managerInput,
+      scenario,
+    });
+
+    // Confirm to manager with preview
+    const preview = `Got it. Here's what your team will see:\n\n"${scenario.scenario_text.slice(0, 200)}"\n\nReply NOW to push it to your team immediately, or it'll go out at the next training time.`;
+    await sendSms(phone, preview);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: preview,
+      metadata: { type: 'manager_scenario_preview', scenarioId },
+    });
+  } catch (err) {
+    console.error('TRAIN: scenario generation failed:', err);
+    await sendSms(phone, 'Could not generate that scenario. Try again with a clearer description.');
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: 'TRAIN: generation error.',
+    });
+  }
+}
+
+// --- NOW keyword handler (manager confirms immediate push) ---
+async function handleNowKeyword(
+  user: { id: string; dealershipId: string; role: string },
+  phone: string
+): Promise<boolean> {
+  if (!['manager', 'owner'].includes(user.role)) return false;
+
+  const pending = await getPendingNowConfirmation(user.id);
+  if (!pending) return false;
+
+  try {
+    await markScenarioPushedNow(pending.id);
+
+    // Push scenario to all eligible reps now
+    const { getEligibleUsers } = await import('@/lib/service-db');
+    const eligible = await getEligibleUsers(user.dealershipId);
+    let pushed = 0;
+
+    for (const rep of eligible) {
+      try {
+        // Create session for each rep
+        const session = await createConversationSession({
+          userId: rep.id,
+          dealershipId: user.dealershipId,
+          mode: 'roleplay',
+          questionText: pending.scenarioText,
+        });
+
+        const firstName = rep.full_name ? rep.full_name.split(/\s+/)[0] : '';
+        const greeting = firstName ? `Hey ${firstName}, ` : '';
+        const fullMsg = `${greeting}${pending.scenarioText}`;
+
+        const smsRes = await sendSms(rep.phone, fullMsg);
+        await updateSessionStatus(session.id, 'active');
+        await insertTranscriptLog({
+          userId: rep.id,
+          dealershipId: user.dealershipId,
+          phone: rep.phone,
+          direction: 'outbound',
+          messageBody: fullMsg,
+          sinchMessageId: smsRes.message_id,
+          sessionId: session.id,
+        });
+        pushed++;
+        await new Promise(r => setTimeout(r, 50));
+      } catch (repErr) {
+        console.error(`NOW push failed for ${rep.id}:`, repErr);
+      }
+    }
+
+    await sendSms(phone, `Sent to ${pushed} rep${pushed !== 1 ? 's' : ''}. Responses will be graded automatically.`);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: `NOW confirmed — pushed to ${pushed} reps.`,
+    });
+    return true;
+  } catch (err) {
+    console.error('NOW push failed:', err);
+    await sendSms(phone, 'Something went wrong pushing that scenario. Try again.');
+    return true;
+  }
+}
+
+// --- CHALLENGE keyword handler ---
+async function handleChallengeKeyword(
+  user: { id: string; dealershipId: string; fullName: string },
+  phone: string,
+  targetName: string
+) {
+  const featureEnabled = await isFeatureEnabled(user.dealershipId, 'peer_challenge_enabled');
+  if (!featureEnabled) {
+    await sendSms(phone, 'Peer challenges are not enabled yet. Stay tuned!');
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: 'Peer challenge not enabled.',
+    });
+    return;
+  }
+
+  try {
+    const { users } = await findChallengeTarget(targetName, user.dealershipId, user.id);
+
+    if (users.length === 0) {
+      await sendSms(phone, `No one named "${targetName}" found on your team. Check spelling and try again.`);
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: `CHALLENGE: no match for "${targetName}".`,
+      });
+      return;
+    }
+
+    if (users.length === 1) {
+      // Single match — check availability and create
+      const target = users[0];
+      const unavailableReason = await checkChallengeAvailability(target.id, user.id, user.dealershipId);
+      if (unavailableReason) {
+        await sendSms(phone, `Can't challenge ${target.fullName.split(/\s+/)[0]}: ${unavailableReason}`);
+        await insertTranscriptLog({
+          userId: user.id,
+          dealershipId: user.dealershipId,
+          phone,
+          direction: 'outbound',
+          messageBody: `CHALLENGE: unavailable — ${unavailableReason}`,
+        });
+        return;
+      }
+
+      const challengeId = await createPeerChallenge(user.id, target.id, user.dealershipId);
+
+      // Notify challenger
+      await sendSms(phone, `Challenge sent to ${target.fullName.split(/\s+/)[0]}. They have 4 hours to accept.`);
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: `CHALLENGE: sent to ${target.fullName.split(/\s+/)[0]}.`,
+        metadata: { type: 'peer_challenge_created', challengeId },
+      });
+
+      // Notify challenged
+      const challengerFirst = user.fullName ? user.fullName.split(/\s+/)[0] : 'Someone';
+      const { serviceClient: sc } = await import('@/lib/supabase/service');
+      const { data: targetUser } = await sc.from('users').select('phone').eq('id', target.id).single();
+      if (targetUser?.phone) {
+        const notifyMsg = `${challengerFirst} challenged you! Reply ACCEPT to compete or PASS to skip.`;
+        await sendSms(targetUser.phone as string, notifyMsg);
+        await insertTranscriptLog({
+          userId: target.id,
+          dealershipId: user.dealershipId,
+          phone: targetUser.phone as string,
+          direction: 'outbound',
+          messageBody: notifyMsg,
+          metadata: { type: 'peer_challenge_notification', challengeId },
+        });
+      }
+      return;
+    }
+
+    // Multiple matches — disambiguate
+    const options = users.slice(0, 4).map((u, i) => ({
+      option: i + 1,
+      user_id: u.id,
+      display: u.fullName,
+    }));
+
+    await createDisambiguationChallenge(user.id, user.dealershipId, options);
+
+    const optionLines = options.map(o => `${o.option}. ${o.display}`).join('\n');
+    const disambMsg = `Which one?\n${optionLines}\nReply with the number.`;
+    await sendSms(phone, disambMsg);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: disambMsg,
+    });
+  } catch (err) {
+    console.error('CHALLENGE handler error:', err);
+    await sendSms(phone, 'Something went wrong. Try again.');
+  }
+}
+
+// --- Disambiguation number reply handler ---
+async function handleDisambiguationReply(
+  user: { id: string; dealershipId: string; fullName: string },
+  phone: string,
+  number: number
+): Promise<boolean> {
+  const pending = await getPendingDisambiguation(user.id);
+  if (!pending) return false;
+
+  const selected = pending.options.find(o => o.option === number);
+  if (!selected) {
+    await sendSms(phone, `Invalid choice. Reply with a number 1-${pending.options.length}.`);
+    return true;
+  }
+
+  try {
+    // Check availability
+    const unavailableReason = await checkChallengeAvailability(selected.user_id, user.id, user.dealershipId);
+    if (unavailableReason) {
+      await sendSms(phone, `Can't challenge ${selected.display.split(/\s+/)[0]}: ${unavailableReason}`);
+      return true;
+    }
+
+    await resolveDisambiguation(pending.id, selected.user_id);
+
+    // Notify challenger
+    await sendSms(phone, `Challenge sent to ${selected.display.split(/\s+/)[0]}. They have 4 hours to accept.`);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: `CHALLENGE disambiguated: sent to ${selected.display.split(/\s+/)[0]}.`,
+    });
+
+    // Notify challenged
+    const { serviceClient: sc } = await import('@/lib/supabase/service');
+    const { data: targetUser } = await sc.from('users').select('phone').eq('id', selected.user_id).single();
+    if (targetUser?.phone) {
+      const challengerFirst = user.fullName ? user.fullName.split(/\s+/)[0] : 'Someone';
+      const notifyMsg = `${challengerFirst} challenged you! Reply ACCEPT to compete or PASS to skip.`;
+      await sendSms(targetUser.phone as string, notifyMsg);
+      await insertTranscriptLog({
+        userId: selected.user_id,
+        dealershipId: user.dealershipId,
+        phone: targetUser.phone as string,
+        direction: 'outbound',
+        messageBody: notifyMsg,
+        metadata: { type: 'peer_challenge_notification', challengeId: pending.id },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.error('Disambiguation resolve error:', err);
+    await sendSms(phone, 'Something went wrong. Try CHALLENGE again.');
+    return true;
+  }
+}
+
+// --- ACCEPT keyword handler ---
+async function handleAcceptKeyword(
+  user: { id: string; dealershipId: string; fullName: string },
+  phone: string
+): Promise<boolean> {
+  const pendingChallenge = await getPendingChallengeForUser(user.id);
+  if (!pendingChallenge) return false;
+
+  try {
+    const { scenarioText, taxonomyDomain } = await acceptChallenge(
+      pendingChallenge.id,
+      pendingChallenge.challengerId,
+      user.id,
+      user.dealershipId
+    );
+
+    // Create sessions for both challenger and challenged
+    const challengerSession = await createConversationSession({
+      userId: pendingChallenge.challengerId,
+      dealershipId: user.dealershipId,
+      mode: 'roleplay',
+      questionText: scenarioText,
+      trainingDomain: taxonomyDomain,
+    });
+
+    const challengedSession = await createConversationSession({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      mode: 'roleplay',
+      questionText: scenarioText,
+      trainingDomain: taxonomyDomain,
+    });
+
+    // Update peer challenge with session IDs
+    const { serviceClient: sc } = await import('@/lib/supabase/service');
+    await sc.from('peer_challenges').update({
+      challenger_session_id: challengerSession.id,
+      challenged_session_id: challengedSession.id,
+    }).eq('id', pendingChallenge.id);
+
+    await updateSessionStatus(challengerSession.id, 'active');
+    await updateSessionStatus(challengedSession.id, 'active');
+
+    // Send scenario to both
+    const challengedFirst = user.fullName ? user.fullName.split(/\s+/)[0] : 'your opponent';
+
+    // Notify challenger
+    const { data: challengerUser } = await sc.from('users').select('phone, full_name').eq('id', pendingChallenge.challengerId).single();
+    if (challengerUser?.phone) {
+      const challengerFirst = challengerUser.full_name ? (challengerUser.full_name as string).split(/\s+/)[0] : '';
+      const challengerGreeting = challengerFirst ? `${challengerFirst}, ` : '';
+      const challengerMsg = `${challengerGreeting}${challengedFirst} accepted! Here's your challenge:\n\n${scenarioText}`;
+      await sendSms(challengerUser.phone as string, challengerMsg);
+      await insertTranscriptLog({
+        userId: pendingChallenge.challengerId,
+        dealershipId: user.dealershipId,
+        phone: challengerUser.phone as string,
+        direction: 'outbound',
+        messageBody: challengerMsg,
+        sessionId: challengerSession.id,
+      });
+    }
+
+    // Send to challenged (current user)
+    const userFirst = user.fullName ? user.fullName.split(/\s+/)[0] : '';
+    const userGreeting = userFirst ? `${userFirst}, ` : '';
+    const challengedMsg = `${userGreeting}challenge accepted! Here's your scenario:\n\n${scenarioText}`;
+    await sendSms(phone, challengedMsg);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: challengedMsg,
+      sessionId: challengedSession.id,
+    });
+
+    return true;
+  } catch (err) {
+    console.error('ACCEPT handler error:', err);
+    await sendSms(phone, 'Something went wrong accepting the challenge. Try again.');
+    return true;
+  }
+}
+
+// --- PASS keyword handler ---
+async function handlePassKeyword(
+  user: { id: string; dealershipId: string },
+  phone: string
+): Promise<boolean> {
+  const pendingChallenge = await getPendingChallengeForUser(user.id);
+  if (!pendingChallenge) return false;
+
+  try {
+    await declineChallenge(pendingChallenge.id);
+
+    await sendSms(phone, 'No worries. Challenge declined.');
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: 'Peer challenge declined.',
+    });
+
+    // Notify challenger
+    const { serviceClient: sc } = await import('@/lib/supabase/service');
+    const { data: challengerUser } = await sc.from('users').select('phone, full_name').eq('id', pendingChallenge.challengerId).single();
+    const { data: declinedUser } = await sc.from('users').select('full_name').eq('id', user.id).single();
+    const declinedFirst = declinedUser?.full_name ? (declinedUser.full_name as string).split(/\s+/)[0] : 'Your opponent';
+
+    if (challengerUser?.phone) {
+      const notifyMsg = `${declinedFirst} passed on the challenge. Try someone else!`;
+      await sendSms(challengerUser.phone as string, notifyMsg);
+      await insertTranscriptLog({
+        userId: pendingChallenge.challengerId,
+        dealershipId: user.dealershipId,
+        phone: challengerUser.phone as string,
+        direction: 'outbound',
+        messageBody: notifyMsg,
+      });
+    }
+
+    return true;
+  } catch (err) {
+    console.error('PASS handler error:', err);
+    return true;
+  }
+}
+
+// =============================================================================
+// Final exchange: grade everything, send Never Naked feedback
+// Phase 6: post-grading hooks for chains + peer challenges
+// =============================================================================
 async function handleFinalExchange(
-  session: { id: string; status: string; questionText: string; mode: string; promptVersionId: string | null; personaMood?: string | null; trainingDomain?: string | null },
+  session: {
+    id: string;
+    status: string;
+    questionText: string;
+    mode: string;
+    promptVersionId: string | null;
+    personaMood?: string | null;
+    trainingDomain?: string | null;
+    challengeId?: string | null;
+    scenarioChainId?: string | null;
+    chainStep?: number | null;
+  },
   user: { id: string; dealershipId: string },
   phone: string,
   text: string,
@@ -271,10 +799,8 @@ async function handleFinalExchange(
   await updateSessionStatus(session.id, 'grading');
 
   try {
-    // Get full conversation history for grading context
     const history = await getSessionTranscript(session.id);
 
-    // Phase 4A: Check behavioral scoring feature flags
     const scoreBehavioralUrgency = await isFeatureEnabled(user.dealershipId, 'behavioral_scoring_urgency');
     const scoreBehavioralCompetitive = await isFeatureEnabled(user.dealershipId, 'behavioral_scoring_competitive');
 
@@ -319,12 +845,11 @@ async function handleFinalExchange(
         await updatePriorityVectorAfterGrading(
           user.id,
           user.dealershipId,
-          session.trainingDomain as any,
+          session.trainingDomain as Parameters<typeof updatePriorityVectorAfterGrading>[2],
           averageScore
         );
       } catch (weightErr) {
         console.error('Priority vector update failed:', weightErr);
-        // Non-blocking — continue with SMS
       }
     }
 
@@ -341,6 +866,132 @@ async function handleFinalExchange(
 
     assertTransition('grading', 'completed');
     await updateSessionStatus(session.id, 'completed');
+
+    // --- Phase 6C: Chain step recording ---
+    if (session.scenarioChainId) {
+      try {
+        const stepResult: StepResult = {
+          step: session.chainStep ?? 1,
+          scores: {
+            product_accuracy: result.product_accuracy,
+            tone_rapport: result.tone_rapport,
+            addressed_concern: result.addressed_concern,
+            close_attempt: result.close_attempt,
+          },
+          feedback: result.feedback,
+          completed_at: new Date().toISOString(),
+        };
+        const chainComplete = await recordChainStepResult(session.scenarioChainId, stepResult);
+        if (chainComplete) {
+          // Load chain context for completion SMS
+          const { getActiveChain } = await import('@/lib/chains/lifecycle');
+          const { serviceClient: sc } = await import('@/lib/supabase/service');
+          const { data: chainRow } = await sc
+            .from('scenario_chains')
+            .select('chain_context, step_results')
+            .eq('id', session.scenarioChainId)
+            .single();
+
+          if (chainRow) {
+            const ctx = chainRow.chain_context as { customer_name?: string };
+            const completionMsg = buildChainCompletionSMS(
+              ctx.customer_name ?? 'The customer',
+              chainRow.step_results as StepResult[]
+            );
+            await new Promise(r => setTimeout(r, 1000));
+            await sendSms(phone, completionMsg);
+            await insertTranscriptLog({
+              userId: user.id,
+              dealershipId: user.dealershipId,
+              phone,
+              direction: 'outbound',
+              messageBody: completionMsg,
+            });
+          }
+        }
+      } catch (chainErr) {
+        console.error('Chain step recording failed:', chainErr);
+      }
+    }
+
+    // --- Phase 6D: Peer challenge completion check ---
+    if (session.challengeId) {
+      // Note: session.challengeId here is used for daily challenges AND peer challenges.
+      // For peer challenges, we look up whether this session is linked to a peer_challenge row.
+      try {
+        const { serviceClient: sc } = await import('@/lib/supabase/service');
+        const { data: peerChallenge } = await sc
+          .from('peer_challenges')
+          .select('id, challenger_id, challenged_id, status')
+          .eq('status', 'active')
+          .or(`challenger_session_id.eq.${session.id},challenged_session_id.eq.${session.id}`)
+          .maybeSingle();
+
+        if (peerChallenge) {
+          const peerResult = await checkAndCompleteChallenge(peerChallenge.id);
+          if (peerResult?.complete) {
+            // Send results to both
+            const { data: users } = await sc
+              .from('users')
+              .select('id, phone, full_name')
+              .in('id', [peerChallenge.challenger_id as string, peerChallenge.challenged_id as string]);
+
+            const userMap: Record<string, { phone: string; firstName: string }> = {};
+            for (const u of users ?? []) {
+              userMap[u.id as string] = {
+                phone: u.phone as string,
+                firstName: (u.full_name as string)?.split(/\s+/)[0] ?? 'Unknown',
+              };
+            }
+
+            const challengerId = peerChallenge.challenger_id as string;
+            const challengedId = peerChallenge.challenged_id as string;
+
+            // Send to challenger
+            if (userMap[challengerId]) {
+              const msg = buildPeerResultsSMS(
+                peerResult.challengerScore ?? 0,
+                peerResult.challengedScore ?? 0,
+                userMap[challengedId]?.firstName ?? 'opponent',
+                peerResult.winnerId === challengerId,
+                'tone_rapport', // simplified — could extract from actual scores
+                'close_attempt'
+              );
+              await sendSms(userMap[challengerId].phone, msg);
+              await insertTranscriptLog({
+                userId: challengerId,
+                dealershipId: user.dealershipId,
+                phone: userMap[challengerId].phone,
+                direction: 'outbound',
+                messageBody: msg,
+              });
+            }
+
+            // Send to challenged
+            if (userMap[challengedId]) {
+              const msg = buildPeerResultsSMS(
+                peerResult.challengedScore ?? 0,
+                peerResult.challengerScore ?? 0,
+                userMap[challengerId]?.firstName ?? 'opponent',
+                peerResult.winnerId === challengedId,
+                'tone_rapport',
+                'close_attempt'
+              );
+              await sendSms(userMap[challengedId].phone, msg);
+              await insertTranscriptLog({
+                userId: challengedId,
+                dealershipId: user.dealershipId,
+                phone: userMap[challengedId].phone,
+                direction: 'outbound',
+                messageBody: msg,
+              });
+            }
+          }
+        }
+      } catch (peerErr) {
+        console.error('Peer challenge completion check failed:', peerErr);
+      }
+    }
   } catch (gradingErr) {
     console.error('AI grading failed:', gradingErr);
     await updateSessionStatus(session.id, 'error');
@@ -391,11 +1042,9 @@ async function handleMidExchange(
         messageBody: coachingMsg,
         sessionId: session.id,
       });
-      // Small delay so messages arrive in order
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    // Send customer follow-up
     await sendSms(phone, followUp.customerMessage);
     await insertTranscriptLog({
       userId: user.id,
@@ -406,12 +1055,9 @@ async function handleMidExchange(
       sessionId: session.id,
     });
 
-    // Advance step — session stays active
     await updateSessionStep(session.id, stepIndex + 1);
   } catch (err) {
     console.error('Follow-up generation failed:', err);
-
-    // Fallback: skip to final grade on error
     await updateSessionStatus(session.id, 'error');
     const errorMsg = ERROR_SMS.ai_timeout;
     await sendSms(phone, errorMsg);
@@ -435,7 +1081,6 @@ async function handlePendingConsent(
   const trimmed = text.trim().toLowerCase();
 
   if (['yes', 'start', 'y', 'unstop'].includes(trimmed)) {
-    // User consented — activate them
     await updateUserStatus(user.id, 'active');
     await insertConsentRecord({
       userId: user.id,
@@ -458,7 +1103,6 @@ async function handlePendingConsent(
   }
 
   if (['stop', 'no', 'cancel', 'n'].includes(trimmed)) {
-    // User declined — mark inactive, register opt-out
     await updateUserStatus(user.id, 'inactive');
     const { registerOptOut } = await import('@/lib/service-db');
     await registerOptOut(phone, user.dealershipId);
@@ -475,7 +1119,6 @@ async function handlePendingConsent(
     return;
   }
 
-  // Unrecognized reply — remind them
   const reminderMsg = 'Please reply YES to start receiving DealershipIQ training, or STOP to decline.';
   await sendSms(phone, reminderMsg);
   await insertTranscriptLog({
@@ -512,7 +1155,6 @@ async function handleDetailsKeyword(
   phone: string
 ) {
   try {
-    // Check if user is a manager/owner
     const { serviceClient: sc } = await import('@/lib/supabase/service');
     const { data: membership } = await sc
       .from('dealership_memberships')
@@ -522,12 +1164,8 @@ async function handleDetailsKeyword(
       .maybeSingle();
 
     const role = (membership?.role as string) ?? '';
-    if (!['owner', 'manager'].includes(role)) {
-      // Not a manager — ignore DETAILS keyword, don't send error
-      return;
-    }
+    if (!['owner', 'manager'].includes(role)) return;
 
-    // Look up today's meeting script
     const todayStr = new Date().toISOString().split('T')[0];
     const { data: script } = await sc
       .from('meeting_scripts')
@@ -537,8 +1175,7 @@ async function handleDetailsKeyword(
       .maybeSingle();
 
     if (!script) {
-      const msg =
-        "Your morning intel isn't ready yet. Check your dashboard after 7 AM.";
+      const msg = "Your morning intel isn't ready yet. Check your dashboard after 7 AM.";
       await sendSms(phone, msg);
       await insertTranscriptLog({
         userId: user.id,
@@ -550,10 +1187,7 @@ async function handleDetailsKeyword(
       return;
     }
 
-    // Format expanded DETAILS response
-    const { formatDetailsResponse } = await import(
-      '@/lib/meeting-script/assemble'
-    );
+    const { formatDetailsResponse } = await import('@/lib/meeting-script/assemble');
     const detailsText = formatDetailsResponse(
       user.dealershipName,
       script.full_script as Parameters<typeof formatDetailsResponse>[1],
@@ -569,7 +1203,6 @@ async function handleDetailsKeyword(
       messageBody: detailsText,
       metadata: { type: 'morning_script_details' },
     });
-    // DETAILS does not count toward 3-message daily cap — it's a system response
   } catch (err) {
     console.error('DETAILS keyword handler error:', err);
   }
