@@ -111,11 +111,20 @@ export function parseScheduleKeyword(text: string): ParseResult {
       }
 
       const vacationEnd = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const today = new Date().toISOString().split('T')[0];
+
+      // Reject past dates
+      if (vacationEnd <= today) {
+        return {
+          success: false,
+          error: 'Vacation end date must be in the future. Use format "VACATION BACK M/D" (e.g., "VACATION BACK 3/15").',
+        };
+      }
 
       return {
         success: true,
         data: {
-          vacationStart: new Date().toISOString().split('T')[0],
+          vacationStart: today,
           vacationEnd,
         },
         message: `Vacation set until ${vacationEnd}.`,

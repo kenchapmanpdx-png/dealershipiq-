@@ -42,12 +42,47 @@ function normalizePhone(phone: string): string {
     : `+1${digits}`;
 }
 
+// Parse a single CSV line respecting quoted fields (RFC 4180)
+function parseCSVLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        // Escaped quote ("") or end of quoted field
+        if (i + 1 < line.length && line[i + 1] === '"') {
+          current += '"';
+          i++; // skip next quote
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        fields.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
+
 // Parse CSV with header row
 function parseCSV(csvText: string): ImportRow[] {
   const lines = csvText.trim().split('\n');
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase());
   const fullNameIdx = headers.indexOf('full_name');
   const phoneIdx = headers.indexOf('phone');
 
@@ -56,7 +91,7 @@ function parseCSV(csvText: string): ImportRow[] {
   }
 
   return lines.slice(1).map((line) => {
-    const fields = line.split(',').map((f) => f.trim());
+    const fields = parseCSVLine(line);
     return {
       full_name: fields[fullNameIdx],
       phone: fields[phoneIdx],

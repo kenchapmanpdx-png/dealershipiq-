@@ -11,6 +11,7 @@ import { tokenLimitParam } from '@/lib/openai';
 import { buildRepContext, getTenureDescription } from '@/lib/coach/context';
 import { buildCoachSystemPrompt, DOOR_OPENING_MESSAGES, CLASSIFY_EXCHANGE_TOOL } from '@/lib/coach/prompts';
 import { compactMessages, buildMessageHistory, isMaxExchanges } from '@/lib/coach/compaction';
+import { verifyAppToken } from '@/app/api/app/auth/route';
 import type {
   CoachDoor,
   CoachMessage,
@@ -572,7 +573,7 @@ async function closeStaleSessionsForUser(userId: string): Promise<void> {
 async function authenticateRep(
   request: NextRequest
 ): Promise<{ userId: string; dealershipId: string } | null> {
-  // Phone-based auth: session token in cookie or Authorization header
+  // Phone-based auth: HMAC-signed session token in cookie or header
   const token =
     request.cookies.get('diq_session')?.value ??
     request.headers.get('x-diq-session') ??
@@ -580,16 +581,14 @@ async function authenticateRep(
 
   if (!token) return null;
 
-  // Decode token: base64(userId:dealershipId:timestamp:hmac)
+  // Verify HMAC signature + check expiry
+  const verified = verifyAppToken(token);
+  if (!verified) return null;
+
+  const { userId, dealershipId } = verified;
+
+  // Verify user still exists in database
   try {
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    const parts = decoded.split(':');
-    if (parts.length < 2) return null;
-
-    const userId = parts[0];
-    const dealershipId = parts[1];
-
-    // Verify user exists
     const { data: user } = await serviceClient
       .from('users')
       .select('id')

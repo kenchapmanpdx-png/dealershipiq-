@@ -16,6 +16,8 @@
 //   ACCEPT / PASS   — Accept or decline pending peer challenge
 //   1/2/3           — Disambiguation number reply for peer challenge
 
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySinchWebhookSignature } from '@/lib/sinch-auth';
 import { sendSms, detectKeyword, helpResponse } from '@/lib/sms';

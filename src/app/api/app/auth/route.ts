@@ -75,7 +75,7 @@ function createSessionResponse(
 
   // Create HMAC-signed session token
   const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
-  const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET || 'fallback-dev-secret';
+  const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET || '';
 
   const payload = {
     userId,
@@ -113,7 +113,7 @@ export function verifyAppToken(token: string): {
     const { sig, ...payload } = decoded;
 
     // Verify signature
-    const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET || 'fallback-dev-secret';
+    const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET || '';
     const expected = createHmac('sha256', secret)
       .update(JSON.stringify(payload))
       .digest('hex');
