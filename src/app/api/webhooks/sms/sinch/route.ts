@@ -157,6 +157,30 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     return;
   }
 
+  // --- COACH Keyword Detection (same priority as STOP/HELP) ---
+  if (text.trim().toLowerCase() === 'coach') {
+    const coachEnabled = await isFeatureEnabled(user.dealershipId, 'coach_mode_enabled');
+    if (!coachEnabled) {
+      await sendSms(phone, "Coach Mode isn't available yet. Stay tuned!");
+    } else {
+      // Build coach URL from dealership slug
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dealershipiq-wua7.vercel.app';
+      const slug = user.dealershipId;
+      await sendSms(
+        phone,
+        `DealershipIQ Coach is ready. Tap to start: ${baseUrl}/app/${slug}/coach`
+      );
+    }
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: 'COACH keyword response',
+    });
+    return;
+  }
+
   // --- Keyword Detection (before routing to state machine) ---
   const keyword = detectKeyword(text);
 

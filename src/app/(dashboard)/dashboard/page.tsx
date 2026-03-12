@@ -25,8 +25,17 @@ interface DashboardData {
   recentActivity: Activity[];
 }
 
+interface CoachThemes {
+  total_sessions: number;
+  unique_users: number;
+  themes: { topic: string; count: number; percentage: number }[];
+  insufficient_data?: boolean;
+  message?: string;
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [coachThemes, setCoachThemes] = useState<CoachThemes | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,6 +93,20 @@ export default function DashboardPage() {
         },
         recentActivity,
       });
+
+      // Fetch coach themes (non-blocking)
+      try {
+        const coachRes = await fetch('/api/dashboard/coach-themes', {
+          headers: { Authorization: `Bearer ${document.cookie.split('sb-')[1]?.split('=')[1] ?? ''}` },
+        });
+        if (coachRes.ok) {
+          const coachData = await coachRes.json();
+          if (coachData.data) setCoachThemes(coachData.data);
+        }
+      } catch {
+        // Non-critical
+      }
+
       setLoading(false);
     } catch (err) {
       console.error('Failed to fetch dashboard:', err);
@@ -155,6 +178,30 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      {/* Coach themes (if data available) */}
+      {coachThemes && !coachThemes.insufficient_data && coachThemes.total_sessions > 0 && (
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Coach Mode Themes</h2>
+          <p className="text-sm text-gray-500 mb-3">
+            {coachThemes.total_sessions} sessions from {coachThemes.unique_users} reps this week
+          </p>
+          <div className="space-y-2">
+            {coachThemes.themes.slice(0, 4).map((theme) => (
+              <div key={theme.topic} className="flex justify-between items-center">
+                <span className="text-sm text-gray-700 capitalize">{theme.topic}</span>
+                <span className="text-sm font-medium text-gray-900">{theme.percentage}%</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {coachThemes?.insufficient_data && (
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Coach Mode</h2>
+          <p className="text-sm text-gray-500">{coachThemes.message}</p>
+        </Card>
+      )}
 
       {/* Recent activity */}
       <Card>

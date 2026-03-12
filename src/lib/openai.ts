@@ -86,7 +86,7 @@ const OPENAI_MODELS = {
 } as const;
 
 // GPT-5.4+ requires max_completion_tokens; older models use max_tokens
-function tokenLimitParam(model: string, limit: number): Record<string, number> {
+export function tokenLimitParam(model: string, limit: number): Record<string, number> {
   return model.startsWith('gpt-5')
     ? { max_completion_tokens: limit }
     : { max_tokens: limit };

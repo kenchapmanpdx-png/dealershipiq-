@@ -10,7 +10,9 @@ import {
   getManagersForDealership,
   getDailyDigestStats,
   insertTranscriptLog,
+  isFeatureEnabled,
 } from '@/lib/service-db';
+import { serviceClient } from '@/lib/supabase/service';
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
@@ -106,9 +108,69 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // --- Weekly Micro-Insight (Monday only) ---
+  const today = new Date();
+  const isMonday = today.getDay() === 1;
+
+  let microInsightsSent = 0;
+  if (isMonday) {
+    for (const dealership of dealerships) {
+      try {
+        const coachEnabled = await isFeatureEnabled(dealership.id, 'coach_mode_enabled');
+        if (!coachEnabled) continue;
+
+        // Find reps who have used Coach Mode at least once
+        const { data: coachUsers } = await serviceClient
+          .from('coach_sessions')
+          .select('user_id')
+          .eq('dealership_id', dealership.id);
+
+        const userIdSet = new Set((coachUsers ?? []).map((u) => u.user_id as string));
+        const uniqueUserIds: string[] = [];
+        userIdSet.forEach((id) => uniqueUserIds.push(id));
+
+        for (const userId of uniqueUserIds) {
+          try {
+            const insight = await findPositiveInsight(userId, dealership.id);
+            if (!insight) continue;
+
+            // Get user phone
+            const { data: user } = await serviceClient
+              .from('users')
+              .select('phone')
+              .eq('id', userId)
+              .single();
+
+            if (!user?.phone) continue;
+
+            // Close stale coach sessions lazily
+            await closeStaleCoachSessions(userId);
+
+            // Send micro-insight (GSM-7, no emoji)
+            const msg = `Quick note from your Coach: ${insight}. Reply COACH anytime.`;
+            await sendSms(user.phone as string, msg);
+            await insertTranscriptLog({
+              userId,
+              dealershipId: dealership.id,
+              phone: user.phone as string,
+              direction: 'outbound',
+              messageBody: msg,
+            });
+            microInsightsSent++;
+          } catch (err) {
+            console.error(`Micro-insight error for user ${userId}:`, err);
+          }
+        }
+      } catch (err) {
+        console.error(`Micro-insight error for dealership ${dealership.id}:`, err);
+      }
+    }
+  }
+
   return NextResponse.json({
     dealerships: dealerships.length,
     results,
+    microInsightsSent,
   });
 }
 
@@ -156,4 +218,131 @@ function formatDigestMessage(dealershipName: string, stats: DigestStats): string
   }
 
   return message;
+}
+
+// --- Weekly Micro-Insight helpers ---
+
+const DOMAIN_LABELS: Record<string, string> = {
+  objection_handling: 'objection handling',
+  product_knowledge: 'product knowledge',
+  closing_technique: 'closing',
+  competitive_positioning: 'competitive positioning',
+  financing: 'financing',
+};
+
+async function findPositiveInsight(
+  userId: string,
+  dealershipId: string
+): Promise<string | null> {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+  try {
+    // Get last 7 days scores by domain
+    const { data: recentResults } = await serviceClient
+      .from('training_results')
+      .select('training_domain, product_accuracy, tone_rapport, addressed_concern, close_attempt')
+      .eq('user_id', userId)
+      .eq('dealership_id', dealershipId)
+      .gte('created_at', sevenDaysAgo.toISOString());
+
+    if (!recentResults || recentResults.length === 0) return null;
+
+    // Get previous 7 days for comparison
+    const { data: olderResults } = await serviceClient
+      .from('training_results')
+      .select('training_domain, product_accuracy, tone_rapport, addressed_concern, close_attempt')
+      .eq('user_id', userId)
+      .eq('dealership_id', dealershipId)
+      .gte('created_at', fourteenDaysAgo.toISOString())
+      .lt('created_at', sevenDaysAgo.toISOString());
+
+    // Find domain with biggest improvement
+    const domainScores: Record<string, { recent: number[]; older: number[] }> = {};
+
+    for (const r of recentResults) {
+      const domain = (r.training_domain as string) ?? 'general';
+      if (!domainScores[domain]) domainScores[domain] = { recent: [], older: [] };
+      const avg = (
+        (r.product_accuracy as number) +
+        (r.tone_rapport as number) +
+        (r.addressed_concern as number) +
+        (r.close_attempt as number)
+      ) / 4;
+      domainScores[domain].recent.push(avg);
+    }
+
+    for (const r of (olderResults ?? [])) {
+      const domain = (r.training_domain as string) ?? 'general';
+      if (!domainScores[domain]) domainScores[domain] = { recent: [], older: [] };
+      const avg = (
+        (r.product_accuracy as number) +
+        (r.tone_rapport as number) +
+        (r.addressed_concern as number) +
+        (r.close_attempt as number)
+      ) / 4;
+      domainScores[domain].older.push(avg);
+    }
+
+    // Find biggest positive improvement (>20%)
+    let bestDomain: string | null = null;
+    let bestImprovement = 0;
+
+    for (const [domain, scores] of Object.entries(domainScores)) {
+      if (scores.recent.length === 0 || scores.older.length === 0) continue;
+      const recentAvg = scores.recent.reduce((s, v) => s + v, 0) / scores.recent.length;
+      const olderAvg = scores.older.reduce((s, v) => s + v, 0) / scores.older.length;
+      if (olderAvg === 0) continue;
+      const pctChange = ((recentAvg - olderAvg) / olderAvg) * 100;
+      if (pctChange > 20 && pctChange > bestImprovement) {
+        bestImprovement = pctChange;
+        bestDomain = domain;
+      }
+    }
+
+    if (bestDomain) {
+      const label = DOMAIN_LABELS[bestDomain] ?? bestDomain;
+      return `Your ${label} scores jumped ${Math.round(bestImprovement)}% this week. Whatever you're doing differently, keep going`;
+    }
+
+    // Fallback: check for best score this week
+    const allScores = recentResults.map((r) => (
+      ((r.product_accuracy as number) +
+        (r.tone_rapport as number) +
+        (r.addressed_concern as number) +
+        (r.close_attempt as number)) / 4
+    ));
+    const bestScore = Math.max(...allScores);
+    if (bestScore >= 4.0) {
+      return `You hit a ${bestScore.toFixed(1)}/5 this week — strong work on the floor`;
+    }
+
+    return null; // No positive signal — skip
+  } catch {
+    return null;
+  }
+}
+
+async function closeStaleCoachSessions(userId: string): Promise<void> {
+  try {
+    const staleThreshold = new Date();
+    staleThreshold.setHours(staleThreshold.getHours() - 24);
+
+    const { data: staleSessions } = await serviceClient
+      .from('coach_sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .is('ended_at', null);
+
+    for (const session of staleSessions ?? []) {
+      await serviceClient
+        .from('coach_sessions')
+        .update({ ended_at: new Date().toISOString() })
+        .eq('id', session.id as string);
+    }
+  } catch {
+    // Non-critical
+  }
 }
