@@ -439,6 +439,20 @@ Each template: 3 steps, deterministic branching on empathy/close_attempt/product
 
 **tsc --noEmit:** PASSING (22 files changed, +1177/-201)
 
+### Re-Audit + Fixes (03/12/2026)
+
+**Re-audit found 5 additional issues (all fixed in commit da036a9):**
+1. Webhook route missing `maxDuration = 60` (HIGH — was added to crons but missed on webhook)
+2. Coach session `authenticateRep()` not using `verifyAppToken()` HMAC verification (HIGH)
+3. Hardcoded `'fallback-dev-secret'` in app/auth (HIGH)
+4. Past vacation dates accepted by schedule-awareness parser (MEDIUM)
+5. CSV parser doesn't handle RFC 4180 quoted fields (MEDIUM)
+
+**Accepted/deferred:** In-memory rate limiting (NR-001), concurrent cron prevention (needs Redis), Hobby plan timezone (C-008), coach-themes user_id SELECT (false positive).
+
+**Re-audit report:** `docs/AUDIT-RECHECK.md`
+**tsc --noEmit:** PASSING
+
 ## What's Next
 1. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
 2. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)

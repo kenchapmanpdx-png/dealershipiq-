@@ -278,3 +278,9 @@ Append-only. Each entry records a technical or product decision with rationale.
   - PWA auth: HMAC-signed tokens with 7-day expiry
   - RLS: coach_sessions gets default-deny policy for anon key (defense in depth)
 - **Affected files:** 22 files, +1177/-201 lines
+
+## D-046: Re-audit fixes — 5 additional issues
+- **Date:** 2026-03-12
+- **Decision:** Re-ran full audit after initial 44-issue fix. Found and fixed 5 additional issues.
+- **Fixes:** webhook maxDuration, coach session HMAC verification, hardcoded fallback secret removal, past vacation date validation, RFC 4180 CSV parsing.
+- **Commit:** da036a9
