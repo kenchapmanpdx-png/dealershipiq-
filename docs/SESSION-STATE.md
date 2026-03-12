@@ -125,7 +125,7 @@ Complete rebuild per DealershipIQ-Strategic-Build-Order-v5 spec. Old monolithic 
   - ALTERed: daily_challenges (+taxonomy_domain, persona_mood, vehicle_context, winner_user_id, participation_count, status CHECK)
   - ALTERed: peer_challenges (challenged_id/scenario_text nullable, +grading_rubric, taxonomy_domain, challenger/challenged_session_id, disambiguation_options, accepted_at, completed_at, winner_id, expanded status CHECK)
   - ALTERed: conversation_sessions (+challenge_id, scenario_chain_id, chain_step)
-  - Feature flags: manager_quick_create_enabled, daily_challenge_enabled (mwf default), scenario_chains_enabled, peer_challenge_enabled (all OFF)
+  - Feature flags: manager_quick_create_enabled, daily_challenge_enabled (mwf default), scenario_chains_enabled, peer_challenge_enabled (all ENABLED for pilot dealerships 03/12/2026)
 
 **API Routes (1 new, 2 deleted):**
 - `GET /api/cron/challenge-results` — EOD: ranks daily challenge responses, sends results SMS, updates challenge status
@@ -399,13 +399,25 @@ Date: 03/10/2026
 
 **tsc --noEmit:** PASSING
 
+### Phase 6 Data Seeding (03/12/2026)
+
+**Chain templates seeded (9 total):**
+- objection_handling: Price Objection (easy), Trade-In Dispute (medium), Hostile Buyer — Payment Shock (hard)
+- product_knowledge: Feature Walkthrough (easy), EV vs Hybrid Deep Dive (medium), Expert Buyer — Spec Showdown (hard)
+- closing_technique: Warm Close (easy), Spouse Approval Close (medium), The Ghost — Re-engage and Close (hard)
+
+Each template: 3 steps, deterministic branching on empathy/close_attempt/product_knowledge scores, variable substitution ({customer_name}, {vehicle}, {competitor_vehicle}).
+
+**Feature flags enabled for both pilot dealerships:** manager_quick_create_enabled, daily_challenge_enabled, scenario_chains_enabled, peer_challenge_enabled.
+
+**Seed script:** `scripts/seed-chain-templates.ts`
+
 ## What's Next
-1. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
-2. **Phase 6 testing:** Enable feature flags on test dealership, seed chain_templates, test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords
-3. **Chain template seeding:** Create initial chain_templates rows (objection_handling, product_knowledge, closing_technique — easy/medium/hard)
-4. Sentry/Axiom observability (NR-002)
-5. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
-6. Verify 3-exchange objection flow
+1. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
+2. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
+3. Sentry/Axiom observability (NR-002)
+4. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+5. Verify 3-exchange objection flow
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.

@@ -63,13 +63,9 @@
 - **Resolution:** Both existing dealerships flagged as `is_pilot = true` via Supabase Management API.
 
 ## NR-013: Phase 6 chain template seeding
-- **Status:** Open — requires action
-- **Context:** Phase 6C Scenario Chains requires rows in `chain_templates` table. Templates define 3-day storylines with step prompts, branch rules, and difficulty levels. Without templates, chains cannot start.
-- **Action needed:** Create seed script (`scripts/seed-chain-templates.ts`) or manually insert templates for objection_handling, product_knowledge, closing_technique at easy/medium/hard difficulty levels.
-- **Recommendation:** Seed 3-5 templates per domain to start. Each template needs step_prompts JSONB with base_prompt, persona, branches, branch_rules for each step.
+- **Status:** RESOLVED 2026-03-12
+- **Resolution:** 9 chain templates seeded via Supabase REST API: 3 domains (objection_handling, product_knowledge, closing_technique) × 3 difficulties (easy/medium/hard). Each template has 3 steps with deterministic branching rules. Seed script at `scripts/seed-chain-templates.ts`.
 
 ## NR-014: Phase 6 feature flag enablement for testing
-- **Status:** Open — requires Ken's action
-- **Context:** All Phase 6 features are deployed but OFF by default. Feature flags: manager_quick_create_enabled, daily_challenge_enabled, scenario_chains_enabled, peer_challenge_enabled.
-- **Action needed:** Enable flags for test dealership in Supabase: `UPDATE feature_flags SET enabled = true WHERE dealership_id = '<test_dealership_id>' AND flag_name IN ('manager_quick_create_enabled', 'daily_challenge_enabled', 'scenario_chains_enabled', 'peer_challenge_enabled');`
-- **Recommendation:** Enable one feature at a time for isolated testing. Start with manager_quick_create (simplest flow to verify).
+- **Status:** RESOLVED 2026-03-12
+- **Resolution:** All 4 Phase 6 feature flags enabled for both pilot dealerships (Demo Honda + Test Dealership): manager_quick_create_enabled, daily_challenge_enabled, scenario_chains_enabled, peer_challenge_enabled.
