@@ -264,3 +264,17 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Decision:** `expirePeerChallenges()` called from orphaned-sessions cron (runs daily at 4am UTC). Handles all three expiry types: disambiguating (10min), pending (4h), active (4h with default win).
 - **Rationale:** No new cron slot needed. Expiry check is lightweight and runs fine at daily frequency since challenges already have their own expires_at timestamps.
 - **Affected files:** `src/app/api/cron/orphaned-sessions/route.ts`, `src/lib/challenges/peer.ts`
+
+## D-045: Full codebase audit — 44 issues fixed
+- **Date:** 2026-03-12
+- **Decision:** Conducted full audit of all 16 feature flows, 4 cross-feature interaction scenarios, and 4 cross-cutting verification checks. Fixed all 44 findings (11 critical, 12 high, 14 medium, 7 low) in a single commit.
+- **Rationale:** Phase 6 code complete + deployed. Before real user testing, needed systematic verification that all flows work end-to-end without data loss, race conditions, or compliance violations.
+- **Key decisions embedded in fixes:**
+  - GSM-7 enforcement: sanitizeGsm7() on all outbound SMS, emoji removed from grading prompts
+  - Keyword priority: STOP/HELP always first, natural opt-out patterns disabled during active sessions
+  - Idempotency: database-backed dedup (sms_transcript_log) + in-memory cache
+  - Atomicity: peer challenge completion uses atomic UPDATE...WHERE status='active', signup has Auth user rollback
+  - Chain expiry: incrementMissedDay wired into orphaned-sessions cron
+  - PWA auth: HMAC-signed tokens with 7-day expiry
+  - RLS: coach_sessions gets default-deny policy for anon key (defense in depth)
+- **Affected files:** 22 files, +1177/-201 lines

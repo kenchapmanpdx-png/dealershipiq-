@@ -412,6 +412,33 @@ Each template: 3 steps, deterministic branching on empathy/close_attempt/product
 
 **Seed script:** `scripts/seed-chain-templates.ts`
 
+### Full Codebase Audit + Fixes (03/12/2026)
+
+**Audit scope:** 16 feature flows, 4 cross-feature interaction scenarios, 4 cross-cutting checks.
+**Findings:** 11 critical, 12 high, 14 medium, 7 low — ALL FIXED in commit a280cca.
+**Audit report:** `docs/AUDIT-RESULTS.md`
+
+**Critical fixes (highlights):**
+- GSM-7 compliance: removed emoji from grading prompts, added sanitizeGsm7() to all SMS
+- Database-backed idempotency for webhook dedup (was in-memory Set, lost on cold start)
+- Keyword priority reordered (STOP/HELP now always checked first)
+- Atomic peer challenge completion (race condition prevented)
+- Chain expiry wired into orphaned-sessions cron (incrementMissedDay was never called)
+- maxDuration=60 on all 7 cron routes (was defaulting to 10s timeout)
+- Natural opt-out patterns no longer match during active training sessions
+- HMAC-signed PWA session tokens (was base64-only)
+
+**High fixes (highlights):**
+- Vehicle data from DB in chain lifecycle (was hardcoded as CR-V)
+- Message cap check (3/day) in daily training cron
+- Non-atomic signup wrapped with Auth user rollback
+- RLS enabled on coach_sessions (defense in depth)
+- Self-challenge prevention in peer challenges
+
+**Migration applied:** `20260312100000_coach_sessions_rls.sql` (RLS + deny-anon policy on coach_sessions)
+
+**tsc --noEmit:** PASSING (22 files changed, +1177/-201)
+
 ## What's Next
 1. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
 2. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
