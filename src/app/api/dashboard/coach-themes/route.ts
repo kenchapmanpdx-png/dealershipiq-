@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     // Fetch sessions for this dealership in the period
+    // PRIVACY: Only select aggregation fields, never expose user_id in response
     const { data: sessions, error: fetchError } = await serviceClient
       .from('coach_sessions')
       .select('session_topic, sentiment_trend, user_id')
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
 
     const allSessions = sessions ?? [];
 
-    // Count unique users
+    // Count unique users (internal use only, never exposed)
     const uniqueUsers = new Set(allSessions.map((s) => s.user_id as string)).size;
 
     // Privacy check: need >= 3 unique users
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Aggregate topics
+    // Aggregate topics (never expose user_id)
     const topicCounts: Record<string, number> = {};
     for (const s of allSessions) {
       const topic = (s.session_topic as string) ?? 'unknown';
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.count - a.count);
 
-    // Aggregate sentiment
+    // Aggregate sentiment (never expose user_id)
     const sentimentDist = { positive: 0, neutral: 0, negative: 0, declining: 0 };
     for (const s of allSessions) {
       const sentiment = (s.sentiment_trend as string) ?? 'neutral';

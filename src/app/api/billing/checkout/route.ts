@@ -77,59 +77,78 @@ export async function POST(request: NextRequest) {
 
     const dealershipId = dealership.id as string;
 
-    // 3. Create user row
-    await serviceClient.from('users').insert({
-      id: userId,
-      email,
-      full_name: managerName,
-      phone: '',
-      role: 'owner',
-      status: 'active',
-      dealership_id: dealershipId,
-    });
-
-    // 4. Create dealership_membership
-    await serviceClient.from('dealership_memberships').insert({
-      user_id: userId,
-      dealership_id: dealershipId,
-      role: 'owner',
-    });
-
-    // 5. Set user app_metadata
-    await serviceClient.auth.admin.updateUserById(userId, {
-      app_metadata: {
+    try {
+      // 3. Create user row
+      const { error: userError } = await serviceClient.from('users').insert({
+        id: userId,
+        email,
+        full_name: managerName,
+        phone: '',
+        role: 'owner',
+        status: 'active',
         dealership_id: dealershipId,
-        user_role: 'owner',
-      },
-    });
-
-    // 6. Default feature flags
-    const defaultFlags = [
-      { flag_name: 'morning_script_enabled', enabled: false },
-      { flag_name: 'coach_mode_enabled', enabled: false },
-      { flag_name: 'persona_moods_enabled', enabled: true },
-      { flag_name: 'billing_enabled', enabled: true },
-    ];
-    for (const flag of defaultFlags) {
-      await serviceClient.from('feature_flags').insert({
-        dealership_id: dealershipId,
-        ...flag,
-        config: {},
       });
+
+      if (userError) throw userError;
+
+      // 4. Create dealership_membership
+      const { error: membershipError } = await serviceClient.from('dealership_memberships').insert({
+        user_id: userId,
+        dealership_id: dealershipId,
+        role: 'owner',
+      });
+
+      if (membershipError) throw membershipError;
+
+      // 5. Set user app_metadata
+      const { error: metadataError } = await serviceClient.auth.admin.updateUserById(userId, {
+        app_metadata: {
+          dealership_id: dealershipId,
+          user_role: 'owner',
+        },
+      });
+
+      if (metadataError) throw metadataError;
+
+      // 6. Default feature flags
+      const defaultFlags = [
+        { flag_name: 'morning_script_enabled', enabled: false },
+        { flag_name: 'coach_mode_enabled', enabled: false },
+        { flag_name: 'persona_moods_enabled', enabled: true },
+        { flag_name: 'billing_enabled', enabled: true },
+      ];
+      for (const flag of defaultFlags) {
+        const { error: flagError } = await serviceClient.from('feature_flags').insert({
+          dealership_id: dealershipId,
+          ...flag,
+          config: {},
+        });
+
+        if (flagError) throw flagError;
+      }
+
+      // 7. Create Stripe checkout session
+      const { url } = await createCheckoutSession({
+        dealershipId,
+        email,
+        locations: locationCount,
+      });
+
+      if (!url) {
+        throw new Error('Failed to create checkout session');
+      }
+
+      return NextResponse.json({ checkoutUrl: url });
+    } catch (operationError) {
+      // Rollback: delete orphaned Auth user and dealership
+      console.error('Signup flow failed, rolling back:', operationError);
+      await serviceClient.auth.admin.deleteUser(userId);
+      await serviceClient.from('dealerships').delete().eq('id', dealershipId);
+      return NextResponse.json(
+        { error: 'Signup failed. Please try again.' },
+        { status: 500 }
+      );
     }
-
-    // 7. Create Stripe checkout session
-    const { url } = await createCheckoutSession({
-      dealershipId,
-      email,
-      locations: locationCount,
-    });
-
-    if (!url) {
-      return NextResponse.json({ error: 'Failed to create checkout session' }, { status: 500 });
-    }
-
-    return NextResponse.json({ checkoutUrl: url });
   } catch (error) {
     console.error('Checkout error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

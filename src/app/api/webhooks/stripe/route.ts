@@ -265,6 +265,7 @@ async function handlePaymentFailed(event: Stripe.Event) {
     .eq('id', dealership.id);
 
   // Day 1 dunning email (immediate from webhook)
+  // If send fails, dunning-check cron will retry at day 3+
   try {
     const { data: managers } = await serviceClient
       .from('users')
@@ -276,16 +277,27 @@ async function handlePaymentFailed(event: Stripe.Event) {
     const manager = managers?.[0];
     if (manager?.email) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealershipiq-wua7.vercel.app';
-      await sendDunningEmail({
+      const sent = await sendDunningEmail({
         to: manager.email as string,
         managerName: (manager.full_name as string) || 'Manager',
         dealershipName: dealership.name,
         portalUrl: `${appUrl}/dashboard/billing`,
         stage: 'day1',
       });
+
+      // Log result for observability
+      if (!sent) {
+        console.warn(`Dunning day1 email failed for ${dealership.id}, will retry via cron`);
+      } else {
+        console.log(`Dunning day1 email sent for ${dealership.id}`);
+      }
     }
-  } catch (err) {
-    console.error('Day 1 dunning email error:', err);
+  } catch (emailError) {
+    console.error(
+      `Dunning day1 email error for ${dealership.id}, will retry via cron:`,
+      emailError
+    );
+    // Do not rethrow — cron will pick up and retry
   }
 }
 

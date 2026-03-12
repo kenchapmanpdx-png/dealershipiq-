@@ -3,6 +3,7 @@
 // Phase 4.5A
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createHmac } from 'crypto';
 import { serviceClient } from '@/lib/supabase/service';
 
 export async function POST(request: NextRequest) {
@@ -72,11 +73,70 @@ function createSessionResponse(
   const firstName = ((user.full_name as string) ?? '').split(' ')[0] || 'there';
   const language = (user.language as string) ?? 'en';
 
-  // Simple session token: base64(userId:dealershipId:firstName:language:timestamp)
-  // Production: use HMAC signing with a secret
-  const timestamp = Date.now().toString();
-  const payload = [userId, dealershipId, firstName, language, timestamp].join(':');
-  const token = Buffer.from(payload).toString('base64');
+  // Create HMAC-signed session token
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+  const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET || 'fallback-dev-secret';
+
+  const payload = {
+    userId,
+    dealershipId,
+    firstName,
+    language,
+    expiresAt,
+  };
+
+  const payloadStr = JSON.stringify(payload);
+  const signature = createHmac('sha256', secret).update(payloadStr).digest('hex');
+
+  const tokenData = {
+    ...payload,
+    sig: signature,
+  };
+
+  const token = Buffer.from(JSON.stringify(tokenData)).toString('base64');
 
   return NextResponse.json({ token, first_name: firstName });
+}
+
+/**
+ * Verify and decode HMAC-signed session token.
+ * Returns user info if valid, null if signature fails or expired.
+ */
+export function verifyAppToken(token: string): {
+  userId: string;
+  dealershipId: string;
+  firstName: string;
+  language: string;
+} | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
+    const { sig, ...payload } = decoded;
+
+    // Verify signature
+    const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET || 'fallback-dev-secret';
+    const expected = createHmac('sha256', secret)
+      .update(JSON.stringify(payload))
+      .digest('hex');
+
+    if (sig !== expected) {
+      console.warn('Invalid app token signature');
+      return null;
+    }
+
+    // Check expiration
+    if (payload.expiresAt < Date.now()) {
+      console.warn('App token expired');
+      return null;
+    }
+
+    return {
+      userId: payload.userId,
+      dealershipId: payload.dealershipId,
+      firstName: payload.firstName,
+      language: payload.language,
+    };
+  } catch (err) {
+    console.error('Failed to verify app token:', err);
+    return null;
+  }
 }

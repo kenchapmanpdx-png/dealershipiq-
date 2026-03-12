@@ -15,6 +15,31 @@ export interface SmsSendResult {
   from: string;
 }
 
+// --- GSM-7 Sanitization ---
+export function sanitizeGsm7(text: string): string {
+  let result = text;
+
+  // Replace smart/curly quotes with straight quotes
+  result = result.replace(/[""]/g, '"');
+  result = result.replace(/['']/g, "'");
+
+  // Replace dashes with hyphen
+  result = result.replace(/[–—]/g, '-');
+
+  // Replace ellipsis character with three dots
+  result = result.replace(/…/g, '...');
+
+  // Strip any remaining non-GSM-7 characters (emoji, etc.)
+  const gsm7Chars = new Set(
+    '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ ÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+    'ÄÖÑÜabcdefghijklmnopqrstuvwxyzäöñüà'
+  );
+
+  result = result.split('').filter(char => gsm7Chars.has(char)).join('');
+
+  return result;
+}
+
 export async function sendSms(
   phone: string,
   text: string,
@@ -28,6 +53,9 @@ export async function sendSms(
     throw new Error('SINCH_SERVICE_PLAN_ID, SINCH_API_TOKEN, and SINCH_PHONE_NUMBER must be set');
   }
 
+  // Sanitize for GSM-7 before sending
+  const sanitized = sanitizeGsm7(text);
+
   // Strip leading + from phone numbers for XMS API
   const to = phone.replace(/^\+/, '');
   const from = fromNumber.replace(/^\+/, '');
@@ -40,7 +68,7 @@ export async function sendSms(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiToken}`,
       },
-      body: JSON.stringify({ from, to: [to], body: text }),
+      body: JSON.stringify({ from, to: [to], body: sanitized }),
     }
   );
 
@@ -94,7 +122,8 @@ const SPANISH_OPT_OUT_EXACT = new Set(['parar', 'cancelar']);
 const HELP_KEYWORDS = new Set(['help', 'info', 'ayuda']);
 
 export function detectKeyword(
-  text: string
+  text: string,
+  hasActiveSession?: boolean
 ): 'opt_out' | 'help' | 'start' | null {
   const trimmed = text.trim().toLowerCase();
 
@@ -110,8 +139,11 @@ export function detectKeyword(
   // Natural language opt-out patterns
   // Important: only match when the ENTIRE message is an opt-out request,
   // not when "stop" appears inside a training response like "stop the customer said..."
-  for (const pattern of NATURAL_OPT_OUT_PATTERNS) {
-    if (pattern.test(trimmed) && trimmed.length < 60) return 'opt_out';
+  // Skip natural patterns if user has an active session (could be part of training response)
+  if (!hasActiveSession) {
+    for (const pattern of NATURAL_OPT_OUT_PATTERNS) {
+      if (pattern.test(trimmed) && trimmed.length < 60) return 'opt_out';
+    }
   }
 
   return null;

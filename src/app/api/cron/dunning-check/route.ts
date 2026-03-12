@@ -1,6 +1,8 @@
 import { getPastDueDealerships, updateDealershipBilling } from '@/lib/service-db';
 import { getDunningStage, shouldCancel, shouldSuspend } from '@/lib/dunning';
 
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   // Verify CRON_SECRET
   const authHeader = request.headers.get('authorization');

@@ -31,12 +31,22 @@
 | NEXT_PUBLIC_APP_URL | Vercel | Public |
 
 ### Phase 5 (New)
-| Variable | Where | Notes |
-|---|---|---|
-| STRIPE_SECRET_KEY | Vercel | Secret — sk_live_ or sk_test_ |
-| STRIPE_WEBHOOK_SECRET | Vercel | Secret — whsec_ from Stripe dashboard |
-| STRIPE_PRICE_ID | Vercel | Secret — price_ from Stripe product |
-| RESEND_API_KEY | Vercel | Secret — for dunning emails |
+| Variable | Where | Required | Notes |
+|---|---|---|---|
+| STRIPE_SECRET_KEY | Vercel | Yes | Secret — sk_live_ or sk_test_ |
+| STRIPE_WEBHOOK_SECRET | Vercel | Yes | Secret — whsec_ from Stripe dashboard |
+| STRIPE_PRICE_ID | Vercel | Yes | Secret — price_ from Stripe product |
+| RESEND_API_KEY | Vercel | Yes | Secret — for dunning emails |
+
+### Phase 6+ (New - Auth & Sinch)
+| Variable | Where | Required | Notes |
+|---|---|---|---|
+| SUPABASE_JWT_SECRET | Vercel | Yes | Secret — used for JWT verification in auth hooks |
+| SINCH_KEY_ID | Vercel | Yes | Secret — Sinch access key ID for Conversation API auth |
+| SINCH_KEY_SECRET | Vercel | Yes | Secret — Sinch access key secret for Conversation API auth |
+| SINCH_PROJECT_ID | Vercel | Yes | Secret — Sinch project ID for API calls |
+| SINCH_APP_ID | Vercel | Yes | Secret — Sinch Conversation API app ID |
+| ADMIN_API_KEY | Vercel | Yes | Secret — admin API key for internal endpoints (costs, coach context) |
 
 ## Ken Manual Steps (Phase 5)
 

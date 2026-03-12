@@ -144,6 +144,7 @@ export async function POST(request: NextRequest) {
     };
 
     const seenPhones = new Set<string>();
+    const usersToNotify: Array<{ id: string; phone: string; fullName: string }> = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -243,27 +244,6 @@ export async function POST(request: NextRequest) {
 
         if (memberError) throw memberError;
 
-        // Send consent SMS (non-blocking — don't fail the import row if SMS fails)
-        if (dealershipName) {
-          try {
-            const consentMsg = `${dealershipName} uses DealershipIQ for sales training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
-            const smsResponse = await sendSms(normalizedPhone, consentMsg);
-            await insertTranscriptLog({
-              userId: newUser.id,
-              dealershipId,
-              phone: normalizedPhone,
-              direction: 'outbound',
-              messageBody: consentMsg,
-              sinchMessageId: smsResponse.message_id,
-              metadata: { type: 'consent_request' },
-            });
-            // Stagger sends (100ms between) to avoid rate limits
-            await new Promise((r) => setTimeout(r, 100));
-          } catch (smsErr) {
-            console.error(`Consent SMS failed for ${normalizedPhone.slice(0, 6)}****:`, smsErr);
-          }
-        }
-
         seenPhones.add(normalizedPhone);
         result.imported++;
         result.rows.push({
@@ -272,7 +252,14 @@ export async function POST(request: NextRequest) {
           phone: normalizedPhone,
           status: 'imported',
         });
-      } catch {
+
+        // Queue for consent SMS (batch after database operations)
+        usersToNotify.push({
+          id: newUser.id,
+          phone: normalizedPhone,
+          fullName: row.full_name.trim(),
+        });
+      } catch (err) {
         result.errors++;
         result.rows.push({
           row_number: rowNumber,
@@ -281,6 +268,42 @@ export async function POST(request: NextRequest) {
           status: 'error',
           reason: 'Database error',
         });
+      }
+    }
+
+    // Send consent SMS in batches with rate limiting
+    const BATCH_SIZE = 10;
+    const BATCH_DELAY_MS = 1000;
+
+    for (let i = 0; i < usersToNotify.length; i += BATCH_SIZE) {
+      const batch = usersToNotify.slice(i, i + BATCH_SIZE);
+      const consentMsg = `${dealershipName} uses DealershipIQ for sales training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
+
+      await Promise.all(
+        batch.map(async (user) => {
+          try {
+            const smsResponse = await sendSms(user.phone, consentMsg);
+            await insertTranscriptLog({
+              userId: user.id,
+              dealershipId,
+              phone: user.phone,
+              direction: 'outbound',
+              messageBody: consentMsg,
+              sinchMessageId: smsResponse.message_id,
+              metadata: { type: 'consent_request' },
+            });
+          } catch (smsErr) {
+            console.error(
+              `Consent SMS failed for ${user.phone.slice(0, 6)}**** (${user.fullName}):`,
+              smsErr
+            );
+          }
+        })
+      );
+
+      // Add delay between batches (not after the last batch)
+      if (i + BATCH_SIZE < usersToNotify.length) {
+        await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
       }
     }
 

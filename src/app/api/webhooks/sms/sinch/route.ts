@@ -71,7 +71,8 @@ import {
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
 import type { StepResult } from '@/types/chains';
 
-// Idempotency: track processed message IDs (in-memory for now, Redis in Phase 2F)
+// Idempotency: track processed message IDs (in-memory fast-path, DB-backed for persistence)
+// C-002 audit fix: use database as source of truth, in-memory Set as cache
 const processedMessages = new Set<string>();
 const MAX_PROCESSED_CACHE = 10_000;
 
@@ -131,8 +132,25 @@ async function handleDeliveryReport(report: SinchDeliveryReport) {
 async function handleInboundMessage(payload: SinchInboundMessage) {
   const messageId = payload.message.id;
 
-  // Idempotency check
+  // Idempotency check (C-002 audit fix: database-backed with in-memory cache)
+  // Fast-path: check in-memory Set first
   if (processedMessages.has(messageId)) return;
+
+  // Database-level check: query sms_transcript_log for this sinch_message_id
+  const { serviceClient } = await import('@/lib/supabase/service');
+  const { data: existing } = await serviceClient
+    .from('sms_transcript_log')
+    .select('id')
+    .eq('sinch_message_id', messageId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    // Message already processed, return early
+    return;
+  }
+
+  // Mark as processed in both caches
   processedMessages.add(messageId);
   if (processedMessages.size > MAX_PROCESSED_CACHE) {
     const entries = Array.from(processedMessages);
@@ -160,44 +178,70 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     sinchMessageId: messageId,
   });
 
-  // --- Pending consent flow (double opt-in before any training) ---
+  const trimmedText = text.trim();
+  const trimmedUpper = trimmedText.toUpperCase();
+
+  // ==========================================================================
+  // KEYWORD PRIORITY ORDER (C-004 audit fix)
+  // ==========================================================================
+  // 1. STOP/END/UNSUBSCRIBE/CANCEL/QUIT (opt-out) — intercepted by Sinch
+  // 2. HELP — CTIA compliance
+  // 3. PARAR/CANCELAR — Spanish opt-out
+  // 4. START — re-subscribe
+  // 5. Consent handling (YES/NO for pending_consent users)
+  // 6. COACH
+  // 7. DETAILS (manager only)
+  // 8. OFF/VACATION (schedule)
+  // 9. TRAIN: (manager only)
+  // 10. NOW (manager only)
+  // 11. CHALLENGE
+  // 12. ACCEPT/PASS
+  // 13. Disambiguation numbers
+  // 14. Everything else → state machine
+  // ==========================================================================
+
+  // Check opt-out status (DB-level opt-out)
+  const isOptedOut = await checkOptOut(phone, user.dealershipId);
+  if (isOptedOut) return;
+
+  // Check for active session (for keyword detection context)
+  const activeSession = await getActiveSession(user.id, user.dealershipId);
+  const hasActiveSession = !!activeSession && activeSession.status === 'active';
+
+  // 2. HELP keyword (CTIA compliant)
+  if (trimmedUpper === 'HELP' || trimmedUpper === 'INFO' || trimmedUpper === 'AYUDA') {
+    const helpMsg = helpResponse(user.dealershipName);
+    await sendSms(phone, helpMsg);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: helpMsg,
+    });
+    return;
+  }
+
+  // 3. PARAR/CANCELAR (Spanish opt-out)
+  if (trimmedUpper === 'PARAR' || trimmedUpper === 'CANCELAR') {
+    await handleNaturalOptOut(user, phone);
+    return;
+  }
+
+  // 4. START — re-subscribe (exact match)
+  if (trimmedUpper === 'START' || trimmedUpper === 'YES' || trimmedUpper === 'UNSTOP') {
+    await handleResubscribe(user, phone);
+    return;
+  }
+
+  // 5. Consent handling for pending_consent users
   if (user.status === 'pending_consent') {
     await handlePendingConsent(user, phone, text);
     return;
   }
 
-  // Check opt-out status
-  const isOptedOut = await checkOptOut(phone, user.dealershipId);
-  if (isOptedOut) return;
-
-  // --- Schedule Keyword Detection (before other keywords) ---
-  const scheduleResult = parseScheduleKeyword(text);
-  if (scheduleResult.success) {
-    try {
-      await updateEmployeeSchedule(user.id, user.dealershipId, scheduleResult.data ?? {});
-      await sendSms(phone, scheduleResult.message ?? 'Schedule updated.');
-      await insertTranscriptLog({
-        userId: user.id,
-        dealershipId: user.dealershipId,
-        phone,
-        direction: 'outbound',
-        messageBody: scheduleResult.message ?? 'Schedule updated.',
-      });
-    } catch (scheduleErr) {
-      console.error('Schedule update failed:', scheduleErr);
-      await sendSms(phone, 'Could not update schedule. Please try again.');
-    }
-    return;
-  }
-
-  // --- DETAILS Keyword Detection (morning meeting script, managers only) ---
-  if (text.trim().toLowerCase() === 'details') {
-    await handleDetailsKeyword(user, phone);
-    return;
-  }
-
-  // --- COACH Keyword Detection (same priority as STOP/HELP) ---
-  if (text.trim().toLowerCase() === 'coach') {
+  // 6. COACH keyword
+  if (trimmedUpper === 'COACH') {
     const coachEnabled = await isFeatureEnabled(user.dealershipId, 'coach_mode_enabled');
     if (!coachEnabled) {
       await sendSms(phone, "Coach Mode isn't available yet. Stay tuned!");
@@ -219,77 +263,100 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     return;
   }
 
-  // --- Phase 6A: TRAIN: keyword (manager/owner only) ---
-  const trimmedText = text.trim();
-  if (trimmedText.toUpperCase().startsWith('TRAIN:')) {
-    await handleTrainKeyword(user, phone, trimmedText);
+  // 7. DETAILS keyword (manager only — morning meeting script)
+  if (trimmedUpper === 'DETAILS') {
+    await handleDetailsKeyword(user, phone);
     return;
   }
 
-  // --- Phase 6A: NOW keyword (manager/owner pending confirmation) ---
-  if (trimmedText.toUpperCase() === 'NOW') {
-    const handled = await handleNowKeyword(user, phone);
-    if (handled) return;
-    // If no pending confirmation, fall through to normal flow
-  }
-
-  // --- Phase 6D: ACCEPT / PASS keywords (peer challenge) ---
-  if (trimmedText.toUpperCase() === 'ACCEPT') {
-    const handled = await handleAcceptKeyword(user, phone);
-    if (handled) return;
-  }
-  if (trimmedText.toUpperCase() === 'PASS') {
-    const handled = await handlePassKeyword(user, phone);
-    if (handled) return;
-  }
-
-  // --- Phase 6D: Disambiguation number reply (1, 2, 3) ---
-  if (/^[1-9]$/.test(trimmedText)) {
-    const handled = await handleDisambiguationReply(user, phone, parseInt(trimmedText, 10));
-    if (handled) return;
-  }
-
-  // --- Phase 6D: CHALLENGE keyword ---
-  const challengeName = parseChallengeKeyword(trimmedText);
-  if (challengeName) {
-    await handleChallengeKeyword(user, phone, challengeName);
+  // 8. OFF/VACATION (schedule keywords)
+  const scheduleResult = parseScheduleKeyword(text);
+  if (scheduleResult.success) {
+    try {
+      await updateEmployeeSchedule(user.id, user.dealershipId, scheduleResult.data ?? {});
+      await sendSms(phone, scheduleResult.message ?? 'Schedule updated.');
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: scheduleResult.message ?? 'Schedule updated.',
+      });
+    } catch (scheduleErr) {
+      console.error('Schedule update failed:', scheduleErr);
+      await sendSms(phone, 'Could not update schedule. Please try again.');
+    }
     return;
   }
 
-  // --- Keyword Detection (before routing to state machine) ---
-  const keyword = detectKeyword(text);
-
-  if (keyword === 'help') {
-    const helpMsg = helpResponse(user.dealershipName);
-    await sendSms(phone, helpMsg);
-    await insertTranscriptLog({
-      userId: user.id,
-      dealershipId: user.dealershipId,
-      phone,
-      direction: 'outbound',
-      messageBody: helpMsg,
-    });
-    return;
-  }
-
-  if (keyword === 'opt_out') {
-    await handleNaturalOptOut(user, phone);
-    return;
-  }
-
-  if (keyword === 'start') {
-    await handleResubscribe(user, phone);
-    return;
-  }
-
-  // --- Advisory Lock ---
+  // --- Advisory Lock (M-005 audit fix: acquire BEFORE Phase 6 keywords) ---
   const { tryLockUser } = await import('@/lib/service-db');
   const locked = await tryLockUser(phone);
   if (!locked) return;
 
-  // --- Route to State Machine ---
   try {
-    const session = await getActiveSession(user.id, user.dealershipId);
+    // 9. TRAIN: keyword (manager/owner only)
+    if (trimmedUpper.startsWith('TRAIN:')) {
+      await handleTrainKeyword(user, phone, trimmedText);
+      return;
+    }
+
+    // 10. NOW keyword (manager/owner pending confirmation)
+    if (trimmedUpper === 'NOW') {
+      const handled = await handleNowKeyword(user, phone);
+      if (handled) return;
+      // If no pending scenario and user is manager/owner, send feedback
+      if (['manager', 'owner'].includes(user.role)) {
+        await sendSms(phone, 'No pending scenario to push. Use TRAIN: to create one first.');
+        await insertTranscriptLog({
+          userId: user.id,
+          dealershipId: user.dealershipId,
+          phone,
+          direction: 'outbound',
+          messageBody: 'NOW with no pending scenario.',
+        });
+        return;
+      }
+      // If not a manager, fall through to state machine
+    }
+
+    // 11. CHALLENGE keyword
+    const challengeName = parseChallengeKeyword(trimmedText);
+    if (challengeName) {
+      await handleChallengeKeyword(user, phone, challengeName);
+      return;
+    }
+
+    // 12. ACCEPT / PASS keywords (peer challenge)
+    if (trimmedUpper === 'ACCEPT') {
+      const handled = await handleAcceptKeyword(user, phone);
+      if (handled) return;
+    }
+    if (trimmedUpper === 'PASS') {
+      const handled = await handlePassKeyword(user, phone);
+      if (handled) return;
+    }
+
+    // 13. Disambiguation number reply (1-9)
+    if (/^[1-9]$/.test(trimmedText)) {
+      const handled = await handleDisambiguationReply(user, phone, parseInt(trimmedText, 10));
+      if (handled) return;
+    }
+
+    // Natural language keyword detection (only for non-training contexts)
+    // This must happen AFTER all phase 6 keywords to avoid interference
+    const keyword = detectKeyword(text, hasActiveSession);
+    if (keyword === 'opt_out') {
+      await handleNaturalOptOut(user, phone);
+      return;
+    }
+    if (keyword === 'start') {
+      await handleResubscribe(user, phone);
+      return;
+    }
+
+    // --- Route to State Machine ---
+    const session = activeSession;
 
     if (!session) {
       await sendSms(phone, "No active training session right now. Your next question will arrive at the scheduled time!");
@@ -324,6 +391,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   } catch (err) {
     console.error('State machine error:', err);
   }
+  // Note (H-012): Advisory lock is transaction-scoped and auto-released by connection pool
 }
 
 // =============================================================================
@@ -336,9 +404,16 @@ async function handleTrainKeyword(
   phone: string,
   text: string
 ) {
-  // Manager/owner check
+  // Manager/owner check (H-004 audit fix)
   if (!['manager', 'owner'].includes(user.role)) {
-    // Non-managers: silently ignore
+    await sendSms(phone, 'TRAIN: is available for managers only.');
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: 'TRAIN: denied — non-manager user.',
+    });
     return;
   }
 

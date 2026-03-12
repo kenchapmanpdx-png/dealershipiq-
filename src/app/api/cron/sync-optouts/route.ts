@@ -7,6 +7,8 @@ import { verifyCronSecret } from '@/lib/cron-auth';
 import { getSinchAccessToken } from '@/lib/sinch-auth';
 import { serviceClient } from '@/lib/supabase/service';
 
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

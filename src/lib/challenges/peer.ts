@@ -9,11 +9,11 @@ import type { DisambiguationOption, GradingRubric } from '@/types/challenges';
 
 /**
  * Parse CHALLENGE keyword from message.
- * Only triggers if message is under 40 chars and starts with "CHALLENGE ".
+ * Only triggers if message is 40 chars or fewer and starts with "CHALLENGE ".
  */
 export function parseChallengeKeyword(text: string): string | null {
   const trimmed = text.trim();
-  if (trimmed.length >= 40) return null;
+  if (trimmed.length > 40) return null;
   const match = trimmed.match(/^challenge\s+(.+)$/i);
   if (!match) return null;
   return match[1].trim();
@@ -52,6 +52,11 @@ export async function checkChallengeAvailability(
   challengerId: string,
   dealershipId: string
 ): Promise<string | null> {
+  // Check: self-challenge not allowed
+  if (challengerId === challengedId) {
+    return 'You cannot challenge yourself.';
+  }
+
   // Check: challenged already in active challenge
   const { data: existingChallenge } = await serviceClient
     .from('peer_challenges')
@@ -326,6 +331,7 @@ export async function declineChallenge(challengeId: string): Promise<void> {
 /**
  * Check if both participants have completed their sessions.
  * If so, determine winner and send results.
+ * Uses atomic update to prevent race condition: only the first caller succeeds.
  */
 export async function checkAndCompleteChallenge(
   challengeId: string
@@ -334,15 +340,20 @@ export async function checkAndCompleteChallenge(
   challengerScore: number | null;
   challengedScore: number | null;
   winnerId: string | null;
+  challengerDimensions?: Record<string, number>;
+  challengedDimensions?: Record<string, number>;
 } | null> {
+  // First, read challenge and check both sessions completed
   const { data: challenge } = await serviceClient
     .from('peer_challenges')
-    .select('challenger_session_id, challenged_session_id, challenger_id, challenged_id')
+    .select('challenger_session_id, challenged_session_id, challenger_id, challenged_id, status')
     .eq('id', challengeId)
-    .eq('status', 'active')
     .single();
 
   if (!challenge) return null;
+
+  // If already completed, return null (already handled)
+  if (challenge.status !== 'active') return null;
 
   // Check both sessions completed
   const sessionIds = [challenge.challenger_session_id, challenge.challenged_session_id].filter(Boolean) as string[];
@@ -356,8 +367,9 @@ export async function checkAndCompleteChallenge(
   const allComplete = (sessions ?? []).every(s => s.status === 'completed');
   if (!allComplete) return { complete: false, challengerScore: null, challengedScore: null, winnerId: null };
 
-  // Get scores for both
+  // Get scores and dimension breakdowns for both
   const scores: Record<string, number> = {};
+  const dimensionScores: Record<string, Record<string, number>> = {};
   for (const sid of sessionIds) {
     const { data: result } = await serviceClient
       .from('training_results')
@@ -367,8 +379,14 @@ export async function checkAndCompleteChallenge(
       .maybeSingle();
 
     if (result) {
-      const avg = ((result.product_accuracy as number) + (result.tone_rapport as number) +
-        (result.addressed_concern as number) + (result.close_attempt as number)) / 4;
+      const dims = {
+        product_accuracy: result.product_accuracy as number,
+        tone_rapport: result.tone_rapport as number,
+        addressed_concern: result.addressed_concern as number,
+        close_attempt: result.close_attempt as number,
+      };
+      dimensionScores[sid] = dims;
+      const avg = (dims.product_accuracy + dims.tone_rapport + dims.addressed_concern + dims.close_attempt) / 4;
       scores[sid] = (avg / 5) * 100;
     }
   }
@@ -379,8 +397,9 @@ export async function checkAndCompleteChallenge(
     ? challenge.challenger_id as string
     : challenge.challenged_id as string;
 
-  // Update challenge
-  await serviceClient
+  // Atomic update: only succeeds if status is still 'active'
+  // If another callback already transitioned it, this returns no rows
+  const { data: updated } = await serviceClient
     .from('peer_challenges')
     .update({
       challenger_score: challengerScore,
@@ -389,13 +408,45 @@ export async function checkAndCompleteChallenge(
       status: 'completed',
       completed_at: new Date().toISOString(),
     })
-    .eq('id', challengeId);
+    .eq('id', challengeId)
+    .eq('status', 'active')
+    .select()
+    .maybeSingle();
 
-  return { complete: true, challengerScore, challengedScore, winnerId };
+  // If update returned no rows, another caller won the race
+  if (!updated) return null;
+
+  return {
+    complete: true,
+    challengerScore,
+    challengedScore,
+    winnerId,
+    challengerDimensions: dimensionScores[challenge.challenger_session_id as string],
+    challengedDimensions: dimensionScores[challenge.challenged_session_id as string],
+  };
+}
+
+/**
+ * Extract best and worst dimensions from a scores object.
+ */
+export function extractBestWorstDimensions(
+  scores: Record<string, number> | undefined
+): { best: string; worst: string } {
+  if (!scores || Object.keys(scores).length === 0) {
+    return { best: 'overall', worst: 'overall' };
+  }
+
+  const entries = Object.entries(scores);
+  entries.sort((a, b) => b[1] - a[1]);
+  const best = entries[0]?.[0] ?? 'overall';
+  const worst = entries[entries.length - 1]?.[0] ?? 'overall';
+
+  return { best, worst };
 }
 
 /**
  * Build abbreviated peer challenge results SMS.
+ * Validates length and truncates if needed to fit 2 SMS segments (320 chars).
  */
 export function buildPeerResultsSMS(
   yourScore: number,
@@ -406,7 +457,14 @@ export function buildPeerResultsSMS(
   weakestDimension: string
 ): string {
   const result = youWon ? `You win!` : `${opponentName} wins.`;
-  return `Challenge result: You ${Math.round(yourScore)}%, ${opponentName} ${Math.round(opponentScore)}%. ${result} Your strength: ${bestDimension.replace(/_/g, ' ')}. Work on: ${weakestDimension.replace(/_/g, ' ')}.`;
+  let sms = `Challenge result: You ${Math.round(yourScore)}%, ${opponentName} ${Math.round(opponentScore)}%. ${result} Your strength: ${bestDimension.replace(/_/g, ' ')}. Work on: ${weakestDimension.replace(/_/g, ' ')}.`;
+
+  // Truncate to fit 2 SMS segments (320 GSM-7 chars)
+  if (sms.length > 320) {
+    sms = sms.substring(0, 317) + '...';
+  }
+
+  return sms;
 }
 
 /**

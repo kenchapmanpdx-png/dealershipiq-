@@ -3,6 +3,12 @@
 // Each invocation: find dealerships where current local hour = configured training hour
 // Training runs Monday-Friday ONLY. No weekends.
 // Phase 6 content priority: Manager Quick-Create > Peer Challenge > Chain Step > Daily Challenge > Adaptive
+//
+// H-007 TIMEZONE LIMITATION: Vercel Hobby plan (free) only allows one cron job per interval.
+// This cron fires at 0 13 UTC (1pm UTC = 6am Pacific).
+// getDealershipsReadyForTraining() filters by local_hour to cover all timezones, but misses dealerships
+// that should train at hours other than when this cron fires.
+// SOLUTION: Upgrade to Vercel Pro ($20/mo) for hourly cron flexibility (allows multiple cron rules).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
@@ -35,7 +41,10 @@ import {
 import {
   isScheduledOff,
 } from '@/lib/schedule-awareness';
+import { serviceClient } from '@/lib/supabase/service';
 import type { PersonaMood } from '@/lib/persona-moods';
+
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
@@ -64,6 +73,19 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
+    // M-007: Dedup check — skip if cron already processed this dealership recently
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentSends } = await serviceClient
+      .from('sms_transcript_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('dealership_id', dealership.id)
+      .eq('direction', 'outbound')
+      .gte('created_at', oneHourAgo);
+    if ((recentSends ?? 0) > 0) {
+      results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0, contentTypes: {} });
+      continue;
+    }
+
     const personaMoodsEnabled = await isFeatureEnabled(dealership.id, 'persona_moods_enabled');
 
     const eligible = await getEligibleUsers(dealership.id);
@@ -81,7 +103,19 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // TODO: Check message cap (3/day). For now, trust the cron runs once.
+        // H-002: Check message cap (3/day)
+        const today = new Date();
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+        const { count: outboundCount } = await serviceClient
+          .from('sms_transcript_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('direction', 'outbound')
+          .gte('created_at', todayStart);
+        if ((outboundCount ?? 0) >= 3) {
+          skipped++;
+          continue;
+        }
 
         // Phase 6: Content priority system
         const content = await selectContent(user.id, dealership.id);
@@ -101,6 +135,7 @@ export async function GET(request: NextRequest) {
           question = content.scenarioText;
           mode = 'roleplay';
           trainingDomain = content.taxonomyDomain;
+          // M-009: Mark scenario as pushed immediately to prevent NOW from pushing same scenario
           if (content.sourceId) {
             await markScenarioPushed(content.sourceId);
           }

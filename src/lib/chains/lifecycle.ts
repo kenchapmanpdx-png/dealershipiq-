@@ -4,6 +4,7 @@ import { serviceClient } from '@/lib/supabase/service';
 import { tokenLimitParam } from '@/lib/openai';
 import { selectBranch } from './branching';
 import { loadTemplate, selectTemplate, substituteVars } from './templates';
+import { getVehicleContextForScenario } from '@/lib/vehicle-data';
 import type { ChainContext, StepResult, ScenarioChain, ChainTemplate, StepPrompt } from '@/types/chains';
 
 const CUSTOMER_NAMES = ['Mrs. Johnson', 'Mr. Patel', 'Sarah', 'David', 'Mrs. Torres', 'Mr. Kim'];
@@ -25,10 +26,25 @@ export async function startChain(
   const customerName = CUSTOMER_NAMES[Math.floor(Math.random() * CUSTOMER_NAMES.length)];
   const emotionalState = EMOTIONAL_STATES[Math.floor(Math.random() * EMOTIONAL_STATES.length)];
 
+  // Try to get vehicle context from actual data, fall back to generic
+  let vehicleName = 'a popular model on your lot';
+  let competitorName: string | null = null;
+  try {
+    const vehicleCtx = await getVehicleContextForScenario(dealershipId, weakestDomains[0] ?? 'objection_handling');
+    if (vehicleCtx?.primary) {
+      vehicleName = `${vehicleCtx.primary.model_year.year} ${vehicleCtx.primary.make.name} ${vehicleCtx.primary.model.name}`;
+    }
+    if (vehicleCtx?.competitor) {
+      competitorName = `${vehicleCtx.competitor.model_year.year} ${vehicleCtx.competitor.make.name} ${vehicleCtx.competitor.model.name}`;
+    }
+  } catch {
+    // Fall back to generic vehicle
+  }
+
   const context: ChainContext = {
     customer_name: customerName,
-    vehicle: '2025 CR-V Sport Touring', // TODO: pull from vehicle data if available
-    competitor_vehicle: null,
+    vehicle: vehicleName,
+    competitor_vehicle: competitorName,
     stated_objections: [],
     prior_responses_summary: '',
     emotional_state: emotionalState,
@@ -134,6 +150,7 @@ export async function continueChain(
 
 /**
  * Record step result after grading completes for a chain-linked session.
+ * Defensive check: verify step hasn't already been recorded to avoid duplicates.
  */
 export async function recordChainStepResult(
   chainId: string,
@@ -147,7 +164,15 @@ export async function recordChainStepResult(
 
   if (!chain) return false;
 
-  const results = [...(chain.step_results as StepResult[]), stepResult];
+  const existingResults = (chain.step_results as StepResult[]) ?? [];
+
+  // Defense in depth: verify this step hasn't already been recorded
+  if (existingResults.some(r => r.step === stepResult.step)) {
+    // Already recorded, skip to avoid duplicate
+    return (chain.current_step as number) >= (chain.total_steps as number);
+  }
+
+  const results = [...existingResults, stepResult];
 
   // Check if chain is complete
   const isComplete = (chain.current_step as number) >= (chain.total_steps as number);

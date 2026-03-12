@@ -3,6 +3,11 @@
 // Phase 4.5B: morning_script_enabled → morning meeting script format.
 //             morning_script_enabled = false → old-style daily digest (backward compatible).
 // Build Master: Phase 3 (digest), Phase 4.5A (micro-insight), Phase 4.5B (morning script), Phase 5 (subscription gating)
+//
+// H-007 TIMEZONE LIMITATION: Vercel Hobby plan (free) only allows one cron job per interval.
+// This cron fires at 0 13 UTC (1pm UTC = 6am Pacific = 7am Eastern, etc.).
+// getDealershipsByTimezoneHour(7) filters by local_hour, but misses dealerships that should brief at other hours.
+// SOLUTION: Upgrade to Vercel Pro ($20/mo) for hourly cron flexibility.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
@@ -26,6 +31,8 @@ import {
 import { getBenchmark } from '@/lib/meeting-script/benchmark';
 import { buildMeetingSMS, buildFullScript } from '@/lib/meeting-script/assemble';
 import type { MeetingScriptData } from '@/types/meeting-script';
+
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {

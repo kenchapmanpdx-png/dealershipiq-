@@ -38,7 +38,7 @@ Score each dimension 1-5:
 
 FORMAT YOUR FEEDBACK FOR SMS using the "Never Naked" structure. The feedback field must follow this exact pattern:
 
-[overall]/10 ⭐ What worked: [Name the specific thing they did well — quote their words if possible]. Level up: [One concrete improvement with a specific sales technique they should use]. 💡 Pro tip: "[Write an exact phrase they could say next time]"
+[overall]/10 * What worked: [Name the specific thing they did well — quote their words if possible]. Level up: [One concrete improvement with a specific sales technique they should use]. > Pro tip: "[Write an exact phrase they could say next time]"
 
 The overall score is the sum of the four dimension scores divided by 2, rounded to the nearest integer.
 

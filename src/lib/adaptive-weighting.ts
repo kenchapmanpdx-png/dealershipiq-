@@ -32,10 +32,19 @@ export interface AdaptiveConfig {
   k_values: Record<string, number>; // domain-specific constants
 }
 
+// TODO: Move to per-dealership feature_flags.config JSONB
+// These should be configurable per dealership and loaded from feature flags.
+const ADAPTIVE_CONFIG = {
+  alpha: 0.3,     // Learning rate for weight updates
+  beta: 0.1,      // Exploration bonus
+  threshold: 3.0, // Score threshold for "needs work" (out of 5)
+  K: 3,           // Consecutive passes before weight decay
+} as const;
+
 const DEFAULT_CONFIG: AdaptiveConfig = {
-  alpha: 0.3,
-  beta: 0.1,
-  threshold: 3.0,
+  alpha: ADAPTIVE_CONFIG.alpha,
+  beta: ADAPTIVE_CONFIG.beta,
+  threshold: ADAPTIVE_CONFIG.threshold,
   k_values: {
     objection_handling: 1.0,
     product_knowledge: 1.0,
@@ -109,6 +118,16 @@ export async function updatePriorityVectorAfterGrading(
       updated[key] = updated[key] / sum;
     }
   }
+
+  // TODO: Implement K consecutive pass tracking for weight decay.
+  // Spec: For each dimension with K consecutive passes (actualScore >= threshold),
+  // apply decay: W[e][d] *= (1 - beta)
+  // Storage: Add consecutive_passes: Record<string, number> to priority_vectors JSONB.
+  // This requires:
+  // 1. Fetch current consecutive_passes from DB alongside weights
+  // 2. Increment counter for domain if actualScore >= threshold
+  // 3. If counter reaches K, apply decay and reset counter
+  // 4. Persist both weights and consecutive_passes JSONB together
 
   // Persist to database
   await upsertPriorityVector(userId, dealershipId, updated);

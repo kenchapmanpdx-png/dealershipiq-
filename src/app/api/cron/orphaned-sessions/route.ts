@@ -6,6 +6,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { getOrphanedSessions, updateSessionStatus } from '@/lib/service-db';
 import { expirePeerChallenges } from '@/lib/challenges/peer';
+import { incrementMissedDay } from '@/lib/chains/lifecycle';
+import { isScheduledOff } from '@/lib/schedule-awareness';
+import { serviceClient } from '@/lib/supabase/service';
+
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
@@ -28,6 +33,41 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // --- C-003: Expire stale scenario chains ---
+  let chainsExpired = 0;
+  try {
+    // Query scenario_chains where status = 'active' and last_step_at < (now - 1 business day)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: staleChains } = await serviceClient
+      .from('scenario_chains')
+      .select('id, user_id, dealership_id, status')
+      .eq('status', 'active')
+      .lt('last_step_at', oneDayAgo);
+
+    if (staleChains) {
+      for (const chain of staleChains) {
+        try {
+          // Check if user is scheduled off
+          const scheduledOff = await isScheduledOff(
+            chain.user_id as string,
+            chain.dealership_id as string,
+            new Date()
+          );
+
+          // If NOT scheduled off, increment missed day counter
+          if (!scheduledOff) {
+            const expired = await incrementMissedDay(chain.id as string);
+            if (expired) chainsExpired++;
+          }
+        } catch (err) {
+          console.error(`Failed to process chain ${chain.id}:`, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Scenario chain expiry error:', err);
+  }
+
   // --- Phase 6D: Expire peer challenges ---
   let peerExpiry = { expired: 0, defaultWins: 0 };
   try {
@@ -39,6 +79,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     found: orphaned.length,
     cleaned,
+    chainsExpired,
     peerChallenges: peerExpiry,
   });
 }

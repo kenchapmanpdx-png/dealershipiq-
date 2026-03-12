@@ -13,8 +13,17 @@ import type { ChallengeResult, GradingRubric } from '@/types/challenges';
  */
 export async function generateDailyChallenge(
   dealershipId: string,
-  taxonomyDomain: string
-): Promise<{ id: string; scenarioText: string }> {
+  taxonomyDomain: string,
+  frequency?: string
+): Promise<{ id: string; scenarioText: string } | null> {
+  // Defense in depth: verify today qualifies under the frequency config
+  if (frequency) {
+    const dayOfWeek = new Date().getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    if (frequency === 'mwf' && ![1, 3, 5].includes(dayOfWeek)) return null;
+    if (frequency === 'tue_thu' && ![2, 4].includes(dayOfWeek)) return null;
+    if (frequency === 'daily' && (dayOfWeek === 0 || dayOfWeek === 6)) return null; // Skip weekends for daily
+  }
+
   const todayStr = new Date().toISOString().split('T')[0];
 
   // Check if already exists

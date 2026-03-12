@@ -1,6 +1,11 @@
 // Daily challenge EOD results cron — hourly, fires at 5pm local
 // Ranks all challenge responses, texts results to participants
 // Phase 6B
+//
+// H-007 TIMEZONE LIMITATION: Vercel Hobby plan (free) only allows one cron job per interval.
+// This cron fires once hourly and checks if local_hour === 17 (5pm) for each dealership.
+// Works correctly for dealerships configured to publish results at 5pm, but misses other time preferences.
+// SOLUTION: Upgrade to Vercel Pro ($20/mo) for hourly cron flexibility.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
@@ -8,6 +13,8 @@ import { sendSms } from '@/lib/sms';
 import { serviceClient } from '@/lib/supabase/service';
 import { insertTranscriptLog } from '@/lib/service-db';
 import { rankChallengeResponses, buildResultsSMS } from '@/lib/challenges/daily';
+
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
