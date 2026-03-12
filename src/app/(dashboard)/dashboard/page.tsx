@@ -5,6 +5,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import MeetingScript from '@/components/dashboard/MeetingScript';
 
 interface TeamOverview {
   totalReps: number;
@@ -149,6 +150,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Morning Meeting Script — top of dashboard */}
+      <MeetingScript />
+
       {/* Overview cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>

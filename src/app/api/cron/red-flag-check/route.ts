@@ -1,6 +1,6 @@
 // Red flag detection cron — identifies at-risk reps
 // Runs every 6 hours
-// Build Master: Phase 3
+// Build Master: Phase 3, Phase 4.5B (persists to red_flag_events for morning script)
 // Detects: no response >3 days, completion rate <30%, score decline >40%, gone dark
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -49,6 +49,25 @@ export async function GET(request: NextRequest) {
       // Get red flag users for this dealership
       const flaggedList = await getRedFlagUsers(dealership.id);
       flaggedUsers = flaggedList.length;
+
+      // Phase 4.5B: Persist findings to red_flag_events for morning script consumption
+      if (flaggedList.length > 0) {
+        const { serviceClient } = await import('@/lib/supabase/service');
+        for (const flaggedUser of flaggedList) {
+          for (const flag of flaggedUser.flags) {
+            try {
+              await serviceClient.from('red_flag_events').insert({
+                dealership_id: dealership.id,
+                user_id: flaggedUser.id,
+                signal_type: flag,
+                details: {},
+              });
+            } catch {
+              // Non-critical — continue with SMS alerts
+            }
+          }
+        }
+      }
 
       if (flaggedList.length === 0) {
         results.push({

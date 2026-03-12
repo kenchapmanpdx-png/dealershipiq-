@@ -1,6 +1,8 @@
-// Manager daily digest cron — sends digest SMS to managers
-// Runs at 8 AM local time in each dealership's timezone
-// Build Master: Phase 3
+// Manager daily digest / morning meeting script cron
+// Runs hourly. Fires where local_hour = 7 (brief arrives before 8am meeting).
+// Phase 4.5B: morning_script_enabled → morning meeting script format.
+//             morning_script_enabled = false → old-style daily digest (backward compatible).
+// Build Master: Phase 3 (digest), Phase 4.5A (micro-insight), Phase 4.5B (morning script)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
@@ -13,20 +15,31 @@ import {
   isFeatureEnabled,
 } from '@/lib/service-db';
 import { serviceClient } from '@/lib/supabase/service';
+import {
+  getShoutout,
+  getTeamGap,
+  getCoachingFocus,
+  getAtRiskReps,
+  getTeamNumbers,
+} from '@/lib/meeting-script/queries';
+import { getBenchmark } from '@/lib/meeting-script/benchmark';
+import { buildMeetingSMS, buildFullScript } from '@/lib/meeting-script/assemble';
+import type { MeetingScriptData } from '@/types/meeting-script';
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Find dealerships where current local hour = 8 AM (digest time)
-  const dealerships = await getDealershipsByTimezoneHour(8);
+  // Changed from hour 8 → 7: brief arrives 1 hour before the typical 8am meeting
+  const dealerships = await getDealershipsByTimezoneHour(7);
 
   const results: Array<{
     dealershipId: string;
     dealershipName: string;
     managersNotified: number;
     errors: number;
+    format: 'morning_script' | 'legacy_digest';
   }> = [];
 
   for (const dealership of dealerships) {
@@ -34,7 +47,6 @@ export async function GET(request: NextRequest) {
     let errors = 0;
 
     try {
-      // Get managers for this dealership
       const managers = await getManagersForDealership(dealership.id);
 
       if (managers.length === 0) {
@@ -43,57 +55,76 @@ export async function GET(request: NextRequest) {
           dealershipName: dealership.name,
           managersNotified: 0,
           errors: 0,
+          format: 'legacy_digest',
         });
         continue;
       }
 
-      // Get yesterday's stats
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayDateStr = yesterday.toISOString().split('T')[0];
-
-      const stats = await getDailyDigestStats(dealership.id, yesterdayDateStr);
-
-      // Format digest message
-      const digestMessage = formatDigestMessage(
-        dealership.name,
-        stats
+      // Check morning_script_enabled feature flag
+      const morningScriptEnabled = await isFeatureEnabled(
+        dealership.id,
+        'morning_script_enabled'
       );
 
-      // Send to each manager
-      for (const manager of managers) {
-        try {
-          const smsResponse = await sendSms(manager.phone, digestMessage);
+      if (morningScriptEnabled) {
+        // --- Morning Meeting Script (Phase 4.5B) ---
+        const { sent, errs } = await generateAndSendMorningScript(
+          dealership.id,
+          dealership.name,
+          managers
+        );
+        managersNotified = sent;
+        errors = errs;
 
-          // Log outbound
-          await insertTranscriptLog({
-            userId: manager.id,
-            dealershipId: dealership.id,
-            direction: 'outbound',
-            messageBody: digestMessage,
-            sinchMessageId: smsResponse.message_id,
-            phone: manager.phone,
-          });
+        results.push({
+          dealershipId: dealership.id,
+          dealershipName: dealership.name,
+          managersNotified,
+          errors,
+          format: 'morning_script',
+        });
+      } else {
+        // --- Legacy Daily Digest (backward compatible) ---
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayDateStr = yesterday.toISOString().split('T')[0];
 
-          managersNotified++;
+        const stats = await getDailyDigestStats(
+          dealership.id,
+          yesterdayDateStr
+        );
+        const digestMessage = formatDigestMessage(dealership.name, stats);
 
-          // Stagger sends (50ms between = 20/sec)
-          await new Promise((r) => setTimeout(r, 50));
-        } catch (err) {
-          console.error(
-            `Failed to send digest to manager ${manager.id}:`,
-            err
-          );
-          errors++;
+        for (const manager of managers) {
+          try {
+            const smsResponse = await sendSms(manager.phone, digestMessage);
+            await insertTranscriptLog({
+              userId: manager.id,
+              dealershipId: dealership.id,
+              direction: 'outbound',
+              messageBody: digestMessage,
+              sinchMessageId: smsResponse.message_id,
+              phone: manager.phone,
+            });
+            managersNotified++;
+            await new Promise((r) => setTimeout(r, 50));
+          } catch (err) {
+            console.error(
+              `Failed to send digest to manager ${manager.id}:`,
+              err
+            );
+            errors++;
+          }
         }
-      }
 
-      results.push({
-        dealershipId: dealership.id,
-        dealershipName: dealership.name,
-        managersNotified,
-        errors,
-      });
+        results.push({
+          dealershipId: dealership.id,
+          dealershipName: dealership.name,
+          managersNotified,
+          errors,
+          format: 'legacy_digest',
+        });
+      }
     } catch (err) {
       console.error(
         `Error processing dealership ${dealership.id}:`,
@@ -104,6 +135,7 @@ export async function GET(request: NextRequest) {
         dealershipName: dealership.name,
         managersNotified: 0,
         errors: 1,
+        format: 'legacy_digest',
       });
     }
   }
@@ -116,16 +148,20 @@ export async function GET(request: NextRequest) {
   if (isMonday) {
     for (const dealership of dealerships) {
       try {
-        const coachEnabled = await isFeatureEnabled(dealership.id, 'coach_mode_enabled');
+        const coachEnabled = await isFeatureEnabled(
+          dealership.id,
+          'coach_mode_enabled'
+        );
         if (!coachEnabled) continue;
 
-        // Find reps who have used Coach Mode at least once
         const { data: coachUsers } = await serviceClient
           .from('coach_sessions')
           .select('user_id')
           .eq('dealership_id', dealership.id);
 
-        const userIdSet = new Set((coachUsers ?? []).map((u) => u.user_id as string));
+        const userIdSet = new Set(
+          (coachUsers ?? []).map((u) => u.user_id as string)
+        );
         const uniqueUserIds: string[] = [];
         userIdSet.forEach((id) => uniqueUserIds.push(id));
 
@@ -134,7 +170,6 @@ export async function GET(request: NextRequest) {
             const insight = await findPositiveInsight(userId, dealership.id);
             if (!insight) continue;
 
-            // Get user phone
             const { data: user } = await serviceClient
               .from('users')
               .select('phone')
@@ -143,10 +178,8 @@ export async function GET(request: NextRequest) {
 
             if (!user?.phone) continue;
 
-            // Close stale coach sessions lazily
             await closeStaleCoachSessions(userId);
 
-            // Send micro-insight (GSM-7, no emoji)
             const msg = `Quick note from your Coach: ${insight}. Reply COACH anytime.`;
             await sendSms(user.phone as string, msg);
             await insertTranscriptLog({
@@ -162,7 +195,10 @@ export async function GET(request: NextRequest) {
           }
         }
       } catch (err) {
-        console.error(`Micro-insight error for dealership ${dealership.id}:`, err);
+        console.error(
+          `Micro-insight error for dealership ${dealership.id}:`,
+          err
+        );
       }
     }
   }
@@ -174,6 +210,112 @@ export async function GET(request: NextRequest) {
   });
 }
 
+// --- Morning Meeting Script Generation ---
+
+interface ManagerUser {
+  id: string;
+  full_name: string;
+  phone: string;
+  role: string;
+}
+
+async function generateAndSendMorningScript(
+  dealershipId: string,
+  dealershipName: string,
+  managers: ManagerUser[]
+): Promise<{ sent: number; errs: number }> {
+  let sent = 0;
+  let errs = 0;
+
+  try {
+    // Run all 6 data queries in parallel
+    const [shoutout, gap, coachingFocus, atRisk, numbers, benchmark] =
+      await Promise.all([
+        getShoutout(dealershipId),
+        getTeamGap(dealershipId),
+        getCoachingFocus(dealershipId),
+        getAtRiskReps(dealershipId),
+        getTeamNumbers(dealershipId),
+        getBenchmark(dealershipId),
+      ]);
+
+    const scriptData: MeetingScriptData = {
+      dealershipName,
+      shoutout,
+      gap,
+      coachingFocus: coachingFocus,
+      atRisk,
+      numbers,
+      benchmark,
+    };
+
+    // Check if there is any data at all (new dealership edge case)
+    const hasData =
+      shoutout ||
+      gap ||
+      coachingFocus ||
+      atRisk.length > 0 ||
+      numbers.completion_rate > 0;
+
+    let smsText: string;
+    let fullScript;
+
+    if (!hasData) {
+      // New dealership with no training data
+      smsText = `Morning Intel - ${dealershipName}. No training data yet. Get your team started today!`;
+      fullScript = buildFullScript(scriptData);
+    } else {
+      smsText = buildMeetingSMS(scriptData);
+      fullScript = buildFullScript(scriptData);
+    }
+
+    // UPSERT into meeting_scripts
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    await serviceClient.from('meeting_scripts').upsert(
+      {
+        dealership_id: dealershipId,
+        script_date: todayStr,
+        sms_text: smsText,
+        full_script: fullScript,
+        generated_at: new Date().toISOString(),
+      },
+      { onConflict: 'dealership_id,script_date' }
+    );
+
+    // Send SMS to managers
+    for (const manager of managers) {
+      try {
+        const smsResponse = await sendSms(manager.phone, smsText);
+        await insertTranscriptLog({
+          userId: manager.id,
+          dealershipId,
+          direction: 'outbound',
+          messageBody: smsText,
+          sinchMessageId: smsResponse.message_id,
+          phone: manager.phone,
+          metadata: { type: 'morning_script' },
+        });
+        sent++;
+        await new Promise((r) => setTimeout(r, 50));
+      } catch (err) {
+        console.error(
+          `Failed to send morning script to manager ${manager.id}:`,
+          err
+        );
+        errs++;
+      }
+    }
+  } catch (err) {
+    console.error(`Morning script generation failed for ${dealershipId}:`, err);
+    errs++;
+  }
+
+  return { sent, errs };
+}
+
+// --- Legacy Digest Formatter (backward compatible) ---
+
 interface DigestStats {
   completionRate: number;
   totalSessions: number;
@@ -183,7 +325,10 @@ interface DigestStats {
   avgScores: Record<string, number>;
 }
 
-function formatDigestMessage(dealershipName: string, stats: DigestStats): string {
+function formatDigestMessage(
+  dealershipName: string,
+  stats: DigestStats
+): string {
   const lines: string[] = [
     `${dealershipName} Daily Digest`,
     `Completion: ${Math.round(stats.completionRate * 100)}% (${stats.completedSessions}/${stats.totalSessions})`,
@@ -201,14 +346,13 @@ function formatDigestMessage(dealershipName: string, stats: DigestStats): string
     );
   }
 
-  const avgAccuracy = Math.round((stats.avgScores.product_accuracy ?? 0) * 10) / 10;
-  const avgTone = Math.round((stats.avgScores.tone_rapport ?? 0) * 10) / 10;
+  const avgAccuracy =
+    Math.round((stats.avgScores.product_accuracy ?? 0) * 10) / 10;
+  const avgTone =
+    Math.round((stats.avgScores.tone_rapport ?? 0) * 10) / 10;
 
-  lines.push(
-    `Avg Accuracy: ${avgAccuracy}, Rapport: ${avgTone}`
-  );
+  lines.push(`Avg Accuracy: ${avgAccuracy}, Rapport: ${avgTone}`);
 
-  // Keep under 160 chars (GSM-7 single SMS)
   let message = lines.join(' | ');
   if (message.length > 160) {
     message = lines.slice(0, -1).join(' | ');
@@ -240,60 +384,67 @@ async function findPositiveInsight(
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 
   try {
-    // Get last 7 days scores by domain
     const { data: recentResults } = await serviceClient
       .from('training_results')
-      .select('training_domain, product_accuracy, tone_rapport, addressed_concern, close_attempt')
+      .select(
+        'training_domain, product_accuracy, tone_rapport, addressed_concern, close_attempt'
+      )
       .eq('user_id', userId)
       .eq('dealership_id', dealershipId)
       .gte('created_at', sevenDaysAgo.toISOString());
 
     if (!recentResults || recentResults.length === 0) return null;
 
-    // Get previous 7 days for comparison
     const { data: olderResults } = await serviceClient
       .from('training_results')
-      .select('training_domain, product_accuracy, tone_rapport, addressed_concern, close_attempt')
+      .select(
+        'training_domain, product_accuracy, tone_rapport, addressed_concern, close_attempt'
+      )
       .eq('user_id', userId)
       .eq('dealership_id', dealershipId)
       .gte('created_at', fourteenDaysAgo.toISOString())
       .lt('created_at', sevenDaysAgo.toISOString());
 
-    // Find domain with biggest improvement
-    const domainScores: Record<string, { recent: number[]; older: number[] }> = {};
+    const domainScores: Record<
+      string,
+      { recent: number[]; older: number[] }
+    > = {};
 
     for (const r of recentResults) {
       const domain = (r.training_domain as string) ?? 'general';
-      if (!domainScores[domain]) domainScores[domain] = { recent: [], older: [] };
-      const avg = (
-        (r.product_accuracy as number) +
-        (r.tone_rapport as number) +
-        (r.addressed_concern as number) +
-        (r.close_attempt as number)
-      ) / 4;
+      if (!domainScores[domain])
+        domainScores[domain] = { recent: [], older: [] };
+      const avg =
+        ((r.product_accuracy as number) +
+          (r.tone_rapport as number) +
+          (r.addressed_concern as number) +
+          (r.close_attempt as number)) /
+        4;
       domainScores[domain].recent.push(avg);
     }
 
-    for (const r of (olderResults ?? [])) {
+    for (const r of olderResults ?? []) {
       const domain = (r.training_domain as string) ?? 'general';
-      if (!domainScores[domain]) domainScores[domain] = { recent: [], older: [] };
-      const avg = (
-        (r.product_accuracy as number) +
-        (r.tone_rapport as number) +
-        (r.addressed_concern as number) +
-        (r.close_attempt as number)
-      ) / 4;
+      if (!domainScores[domain])
+        domainScores[domain] = { recent: [], older: [] };
+      const avg =
+        ((r.product_accuracy as number) +
+          (r.tone_rapport as number) +
+          (r.addressed_concern as number) +
+          (r.close_attempt as number)) /
+        4;
       domainScores[domain].older.push(avg);
     }
 
-    // Find biggest positive improvement (>20%)
     let bestDomain: string | null = null;
     let bestImprovement = 0;
 
     for (const [domain, scores] of Object.entries(domainScores)) {
       if (scores.recent.length === 0 || scores.older.length === 0) continue;
-      const recentAvg = scores.recent.reduce((s, v) => s + v, 0) / scores.recent.length;
-      const olderAvg = scores.older.reduce((s, v) => s + v, 0) / scores.older.length;
+      const recentAvg =
+        scores.recent.reduce((s, v) => s + v, 0) / scores.recent.length;
+      const olderAvg =
+        scores.older.reduce((s, v) => s + v, 0) / scores.older.length;
       if (olderAvg === 0) continue;
       const pctChange = ((recentAvg - olderAvg) / olderAvg) * 100;
       if (pctChange > 20 && pctChange > bestImprovement) {
@@ -307,19 +458,20 @@ async function findPositiveInsight(
       return `Your ${label} scores jumped ${Math.round(bestImprovement)}% this week. Whatever you're doing differently, keep going`;
     }
 
-    // Fallback: check for best score this week
-    const allScores = recentResults.map((r) => (
-      ((r.product_accuracy as number) +
-        (r.tone_rapport as number) +
-        (r.addressed_concern as number) +
-        (r.close_attempt as number)) / 4
-    ));
+    const allScores = recentResults.map(
+      (r) =>
+        ((r.product_accuracy as number) +
+          (r.tone_rapport as number) +
+          (r.addressed_concern as number) +
+          (r.close_attempt as number)) /
+        4
+    );
     const bestScore = Math.max(...allScores);
     if (bestScore >= 4.0) {
       return `You hit a ${bestScore.toFixed(1)}/5 this week — strong work on the floor`;
     }
 
-    return null; // No positive signal — skip
+    return null;
   } catch {
     return null;
   }
@@ -327,9 +479,6 @@ async function findPositiveInsight(
 
 async function closeStaleCoachSessions(userId: string): Promise<void> {
   try {
-    const staleThreshold = new Date();
-    staleThreshold.setHours(staleThreshold.getHours() - 24);
-
     const { data: staleSessions } = await serviceClient
       .from('coach_sessions')
       .select('id')

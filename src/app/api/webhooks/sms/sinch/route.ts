@@ -157,6 +157,12 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     return;
   }
 
+  // --- DETAILS Keyword Detection (morning meeting script, managers only) ---
+  if (text.trim().toLowerCase() === 'details') {
+    await handleDetailsKeyword(user, phone);
+    return;
+  }
+
   // --- COACH Keyword Detection (same priority as STOP/HELP) ---
   if (text.trim().toLowerCase() === 'coach') {
     const coachEnabled = await isFeatureEnabled(user.dealershipId, 'coach_mode_enabled');
@@ -498,6 +504,75 @@ async function handleNaturalOptOut(
     direction: 'outbound',
     messageBody: confirmMsg,
   });
+}
+
+// --- DETAILS keyword handler (morning meeting script, managers only) ---
+async function handleDetailsKeyword(
+  user: { id: string; dealershipId: string; dealershipName: string },
+  phone: string
+) {
+  try {
+    // Check if user is a manager/owner
+    const { serviceClient: sc } = await import('@/lib/supabase/service');
+    const { data: membership } = await sc
+      .from('dealership_memberships')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('dealership_id', user.dealershipId)
+      .maybeSingle();
+
+    const role = (membership?.role as string) ?? '';
+    if (!['owner', 'manager'].includes(role)) {
+      // Not a manager — ignore DETAILS keyword, don't send error
+      return;
+    }
+
+    // Look up today's meeting script
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { data: script } = await sc
+      .from('meeting_scripts')
+      .select('full_script, script_date')
+      .eq('dealership_id', user.dealershipId)
+      .eq('script_date', todayStr)
+      .maybeSingle();
+
+    if (!script) {
+      const msg =
+        "Your morning intel isn't ready yet. Check your dashboard after 7 AM.";
+      await sendSms(phone, msg);
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: msg,
+      });
+      return;
+    }
+
+    // Format expanded DETAILS response
+    const { formatDetailsResponse } = await import(
+      '@/lib/meeting-script/assemble'
+    );
+    const detailsText = formatDetailsResponse(
+      user.dealershipName,
+      script.full_script as Parameters<typeof formatDetailsResponse>[1],
+      script.script_date as string
+    );
+
+    await sendSms(phone, detailsText);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: detailsText,
+      metadata: { type: 'morning_script_details' },
+    });
+    // DETAILS does not count toward 3-message daily cap — it's a system response
+  } catch (err) {
+    console.error('DETAILS keyword handler error:', err);
+  }
 }
 
 // --- Re-subscribe handler ---
