@@ -12,41 +12,41 @@ const conversation: Message[] = [
   // Exchange 1
   {
     from: 'system',
-    text: "\"I can get the same truck cheaper at the dealer down the road.\"",
-    delay: 800,
+    text: "\"My trade-in is worth way more than what you're offering.\"",
+    delay: 1000,
   },
   {
     from: 'rep',
-    text: "That's great you're comparing — let's make sure it's apples to apples. What did they quote you?",
-    delay: 3000,
+    text: "I get it — what number did you have in mind?",
+    delay: 3600,
   },
   // Exchange 2 — customer pushback
   {
     from: 'system',
-    text: "\"$2,400 less. Same model, same color. Why wouldn't I just go there?\"",
-    delay: 5100,
+    text: "\"KBB says $18,000. You're at $14,500.\"",
+    delay: 6100,
   },
   {
     from: 'rep',
-    text: "Fair question. Does their price include the lifetime powertrain warranty and complimentary maintenance we bundle? That alone is worth $3,200 over five years.",
-    delay: 7600,
+    text: "KBB is a great starting point. That range assumes perfect condition — let's walk through it together.",
+    delay: 9100,
   },
-  // Exchange 3 — final push
+  // Exchange 3
   {
     from: 'system',
-    text: "\"I didn't ask about that. Can you match the price or not?\"",
-    delay: 9700,
+    text: "\"So you're saying KBB is wrong?\"",
+    delay: 11600,
   },
   {
     from: 'rep',
-    text: "I hear you. Let me talk to my manager and see what we can do — but even before that, would you be open to a quick side-by-side so you can see the full picture?",
-    delay: 12200,
+    text: "Not wrong — just broad. Once we factor in mileage and service history, I think we can close that gap.",
+    delay: 14600,
   },
   // AI grade
   {
     from: 'ai',
-    text: '⭐ 9.2/10 — What worked: Strong reframe without being defensive. Good value pivot on exchange 2. 💡 Pro tip: "Can I see that quote in writing?" anchors the negotiation.',
-    delay: 14900,
+    text: '⭐ 9.2/10 — What worked: Validated the research without arguing. Smooth pivot to specifics. 💡 Pro tip: "Let\'s pull it up together" builds trust faster.',
+    delay: 17900,
   },
 ];
 
@@ -72,7 +72,7 @@ export default function PhoneMockup() {
       setTimeout(() => {
         setVisibleMessages(0);
         setCycle((c) => c + 1);
-      }, 20000)
+      }, 24000)
     );
 
     return () => timers.forEach(clearTimeout);
