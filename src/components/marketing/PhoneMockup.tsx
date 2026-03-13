@@ -172,8 +172,9 @@ export default function PhoneMockup() {
         </div>
       </div>
 
-      {/* Glow effect behind phone */}
-      <div className="absolute -inset-8 -z-10 bg-blue-500/10 blur-3xl rounded-full" />
+      {/* Glow effect behind phone — layered for depth */}
+      <div className="absolute -inset-10 -z-10 bg-blue-500/15 blur-3xl rounded-full" />
+      <div className="absolute -inset-16 -z-20 bg-indigo-500/8 blur-[80px] rounded-full" />
     </div>
   );
 }

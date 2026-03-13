@@ -191,16 +191,14 @@ export default function LandingPage() {
       />
 
       {/* ══════════ HERO ══════════ */}
-      <section className="relative py-20 md:py-28 lg:py-36">
-        {/* Ambient orbs */}
-        <div className="orb orb-blue w-[600px] h-[600px] -top-48 -left-48 animate-orb-float" />
+      <section className="relative py-20 md:py-28 lg:py-36 hero-gradient hero-grid overflow-hidden">
+        {/* Ambient orbs — independent drift for depth */}
+        <div className="orb orb-blue w-[700px] h-[700px] -top-56 -left-56 animate-orb-drift-1" />
+        <div className="orb orb-purple w-[600px] h-[600px] top-10 right-[-18%] animate-orb-drift-2" />
+        <div className="orb orb-cyan w-[400px] h-[400px] bottom-[-8%] left-[20%] animate-orb-drift-3" />
         <div
-          className="orb orb-purple w-[500px] h-[500px] top-10 right-[-15%] animate-orb-float"
-          style={{ animationDelay: '-7s' }}
-        />
-        <div
-          className="orb orb-cyan w-[350px] h-[350px] bottom-[-5%] left-[25%] animate-orb-float"
-          style={{ animationDelay: '-13s' }}
+          className="orb orb-indigo w-[500px] h-[500px] top-[40%] left-[55%] animate-orb-drift-1"
+          style={{ animationDelay: '-8s' }}
         />
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -216,7 +214,7 @@ export default function LandingPage() {
               {/* Headline */}
               <h1 className="text-hero font-bold tracking-[-0.03em] text-white leading-[1.06] text-balance mb-6">
                 Turn every rep into{' '}
-                <span className="bg-gradient-to-r from-blue-400 via-blue-500 to-cyan-400 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-blue-400 via-blue-300 to-cyan-400 bg-clip-text text-transparent">
                   a closer
                 </span>
               </h1>
@@ -489,8 +487,8 @@ export default function LandingPage() {
 
       {/* ══════════ FINAL CTA ══════════ */}
       <section className="relative py-16 md:py-20 lg:py-24 overflow-hidden">
-        <div className="orb orb-blue w-[700px] h-[700px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-orb-float" />
-        <div className="orb orb-purple w-[400px] h-[400px] bottom-0 right-[10%] animate-orb-float" style={{ animationDelay: '-5s' }} />
+        <div className="orb orb-blue w-[700px] h-[700px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-orb-drift-2" />
+        <div className="orb orb-purple w-[450px] h-[450px] bottom-0 right-[10%] animate-orb-drift-3" />
 
         <div className="relative z-10 max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <ScrollReveal>

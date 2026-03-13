@@ -43,6 +43,9 @@ const config: Config = {
       },
       animation: {
         "orb-float": "orb-float 20s ease-in-out infinite",
+        "orb-drift-1": "orb-drift-1 18s ease-in-out infinite alternate",
+        "orb-drift-2": "orb-drift-2 22s ease-in-out infinite alternate",
+        "orb-drift-3": "orb-drift-3 15s ease-in-out infinite alternate",
         "glow-pulse": "glow-pulse 3s ease-in-out infinite",
         "fade-up": "fade-up 0.8s var(--ease-out-cubic) forwards",
       },
