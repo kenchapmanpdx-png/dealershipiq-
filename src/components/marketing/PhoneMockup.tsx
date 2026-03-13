@@ -9,44 +9,44 @@ interface Message {
 }
 
 const conversation: Message[] = [
-  // Exchange 1
+  // Persona: young dad, loves the SUV, but his wife isn't sold yet
   {
     from: 'system',
-    text: "\"I like this one, but I need to think about it.\"",
+    text: "\"We like it, but my wife wants to check out the Hyundai down the street too.\"",
     delay: 1000,
   },
   {
     from: 'rep',
-    text: "Totally fair. What's the main thing you'd want to sleep on?",
+    text: "Smart to compare. What's she hoping the Hyundai might offer that this one doesn't?",
     delay: 3600,
   },
-  // Exchange 2 — customer pushback
+  // Exchange 2 — the real concern surfaces
   {
     from: 'system',
-    text: "\"I just don't want to rush into anything.\"",
-    delay: 6100,
+    text: "\"She just thinks we'd be paying too much for the brand.\"",
+    delay: 6600,
   },
   {
     from: 'rep',
-    text: "I respect that. Most of my happiest customers felt the same way. What would make you feel confident today?",
-    delay: 9100,
+    text: "That's fair. Want me to pull up warranty and resale side by side? Might help the conversation at home.",
+    delay: 9600,
   },
-  // Exchange 3
+  // Exchange 3 — he's warming up, needs ammo for his wife
   {
     from: 'system',
-    text: "\"Honestly, the monthly payment is a little higher than I planned.\"",
-    delay: 12100,
+    text: "\"Yeah actually that'd help. She's the spreadsheet person.\"",
+    delay: 12600,
   },
   {
     from: 'rep',
-    text: "Good to know — let me see what we can do with the term or down payment to get that number comfortable.",
-    delay: 15100,
+    text: "Love that. I'll put together a quick comparison you can show her tonight.",
+    delay: 15600,
   },
   // AI grade
   {
     from: 'ai',
-    text: '⭐ 9.4/10 — Uncovered the real objection behind "think about it." Didn\'t pressure. 💡 Pro tip: Ask about their target payment early to get there faster.',
-    delay: 18400,
+    text: '⭐ 9.1/10 — Respected the co-buyer dynamic instead of pushing a solo close. 💡 Offer to include her on a follow-up call.',
+    delay: 18900,
   },
 ];
 
