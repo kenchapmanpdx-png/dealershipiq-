@@ -9,43 +9,43 @@ interface Message {
 }
 
 const conversation: Message[] = [
-  // Persona: young dad, loves the SUV, but his wife isn't sold yet
+  // Persona: buyer likes the truck, test drove it, but balking at payment
   {
     from: 'system',
-    text: "\"We like it, but my wife wants to check out the Hyundai down the street too.\"",
+    text: "\"I love the truck but $640 a month is more than I wanted to spend.\"",
     delay: 1000,
   },
   {
     from: 'rep',
-    text: "Smart to compare. What's she hoping the Hyundai might offer that this one doesn't?",
+    text: "Where were you hoping to be? Let's see what we can work with.",
     delay: 3600,
   },
-  // Exchange 2 — the real concern surfaces
+  // Exchange 2 — buyer gives a number, rep reframes
   {
     from: 'system',
-    text: "\"She just thinks we'd be paying too much for the brand.\"",
+    text: "\"Closer to $550. I've got other bills to think about.\"",
     delay: 6600,
   },
   {
     from: 'rep',
-    text: "I hear you. What if I pull up the warranty and resale numbers side by side right now? Takes two minutes.",
+    text: "That's a $90 gap. If I can get it under $575 with the same term, is that something you'd move on today?",
     delay: 9600,
   },
-  // Exchange 3 — he's warming up, rep anchors a next step
+  // Exchange 3 — buyer commits if the number works
   {
     from: 'system',
-    text: "\"Yeah, that'd actually help. She's the numbers person.\"",
+    text: "\"If you can actually get there, yeah, I'm ready.\"",
     delay: 12600,
   },
   {
     from: 'rep',
-    text: "Let's do it. And if she wants to test drive it Saturday I'll set aside the same one for you.",
+    text: "Give me ten minutes with my manager. I'll come back with real numbers, not a maybe.",
     delay: 15600,
   },
   // AI grade
   {
     from: 'ai',
-    text: '⭐ 9.3/10 — Armed the buyer with data AND locked in a next step. 💡 Ask if she\'d like to jump on a quick call too.',
+    text: '⭐ 9.4/10 — Got a micro-commitment before going to the desk. Strong close setup. 💡 Recap the agreed terms when you come back.',
     delay: 18900,
   },
 ];
