@@ -1,0 +1,50 @@
+// Utility: Verify and decode HMAC-signed PWA session tokens.
+// Extracted from app/api/app/auth/route.ts to avoid invalid Next.js route exports.
+
+import { createHmac, timingSafeEqual } from 'crypto';
+
+/**
+ * Verify and decode HMAC-signed session token.
+ * Returns user info if valid, null if signature fails or expired.
+ */
+export function verifyAppToken(token: string): {
+  userId: string;
+  dealershipId: string;
+  firstName: string;
+  language: string;
+} | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
+    const { sig, ...payload } = decoded;
+
+    // Verify signature (timing-safe comparison)
+    const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET;
+    if (!secret) return null; // No secret configured = reject all tokens
+
+    const expected = createHmac('sha256', secret)
+      .update(JSON.stringify(payload))
+      .digest('hex');
+
+    if (sig.length !== expected.length ||
+        !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+      console.warn('Invalid app token signature');
+      return null;
+    }
+
+    // Check expiration
+    if (payload.expiresAt < Date.now()) {
+      console.warn('App token expired');
+      return null;
+    }
+
+    return {
+      userId: payload.userId,
+      dealershipId: payload.dealershipId,
+      firstName: payload.firstName,
+      language: payload.language,
+    };
+  } catch (err) {
+    console.error('Failed to verify app token:', err);
+    return null;
+  }
+}

@@ -3,7 +3,7 @@
 // Phase 4.5A
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac } from 'crypto';
 import { serviceClient } from '@/lib/supabase/service';
 
 // S-001: Fail-closed — reject all auth if no signing secret configured
@@ -169,48 +169,4 @@ function createSessionResponse(
   return NextResponse.json({ token, first_name: firstName });
 }
 
-/**
- * Verify and decode HMAC-signed session token.
- * Returns user info if valid, null if signature fails or expired.
- */
-export function verifyAppToken(token: string): {
-  userId: string;
-  dealershipId: string;
-  firstName: string;
-  language: string;
-} | null {
-  try {
-    const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
-    const { sig, ...payload } = decoded;
-
-    // Verify signature (timing-safe comparison)
-    const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET;
-    if (!secret) return null; // No secret configured = reject all tokens
-
-    const expected = createHmac('sha256', secret)
-      .update(JSON.stringify(payload))
-      .digest('hex');
-
-    if (sig.length !== expected.length ||
-        !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
-      console.warn('Invalid app token signature');
-      return null;
-    }
-
-    // Check expiration
-    if (payload.expiresAt < Date.now()) {
-      console.warn('App token expired');
-      return null;
-    }
-
-    return {
-      userId: payload.userId,
-      dealershipId: payload.dealershipId,
-      firstName: payload.firstName,
-      language: payload.language,
-    };
-  } catch (err) {
-    console.error('Failed to verify app token:', err);
-    return null;
-  }
-}
+// verifyAppToken moved to @/lib/app-auth to avoid invalid Next.js route exports

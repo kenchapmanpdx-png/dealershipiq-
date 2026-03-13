@@ -11,7 +11,7 @@ import { tokenLimitParam } from '@/lib/openai';
 import { buildRepContext } from '@/lib/coach/context';
 import { buildCoachSystemPrompt, DOOR_OPENING_MESSAGES, CLASSIFY_EXCHANGE_TOOL } from '@/lib/coach/prompts';
 import { compactMessages, buildMessageHistory, isMaxExchanges } from '@/lib/coach/compaction';
-import { verifyAppToken } from '@/app/api/app/auth/route';
+import { verifyAppToken } from '@/lib/app-auth';
 import type {
   CoachDoor,
   CoachMessage,
