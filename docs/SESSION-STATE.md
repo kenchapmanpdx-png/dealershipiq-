@@ -535,6 +535,46 @@ All 8 SINCH_* env vars present: SINCH_PHONE_NUMBER (updated today), SINCH_API_TO
 
 **Note:** Two Vercel projects exist — `dealershipiq` (dealershipiq.vercel.app) and `dealershipiq-wua7` (dealershipiq-wua7.vercel.app). Production is `dealershipiq-wua7`. The `dealershipiq` project has only 7 env vars (no SINCH_ vars) and should be deleted or consolidated.
 
+### Landing Page V2 Redesign (03/12/2026)
+
+**Complete redesign** of `(marketing)/page.tsx` and supporting components. Prior version was basic centered layout. New version follows million-dollar-website playbook: dark surfaces, fluid typography, glass morphism, ambient gradient orbs, scroll-triggered animations.
+
+**New components (4):**
+1. `src/components/marketing/PhoneMockup.tsx` — Animated SMS conversation cycling through 3 messages (system question → rep response → AI grade 9.2/10). Phone frame with notch, status bar, typing indicator dots.
+2. `src/components/marketing/ScrollReveal.tsx` — IntersectionObserver-based reveal animations with configurable direction/delay. `StaggerReveal` wrapper for sequential child animation. Both respect `prefers-reduced-motion`.
+3. `src/components/marketing/AnimatedCounter.tsx` — Scroll-triggered numeric counters that parse prefix/number/suffix from strings like "<5s", "100%", "3x". Ease-out cubic over 1200ms.
+4. `src/components/marketing/FAQ.tsx` — Interactive accordion with +/× icon rotation, smooth max-height transitions.
+
+**Page sections (8):**
+1. Hero — Split layout: copy left (eyebrow pill, gradient headline, dual CTAs, trust signals), PhoneMockup right
+2. Metrics bar — 4 animated counters (<5s, 100%, 3x, 0)
+3. Social proof — 3 testimonial cards (Marcus T./GM, Rachel K./Sales Mgr, David L./Dealer Principal)
+4. Features — 6-card bento grid with SVG icons in accent containers
+5. How It Works — 4 steps with gradient step numbers (01-04), connector lines
+6. Pricing — $449/mo card with gradient border, 2-col feature grid, CTA
+7. FAQ — 5-question interactive accordion
+8. Final CTA — Ambient orbs, closing headline, large CTA button
+
+**Design system additions (`globals.css`):**
+- `gradient-border` (pseudo-element gradient mask), `step-number` (gradient text), `quote-mark`, `gradient-line`, `message-in` keyframe, `shimmer` animation
+
+**Layout updates (`(marketing)/layout.tsx`):**
+- Header: desktop nav links (Features/How It Works/Pricing anchors)
+- Footer: 4-column grid (brand, description, Product links, Account links), gradient-line separator
+
+**Fixes applied post-deploy:**
+- Reduced section padding from py-24/py-32/py-40 → py-16/py-20/py-24 (excessive whitespace)
+- ScrollReveal rootMargin changed from -40px → +80px (trigger before entering viewport)
+- ScrollReveal translateY reduced from 32px → 20px (subtler entrance)
+
+**Commits:** c4cdfd7 (feat: premium landing page), 27cbba2 (fix: tighten section spacing), c7f13b6 (fix: trigger scroll animations earlier)
+
+**ESLint fixes (10 backend files):** Cleaned 12+ pre-existing issues (unused imports, let→const, unused vars) that were blocking Vercel builds.
+
+**Architecture fixes:** Extracted `verifyAppToken` to `src/lib/app-auth.ts` and `useRepSession`/`SessionContext` to `src/lib/pwa/session-context.tsx` (both were invalid Next.js route/layout exports).
+
+**tsc --noEmit:** PASSING
+
 ## What's Next
 1. **Fix Security Audit #2 findings** — 17 issues (3 CRITICAL, 4 HIGH, 7 MEDIUM, 3 LOW). See `docs/SECURITY-AUDIT-2.md`.
 2. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
