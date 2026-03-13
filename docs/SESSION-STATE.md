@@ -472,12 +472,44 @@ Each template: 3 steps, deterministic branching on empathy/close_attempt/product
 
 **Resolved:** C-008 timezone limitation. H-007 comments removed from daily-training and daily-digest.
 
+### Security Hardening (03/12/2026)
+
+**Full security audit:** 28 findings (3 CRITICAL, 5 HIGH, 14 MEDIUM, 6 LOW). 15 code-level fixes applied in commit c28e899. RLS policy applied directly to production via Supabase SQL Editor.
+
+**Critical fixes:**
+- S-001: Fail-closed auth secret validation (no secret = reject all, not fail open)
+- S-003: Removed `document.cookie` parsing for Supabase token on dashboard (XSS vector)
+- S-004: Stripped phone numbers from public leaderboard API response
+
+**High fixes:**
+- S-002: In-memory rate limiting on PWA phone auth (5 attempts / 5min, 15min lockout)
+- S-005: RLS `users_update_manager` WITH CHECK constrains `status` to valid values + prevents cross-dealership reassignment via `last_active_dealership_id`. Note: `role` lives on `dealership_memberships`, not `users` — role escalation guarded by separate policy.
+- S-006: Real-time TCPA opt-out check before every outbound SMS
+
+**Medium fixes:**
+- S-007: Prompt injection sanitization on coach mode rep context (strip injection keywords, XML delimiters)
+- S-008: TRAIN: SMS input sanitization (strip injection keywords, 500 char limit)
+- S-009: Payload size limits (10KB JSON on checkout, 5MB CSV on import)
+- S-012: Strip `stripe_customer_id` and `subscription_id` from billing status response
+- S-013: Security headers in vercel.json (X-Frame-Options DENY, nosniff, XSS-Protection, Referrer-Policy, Permissions-Policy)
+- S-014: CSV formula injection defense (strip leading =+-@\t\r)
+- S-017: Timing-safe admin API key comparison on coach context route
+- S-028: Remove hardcoded URL fallback in webhook route
+
+**Low fixes:**
+- S-023: .gitignore env files (.env, .env.local, .env.production)
+
+**Deferred (needs Upstash Redis):** S-010 (Redis-backed rate limiting), S-011 (rate limit /api/ask), S-021 (global rate limiting middleware)
+
+**tsc --noEmit:** PASSING
+
 ## What's Next
 1. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
 2. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
 3. Sentry/Axiom observability (NR-002)
 4. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
 5. Verify 3-exchange objection flow
+6. **Upstash Redis** for production rate limiting (S-010, S-011, S-021)
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.

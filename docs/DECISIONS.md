@@ -285,6 +285,17 @@ Append-only. Each entry records a technical or product decision with rationale.
 - **Fixes:** webhook maxDuration, coach session HMAC verification, hardcoded fallback secret removal, past vacation date validation, RFC 4180 CSV parsing.
 - **Commit:** da036a9
 
+## D-048: Security hardening — 15 code-level fixes
+- **Date:** 2026-03-12
+- **Decision:** Applied 15 security fixes from comprehensive audit. Key architectural decisions:
+  - PWA auth: fail-closed (no secret = reject all), in-memory rate limiting (5 attempts/5min, 15min lockout)
+  - SMS: real-time opt-out check before every send (TCPA compliance), not just cron-synced table
+  - Prompt injection: sanitize user-provided strings before LLM system prompt injection (strip `system:`, `instruction:`, `ignore`, `override`, XML chars)
+  - RLS: `users_update_manager` WITH CHECK constrains `status` and `last_active_dealership_id` only (role lives on `dealership_memberships`, not `users`)
+  - Rate limiting deferred to Upstash Redis (in-memory doesn't survive cold starts on serverless)
+- **Commit:** c28e899
+- **Affected files:** 13 files + 1 new migration
+
 ## D-047: Vercel Pro cron schedule upgrade
 - **Date:** 2026-03-12
 - **Decision:** Upgraded Vercel to Pro plan. Changed cron schedules: daily-training + daily-digest to hourly (all timezone coverage), red-flag-check to every 6h, orphaned-sessions to every 2h. Webhook maxDuration bumped to 300s.
