@@ -95,11 +95,9 @@ export default function DashboardPage() {
         recentActivity,
       });
 
-      // Fetch coach themes (non-blocking)
+      // Fetch coach themes (non-blocking) — uses cookie-based auth automatically
       try {
-        const coachRes = await fetch('/api/dashboard/coach-themes', {
-          headers: { Authorization: `Bearer ${document.cookie.split('sb-')[1]?.split('=')[1] ?? ''}` },
-        });
+        const coachRes = await fetch('/api/dashboard/coach-themes');
         if (coachRes.ok) {
           const coachData = await coachRes.json();
           if (coachData.data) setCoachThemes(coachData.data);

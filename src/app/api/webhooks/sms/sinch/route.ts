@@ -247,7 +247,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     if (!coachEnabled) {
       await sendSms(phone, "Coach Mode isn't available yet. Stay tuned!");
     } else {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dealershipiq-wua7.vercel.app';
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.VERCEL_URL ?? '';
       const slug = user.dealershipId;
       await sendSms(
         phone,
@@ -437,8 +437,11 @@ async function handleTrainKeyword(
     await clearNowConfirmation(existingPending.id);
   }
 
-  // Strip TRAIN: prefix
-  const managerInput = text.replace(/^TRAIN:\s*/i, '').trim();
+  // Strip TRAIN: prefix + sanitize (S-008: prompt injection defense)
+  let managerInput = text.replace(/^TRAIN:\s*/i, '').trim();
+  managerInput = managerInput
+    .replace(/system:|instruction:|ignore |override |assistant:/gi, '')
+    .slice(0, 500);
   if (managerInput.length < 5) {
     await sendSms(phone, 'Describe the situation after TRAIN: (e.g., "TRAIN: customer wants to trade in a 2019 Civic with high mileage")');
     await insertTranscriptLog({

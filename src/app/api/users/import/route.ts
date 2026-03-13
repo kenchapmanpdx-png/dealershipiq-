@@ -93,14 +93,29 @@ function parseCSV(csvText: string): ImportRow[] {
   return lines.slice(1).map((line) => {
     const fields = parseCSVLine(line);
     return {
-      full_name: fields[fullNameIdx],
+      full_name: sanitizeCsvField(fields[fullNameIdx]),
       phone: fields[phoneIdx],
     };
   });
 }
 
+// S-014: Strip formula injection characters from CSV fields
+function sanitizeCsvField(value: string): string {
+  if (!value) return value;
+  // Strip leading characters that could trigger formula execution in Excel
+  return value.replace(/^[=+\-@\t\r]+/, '').trim();
+}
+
+const MAX_CSV_SIZE = 5 * 1024 * 1024; // 5MB
+
 export async function POST(request: NextRequest) {
   try {
+    // S-009: Reject oversized CSV uploads
+    const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10);
+    if (contentLength > MAX_CSV_SIZE) {
+      return NextResponse.json({ error: 'CSV too large (max 5MB)' }, { status: 413 });
+    }
+
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
 

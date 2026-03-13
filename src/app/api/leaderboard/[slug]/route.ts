@@ -9,7 +9,6 @@ import { serviceClient } from '@/lib/supabase/service';
 interface LeaderboardEntry {
   user_id: string;
   user_name: string;
-  phone: string;
   total_sessions: number;
   average_score: number;
   last_training_at: string | null;
@@ -56,13 +55,12 @@ export async function GET(
       );
     }
 
-    // Get all users in dealership with training stats
+    // Get all users in dealership with training stats (no phone — public endpoint)
     const { data: users, error: usersError } = await serviceClient
       .from('users')
       .select(`
         id,
         full_name,
-        phone,
         dealership_memberships!inner (
           dealership_id
         ),
@@ -106,7 +104,6 @@ export async function GET(
           user: {
             user_id: user.id as string,
             user_name: user.full_name as string,
-            phone: user.phone as string,
             total_sessions: results.length,
             average_score: Math.round(avgScore * 10) / 10,
             last_training_at: lastTraining,
@@ -122,7 +119,6 @@ export async function GET(
       return {
         user_id: user.user_id as string,
         user_name: user.user_name as string,
-        phone: user.phone as string,
         total_sessions: user.total_sessions as number,
         average_score: user.average_score as number,
         last_training_at: user.last_training_at as string | null,

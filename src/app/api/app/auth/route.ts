@@ -3,8 +3,67 @@
 // Phase 4.5A
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { serviceClient } from '@/lib/supabase/service';
+
+// S-001: Fail-closed — reject all auth if no signing secret configured
+function getAuthSecret(): string {
+  const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET;
+  if (!secret) {
+    throw new Error('APP_AUTH_SECRET or CRON_SECRET must be set');
+  }
+  return secret;
+}
+
+// S-002: In-memory rate limit for PWA auth (brute-force protection)
+const authAttempts = new Map<string, { count: number; blockedUntil: number }>();
+const AUTH_MAX_ATTEMPTS = 5;
+const AUTH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const AUTH_BLOCK_MS = 15 * 60 * 1000; // 15 minute lockout
+
+function checkAuthRateLimit(phone: string): boolean {
+  const now = Date.now();
+  const entry = authAttempts.get(phone);
+
+  if (entry && entry.blockedUntil > now) {
+    return false; // Still blocked
+  }
+
+  if (!entry || entry.blockedUntil <= now) {
+    // Reset if block expired
+    if (entry && entry.blockedUntil <= now) {
+      authAttempts.set(phone, { count: 1, blockedUntil: 0 });
+    }
+    return true;
+  }
+
+  return true;
+}
+
+function recordAuthAttempt(phone: string, success: boolean): void {
+  const now = Date.now();
+  if (success) {
+    authAttempts.delete(phone);
+    return;
+  }
+
+  const entry = authAttempts.get(phone) || { count: 0, blockedUntil: 0 };
+  entry.count += 1;
+
+  if (entry.count >= AUTH_MAX_ATTEMPTS) {
+    entry.blockedUntil = now + AUTH_BLOCK_MS;
+    entry.count = 0;
+  }
+
+  authAttempts.set(phone, entry);
+
+  // Cleanup old entries periodically
+  if (authAttempts.size > 10000) {
+    authAttempts.forEach((val, key) => {
+      if (val.blockedUntil < now && val.count === 0) authAttempts.delete(key);
+    });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,8 +88,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // S-002: Rate limit by phone number
+    if (!checkAuthRateLimit(normalized)) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Try again in 15 minutes.' },
+        { status: 429 }
+      );
+    }
+
     // Verify last 4 digits match
     if (!normalized.endsWith(last_four)) {
+      recordAuthAttempt(normalized, false);
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
@@ -51,12 +119,15 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (!user2) {
+        recordAuthAttempt(normalized, false);
         return NextResponse.json({ error: 'User not found' }, { status: 401 });
       }
 
+      recordAuthAttempt(normalized, true);
       return createSessionResponse(user2, dealership_slug);
     }
 
+    recordAuthAttempt(normalized, true);
     return createSessionResponse(user, dealership_slug);
   } catch (err) {
     console.error('Auth error:', err);
@@ -75,7 +146,7 @@ function createSessionResponse(
 
   // Create HMAC-signed session token
   const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
-  const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET || '';
+  const secret = getAuthSecret();
 
   const payload = {
     userId,
@@ -112,13 +183,16 @@ export function verifyAppToken(token: string): {
     const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
     const { sig, ...payload } = decoded;
 
-    // Verify signature
-    const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET || '';
+    // Verify signature (timing-safe comparison)
+    const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET;
+    if (!secret) return null; // No secret configured = reject all tokens
+
     const expected = createHmac('sha256', secret)
       .update(JSON.stringify(payload))
       .digest('hex');
 
-    if (sig !== expected) {
+    if (sig.length !== expected.length ||
+        !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
       console.warn('Invalid app token signature');
       return null;
     }

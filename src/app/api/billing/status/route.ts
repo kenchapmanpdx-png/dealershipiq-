@@ -63,14 +63,16 @@ export async function GET() {
       }
     }
 
-    const billingState: BillingState = {
+    // S-012: Do not expose Stripe IDs in client-facing response
+    const billingState: Omit<BillingState, 'stripe_customer_id' | 'subscription_id'> & {
+      stripe_customer_id?: undefined;
+      subscription_id?: undefined;
+    } = {
       subscription_status: status,
       is_pilot: isPilot,
       trial_ends_at: trialEndsAt,
       current_period_end: d.current_period_end as string | null,
       past_due_since: pastDueSince,
-      stripe_customer_id: d.stripe_customer_id as string | null,
-      subscription_id: d.subscription_id as string | null,
       max_locations: (d.max_locations as number) ?? 1,
       days_remaining_in_trial: daysRemainingInTrial,
       dunning_stage: dunningStage,

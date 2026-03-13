@@ -13,6 +13,12 @@ import type { CheckoutRequest } from '@/types/billing';
 
 export async function POST(request: NextRequest) {
   try {
+    // S-009: Reject oversized JSON payloads
+    const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10);
+    if (contentLength > 10_000) {
+      return NextResponse.json({ error: 'Request too large' }, { status: 413 });
+    }
+
     const body: CheckoutRequest = await request.json();
     const { dealershipName, email, password, managerName, locations, timezone } = body;
 

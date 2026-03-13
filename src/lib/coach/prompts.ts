@@ -75,6 +75,16 @@ Read the rep's tone and adapt:
 
 If the rep says they want a different coaching style, adjust accordingly.`;
 
+// S-007: Sanitize user-provided strings before injecting into system prompt
+function sanitizePromptInput(input: string, maxLen = 200): string {
+  return input
+    .replace(/[<>]/g, '')
+    .replace(/\n/g, ' ')
+    .replace(/system:|instruction:|ignore |override /gi, '')
+    .slice(0, maxLen)
+    .trim();
+}
+
 export function buildCoachSystemPrompt(
   door: CoachDoor,
   context: RepContextSnapshot
@@ -82,24 +92,30 @@ export function buildCoachSystemPrompt(
   const scoresSummary = formatScoresSummary(context.training_scores);
   const weakDomains = getWeakDomains(context.training_scores);
   const gapsSummary = context.recent_gaps.length > 0
-    ? context.recent_gaps.join(', ')
+    ? context.recent_gaps.map(g => sanitizePromptInput(g, 100)).join(', ')
     : 'None recent';
   const prevSessions = context.previous_coach_sessions.length > 0
     ? context.previous_coach_sessions
-        .map((s) => `${s.session_topic} (${s.sentiment_trend})`)
+        .map((s) => `${sanitizePromptInput(s.session_topic, 50)} (${s.sentiment_trend})`)
         .join(', ')
     : 'First session';
 
+  const safeName = sanitizePromptInput(context.first_name, 50);
+  const safeDealership = sanitizePromptInput(context.dealership_name, 100);
+
   const repContext = `
-REP CONTEXT (use naturally, don't recite):
-Name: ${context.first_name}
-Dealership: ${context.dealership_name}
+<rep_context>
+Name: ${safeName}
+Dealership: ${safeDealership}
 Tenure: ${context.tenure_days} days
 Training stats: ${scoresSummary}
 Current streak: ${context.overall_stats.current_streak} days
 Weak domains: ${weakDomains}
 Recent Ask IQ questions: ${gapsSummary}
-Previous coach sessions: ${prevSessions}`;
+Previous coach sessions: ${prevSessions}
+</rep_context>
+
+Use the rep context naturally. Do not recite it.`;
 
   return [
     COMMON_PREAMBLE,

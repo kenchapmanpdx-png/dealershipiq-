@@ -3,12 +3,15 @@
 // Not exposed directly to client — called internally by session route
 
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { buildRepContext } from '@/lib/coach/context';
 
 export async function GET(request: NextRequest) {
-  // Internal route — verify admin API key or service role
-  const adminKey = request.headers.get('x-admin-key');
-  if (adminKey !== process.env.ADMIN_API_KEY) {
+  // Internal route — verify admin API key (S-017: timing-safe comparison)
+  const adminKey = request.headers.get('x-admin-key') ?? '';
+  const expected = process.env.ADMIN_API_KEY ?? '';
+  if (!expected || adminKey.length !== expected.length ||
+      !timingSafeEqual(Buffer.from(adminKey), Buffer.from(expected))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

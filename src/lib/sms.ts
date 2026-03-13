@@ -40,6 +40,31 @@ export function sanitizeGsm7(text: string): string {
   return result;
 }
 
+// S-006: Real-time opt-out check before any SMS send (TCPA compliance)
+async function isOptedOut(phone: string): Promise<boolean> {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return false; // Fail-open only if DB unavailable
+
+    const client = createClient(url, key);
+    const normalized = phone.startsWith('+') ? phone : `+${phone}`;
+    const alt = normalized.replace(/^\+/, '');
+
+    const { data } = await client
+      .from('sms_opt_outs')
+      .select('id')
+      .or(`phone.eq.${normalized},phone.eq.${alt}`)
+      .limit(1)
+      .maybeSingle();
+
+    return !!data;
+  } catch {
+    return false; // Fail-open — don't block SMS on DB errors
+  }
+}
+
 export async function sendSms(
   phone: string,
   text: string,
@@ -51,6 +76,12 @@ export async function sendSms(
 
   if (!servicePlanId || !apiToken || !fromNumber) {
     throw new Error('SINCH_SERVICE_PLAN_ID, SINCH_API_TOKEN, and SINCH_PHONE_NUMBER must be set');
+  }
+
+  // S-006: TCPA real-time opt-out check before every outbound SMS
+  if (await isOptedOut(phone)) {
+    console.warn(`Blocked SMS to opted-out number: ${phone.slice(-4)}`);
+    return { id: 'blocked-opt-out', message_id: 'blocked-opt-out', to: [phone], from: fromNumber };
   }
 
   // Sanitize for GSM-7 before sending
