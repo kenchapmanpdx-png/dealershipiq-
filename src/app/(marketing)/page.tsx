@@ -290,7 +290,7 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ SOCIAL PROOF ══════════ */}
-      <section className="py-24 md:py-32 lg:py-40">
+      <section className="py-16 md:py-20 lg:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
             <div className="text-center mb-16">
@@ -327,7 +327,7 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ FEATURES — BENTO GRID ══════════ */}
-      <section id="features" className="py-24 md:py-32 lg:py-40 bg-[var(--bg-secondary)] scroll-mt-20">
+      <section id="features" className="py-16 md:py-20 lg:py-24 bg-[var(--bg-secondary)] scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
             <div className="max-w-2xl mb-16">
@@ -364,11 +364,11 @@ export default function LandingPage() {
       {/* ══════════ HOW IT WORKS ══════════ */}
       <section
         id="how-it-works"
-        className="py-24 md:py-32 lg:py-40"
+        className="py-16 md:py-20 lg:py-24"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
-            <div className="max-w-2xl mx-auto text-center mb-20">
+            <div className="max-w-2xl mx-auto text-center mb-14">
               <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
                 How It Works
               </p>
@@ -399,7 +399,7 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ PRICING ══════════ */}
-      <section id="pricing" className="py-24 md:py-32 lg:py-40 bg-[var(--bg-secondary)] scroll-mt-20">
+      <section id="pricing" className="py-16 md:py-20 lg:py-24 bg-[var(--bg-secondary)] scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
             <div className="max-w-2xl mx-auto text-center mb-16">
@@ -463,10 +463,10 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ FAQ ══════════ */}
-      <section className="py-24 md:py-32 lg:py-40">
+      <section className="py-16 md:py-20 lg:py-24">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
-            <div className="text-center mb-16">
+            <div className="text-center mb-12">
               <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
                 FAQ
               </p>
@@ -483,7 +483,7 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ FINAL CTA ══════════ */}
-      <section className="relative py-24 md:py-32 lg:py-40 overflow-hidden">
+      <section className="relative py-16 md:py-20 lg:py-24 overflow-hidden">
         <div className="orb orb-blue w-[700px] h-[700px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-orb-float" />
         <div className="orb orb-purple w-[400px] h-[400px] bottom-0 right-[10%] animate-orb-float" style={{ animationDelay: '-5s' }} />
 
