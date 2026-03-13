@@ -40,13 +40,13 @@ const conversation: Message[] = [
   {
     from: 'rep',
     text: "Give me five minutes with my manager. If we land on a number that works, would you want to drive it home tonight?",
-    delay: 18500,
+    delay: 19500,
   },
   // AI grade — praise + correction
   {
     from: 'ai',
     text: '⭐ 8.4/10 — Isolated the hesitation to numbers, not the car. Urgency without pressure. 💡 Ask what he pays now — "Only $40 more for a new CR-V" hits harder than any discount.',
-    delay: 22550,
+    delay: 24000,
   },
 ];
 
@@ -72,7 +72,7 @@ export default function PhoneMockup() {
       setTimeout(() => {
         setVisibleMessages(0);
         setCycle((c) => c + 1);
-      }, 30000)
+      }, 33000)
     );
 
     return () => timers.forEach(clearTimeout);
