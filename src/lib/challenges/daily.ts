@@ -4,7 +4,7 @@
 
 import { serviceClient } from '@/lib/supabase/service';
 import { tokenLimitParam } from '@/lib/openai';
-import type { ChallengeResult, GradingRubric } from '@/types/challenges';
+import type { ChallengeResult } from '@/types/challenges';
 
 /**
  * Generate today's daily challenge scenario for a dealership.
@@ -186,7 +186,7 @@ export function buildChallengeMorningSMS(
  */
 export async function rankChallengeResponses(
   challengeId: string,
-  dealershipId: string
+  _dealershipId: string
 ): Promise<{ results: ChallengeResult[]; participationCount: number }> {
   // Get all completed sessions linked to this challenge
   const { data: sessions } = await serviceClient

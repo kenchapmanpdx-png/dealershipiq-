@@ -5,7 +5,7 @@ import { tokenLimitParam } from '@/lib/openai';
 import { selectBranch } from './branching';
 import { loadTemplate, selectTemplate, substituteVars } from './templates';
 import { getVehicleContextForScenario } from '@/lib/vehicle-data';
-import type { ChainContext, StepResult, ScenarioChain, ChainTemplate, StepPrompt } from '@/types/chains';
+import type { ChainContext, StepResult, ScenarioChain } from '@/types/chains';
 
 const CUSTOMER_NAMES = ['Mrs. Johnson', 'Mr. Patel', 'Sarah', 'David', 'Mrs. Torres', 'Mr. Kim'];
 const EMOTIONAL_STATES = ['curious but cautious', 'interested but budget-conscious', 'ready to buy but needs reassurance', 'comparison shopping'];

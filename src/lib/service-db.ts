@@ -545,7 +545,7 @@ export async function getUserStreak(userId: string, dealershipId: string): Promi
 
   // Count consecutive days (skipping weekends)
   let streak = 0;
-  let checkDate = new Date();
+  const checkDate = new Date();
 
   // Walk backward day by day
   for (let i = 0; i < 100; i++) {

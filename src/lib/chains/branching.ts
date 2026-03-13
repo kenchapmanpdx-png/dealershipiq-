@@ -1,7 +1,7 @@
 // Phase 6C: Deterministic branch selection for scenario chains
 // NOT LLM-driven. Rules evaluated against prior step scores.
 
-import type { StepPrompt, BranchTemplate, StepResult } from '@/types/chains';
+import type { StepPrompt, StepResult } from '@/types/chains';
 
 /**
  * Select which branch to use for the next step based on prior grading scores.

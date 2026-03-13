@@ -329,7 +329,7 @@ async function callOpenAIGrading(
   }
 }
 
-async function callOpenAI<T>(
+async function _callOpenAI<T>(
   apiKey: string,
   model: string,
   systemPrompt: string,

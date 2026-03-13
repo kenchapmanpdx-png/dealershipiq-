@@ -18,7 +18,7 @@ function getAuthSecret(): string {
 // S-002: In-memory rate limit for PWA auth (brute-force protection)
 const authAttempts = new Map<string, { count: number; blockedUntil: number }>();
 const AUTH_MAX_ATTEMPTS = 5;
-const AUTH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const _AUTH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const AUTH_BLOCK_MS = 15 * 60 * 1000; // 15 minute lockout
 
 function checkAuthRateLimit(phone: string): boolean {

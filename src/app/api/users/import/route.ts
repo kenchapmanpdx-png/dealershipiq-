@@ -309,7 +309,7 @@ export async function POST(request: NextRequest) {
           phone: normalizedPhone,
           fullName: row.full_name.trim(),
         });
-      } catch (err) {
+      } catch {
         result.errors++;
         result.rows.push({
           row_number: rowNumber,

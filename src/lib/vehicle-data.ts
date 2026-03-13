@@ -152,7 +152,7 @@ export function formatVehiclePrompt(ctx: VehicleContext): string {
 
 async function getRandomTrim(makeIds: string[] | null): Promise<TrimWithContext | null> {
   // Build query: get trims with full context (model_year → model → make)
-  let query = serviceClient
+  const query = serviceClient
     .from('trims')
     .select(`
       *,

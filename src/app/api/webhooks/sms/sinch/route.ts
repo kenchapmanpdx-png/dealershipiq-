@@ -34,7 +34,6 @@ import {
   insertConsentRecord,
   updateUserStatus,
   isFeatureEnabled,
-  getEmployeePriorityVector,
   createConversationSession,
 } from '@/lib/service-db';
 import {
@@ -963,7 +962,6 @@ async function handleFinalExchange(
         const chainComplete = await recordChainStepResult(session.scenarioChainId, stepResult);
         if (chainComplete) {
           // Load chain context for completion SMS
-          const { getActiveChain } = await import('@/lib/chains/lifecycle');
           const { serviceClient: sc } = await import('@/lib/supabase/service');
           const { data: chainRow } = await sc
             .from('scenario_chains')
