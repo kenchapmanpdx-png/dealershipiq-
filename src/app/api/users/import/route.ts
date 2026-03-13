@@ -333,7 +333,8 @@ export async function POST(request: NextRequest) {
       const batch = usersToNotify.slice(i, i + BATCH_SIZE);
       const consentMsg = `${dealershipName} uses DealershipIQ for sales training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
 
-      await Promise.all(
+      // H-017: Use Promise.allSettled — one Sinch failure must not kill entire batch
+      await Promise.allSettled(
         batch.map(async (user) => {
           try {
             const smsResponse = await sendSms(user.phone, consentMsg);

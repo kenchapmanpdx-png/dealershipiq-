@@ -183,7 +183,11 @@ async function getRandomTrim(makeIds: string[] | null): Promise<TrimWithContext 
       const make = model.makes as Record<string, unknown>;
       return makeIds.includes(make.id as string);
     });
-    if (filtered.length === 0) filtered = data; // fallback to any
+    // H-016: Do NOT fall back to wrong-brand vehicles. Return null instead.
+    if (filtered.length === 0) {
+      console.warn(`[vehicle-data] No trims found for dealership brands: ${makeIds.join(', ')}`);
+      return null;
+    }
   }
 
   // Prefer current year trims

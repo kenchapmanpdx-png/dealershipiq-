@@ -87,10 +87,31 @@ export async function PUT(
       );
     }
 
-    // Send SMS
-    const smsResponse = await sendSms(targetUser.phone, messageText);
+    // H-013: Send SMS with explicit error handling and audit trail for failures
+    let smsResponse;
+    try {
+      smsResponse = await sendSms(targetUser.phone, messageText);
+    } catch (smsErr) {
+      console.error(`Encourage SMS failed for user ${id}:`, smsErr);
+      // Log failed attempt for audit trail
+      try {
+        await insertTranscriptLog({
+          userId: targetUser.id,
+          dealershipId,
+          direction: 'outbound',
+          messageBody: messageText,
+          sinchMessageId: 'failed',
+          phone: targetUser.phone,
+          metadata: { type: 'encouragement', status: 'failed', error: String(smsErr) },
+        });
+      } catch { /* best-effort logging */ }
+      return NextResponse.json(
+        { error: 'SMS delivery failed. The message was not sent.' },
+        { status: 502 }
+      );
+    }
 
-    // Log to transcript
+    // Log successful send to transcript
     await insertTranscriptLog({
       userId: targetUser.id,
       dealershipId,
@@ -98,6 +119,7 @@ export async function PUT(
       messageBody: messageText,
       sinchMessageId: smsResponse.message_id,
       phone: targetUser.phone,
+      metadata: { type: 'encouragement' },
     });
 
     return NextResponse.json({

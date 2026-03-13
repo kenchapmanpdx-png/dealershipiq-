@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 
 interface TeamMember {
   id: string;
@@ -32,6 +33,12 @@ export async function GET() {
     const userRole = user.app_metadata?.user_role as string | undefined;
     if (userRole !== 'manager' && userRole !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // H-010: Subscription gating
+    const subCheck = await checkSubscriptionAccess(dealershipId);
+    if (!subCheck.allowed) {
+      return NextResponse.json({ error: 'Subscription required', reason: subCheck.reason }, { status: 403 });
     }
 
     // Get all users in dealership with training stats

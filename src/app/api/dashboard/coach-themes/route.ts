@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { serviceClient } from '@/lib/supabase/service';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 
 export async function GET(request: NextRequest) {
   // Manager auth via Supabase JWT
@@ -40,6 +41,12 @@ export async function GET(request: NextRequest) {
     }
   } catch {
     return NextResponse.json({ data: null, error: 'Auth failed' }, { status: 401 });
+  }
+
+  // H-010: Subscription gating
+  const subCheck = await checkSubscriptionAccess(dealershipId);
+  if (!subCheck.allowed) {
+    return NextResponse.json({ data: null, error: 'Subscription required' }, { status: 403 });
   }
 
   try {

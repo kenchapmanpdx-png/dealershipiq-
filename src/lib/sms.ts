@@ -192,6 +192,11 @@ export function detectKeyword(
 
 // --- HELP response (CTIA compliant) ---
 // Build Master 2E: program name, frequency, support contact, opt-out instruction
+// H-014: Must fit in single SMS segment (<=160 chars) for reliable TCPA delivery.
 export function helpResponse(dealershipName: string): string {
-  return `DealershipIQ: Daily sales training for ${dealershipName}. Up to 3 msgs/day. Support: support@dealershipiq.com. Reply STOP to opt out. Msg&data rates apply.`;
+  // Truncate dealership name if needed to keep total <=160 chars
+  // Template without name: "DealershipIQ training for . 3 msgs/day max. support@dealershipiq.com STOP to opt out" = ~87 chars
+  const maxNameLen = 70;
+  const name = dealershipName.length > maxNameLen ? dealershipName.slice(0, maxNameLen) : dealershipName;
+  return `DealershipIQ training for ${name}. 3 msgs/day max. support@dealershipiq.com STOP to opt out`;
 }

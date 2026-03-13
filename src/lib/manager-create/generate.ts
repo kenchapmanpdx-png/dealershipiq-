@@ -101,7 +101,13 @@ export async function generateScenarioFromManager(
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw new Error('Empty OpenAI response');
 
-    return JSON.parse(content) as GeneratedScenario;
+    // H-012: Wrap JSON.parse — OpenAI json_schema can still return malformed JSON on edge cases
+    try {
+      return JSON.parse(content) as GeneratedScenario;
+    } catch (parseErr) {
+      console.error('[MANAGER-CREATE] JSON parse failed:', content?.slice(0, 200), parseErr);
+      throw new Error('Failed to parse generated scenario');
+    }
   } finally {
     clearTimeout(timeout);
   }

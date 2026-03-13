@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { serviceClient } from '@/lib/supabase/service';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import type { MeetingScriptResponse, MeetingScriptFullScript } from '@/types/meeting-script';
 
 export async function GET(request: NextRequest) {
@@ -38,6 +39,12 @@ export async function GET(request: NextRequest) {
 
     if (!dealershipId) {
       return NextResponse.json({ error: 'No dealership' }, { status: 403 });
+    }
+
+    // H-010: Subscription gating
+    const subCheck = await checkSubscriptionAccess(dealershipId);
+    if (!subCheck.allowed) {
+      return NextResponse.json({ error: 'Subscription required', reason: subCheck.reason }, { status: 403 });
     }
 
     const todayStr = new Date().toISOString().split('T')[0];

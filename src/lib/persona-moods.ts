@@ -118,8 +118,8 @@ const TIER_3_MOODS: MoodConfig[] = [
   },
 ];
 
-// All moods for lookup
-const ALL_MOODS: MoodConfig[] = [...TIER_3_MOODS];
+// H-015: All moods for lookup — must include ALL tiers for getMoodPromptModifier()
+const ALL_MOODS: MoodConfig[] = [...TIER_1_MOODS, ...TIER_2_MOODS, ...TIER_3_MOODS];
 
 function weightedRandom(moods: MoodConfig[]): MoodConfig {
   const totalWeight = moods.reduce((sum, m) => sum + m.weight, 0);

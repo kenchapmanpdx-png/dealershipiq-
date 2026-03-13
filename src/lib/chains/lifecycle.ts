@@ -150,12 +150,29 @@ export async function continueChain(
 
 /**
  * Record step result after grading completes for a chain-linked session.
- * Defensive check: verify step hasn't already been recorded to avoid duplicates.
+ * H-011: Uses Supabase RPC for atomic read-check-write to prevent race conditions.
+ * Falls back to application-level check if RPC not available.
  */
 export async function recordChainStepResult(
   chainId: string,
   stepResult: StepResult
 ): Promise<boolean> {
+  // Try atomic RPC first (requires record_chain_step function in DB)
+  const { data: rpcResult, error: rpcError } = await serviceClient
+    .rpc('record_chain_step', {
+      p_chain_id: chainId,
+      p_step: stepResult.step,
+      p_result: stepResult,
+    });
+
+  // If RPC exists and succeeded, use its result
+  if (!rpcError) {
+    return !!rpcResult;
+  }
+
+  // Fallback: application-level check (original logic, still has race window)
+  console.warn('[chains] record_chain_step RPC not available, using fallback:', rpcError.message);
+
   const { data: chain } = await serviceClient
     .from('scenario_chains')
     .select('step_results, current_step, total_steps')
@@ -168,13 +185,10 @@ export async function recordChainStepResult(
 
   // Defense in depth: verify this step hasn't already been recorded
   if (existingResults.some(r => r.step === stepResult.step)) {
-    // Already recorded, skip to avoid duplicate
     return (chain.current_step as number) >= (chain.total_steps as number);
   }
 
   const results = [...existingResults, stepResult];
-
-  // Check if chain is complete
   const isComplete = (chain.current_step as number) >= (chain.total_steps as number);
 
   await serviceClient
