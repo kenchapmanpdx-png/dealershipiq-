@@ -575,15 +575,50 @@ All 8 SINCH_* env vars present: SINCH_PHONE_NUMBER (updated today), SINCH_API_TO
 
 **tsc --noEmit:** PASSING
 
+### Landing Page V2 — Phone Mockup + Hero Iterations (03/13/2026)
+
+**PhoneMockup conversation rewritten 6 times** based on Ken's feedback:
+1. Original trade-in/KBB scenario → rejected ("don't care for that conversation")
+2. "I need to think about it" generic stall → rejected ("unrealistic exchange")
+3. Co-buyer scenario (wife wants Hyundai) → rejected ("rep too passive", then "not trying to close — sending them home")
+4. Payment objection ($640/mo) with bracketing → good structure but exchange 3 was a wasted layup
+5. Restructured: exchange 2 moved to end, new middle exchange (customer dodges number, rep brackets)
+6. **FINAL (Ken-authored scenario):** CR-V "sleep on it" → rep isolates hesitation to numbers → $1,500 incentives expiring Saturday → buyer reveals $500/mo target → rep closes with "under $500, drive it home tonight?" → AI grade 8.4/10 with correction (ask current payment to reframe gap)
+
+**Key PhoneMockup specs (locked):**
+- Fixed height container with auto-scroll (`h-[340px] sm:h-[380px]`)
+- 36s loop timer, individual message delays tuned per-message
+- Rep's incentive reply and AI grade get extra dwell time
+- Labels: Customer / You / AI Coach
+- AI grade includes both praise AND correction (💡 tip)
+- No meta-framing, direct speech only, condensed messages
+
+**Hero section update:**
+- Added "Not another order taker." tagline between headline and subheadline
+- Muted white (`text-white/50`), speaks to GM pain point of post-COVID order-taker reps
+
+**Commits:** 779db75, 80bec9d, 587be2b, 781e568, 1fc6a40, 56ef1cc, 2e98f2a, fdb7626, 75ada8e, c6c6ae0, d6ffe11
+
+**tsc --noEmit:** PASSING
+
+### Department-Aware Training Spec Received (03/13/2026)
+
+Ken uploaded `Department-Cowork-Handoff-v1.md` — complete spec for adding department awareness to DealershipIQ. Saved to workspace root. NOT yet executed.
+
+**Scope:** Role rename (salesperson → employee), department column (sales/finance/service/bdc) on 8 tables, manager training opt-in (`receives_training`), feature flag gating (`department_content_enabled`), patches to 5 docs, global text corrections, CSV import changes, dashboard department filter, TRAIN: keyword department prefix, per-department leaderboards/challenges/digest/alerts.
+
+**Status:** Parked. Awaiting Ken's go-ahead to execute.
+
 ## What's Next
-1. **Fix Security Audit #2 findings** — 17 issues (3 CRITICAL, 4 HIGH, 7 MEDIUM, 3 LOW). See `docs/SECURITY-AUDIT-2.md`.
-2. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
-3. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
-4. **Delete or consolidate duplicate Vercel project** — `dealershipiq` (dealershipiq.vercel.app) is a duplicate with missing env vars. Production is `dealershipiq-wua7`.
-5. Sentry/Axiom observability (NR-002)
-6. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
-7. Verify 3-exchange objection flow
-8. **Upstash Redis** for production rate limiting (S-010, S-011, S-021)
+1. **Execute Department-Aware Training spec** — `Department-Cowork-Handoff-v1.md` patches to 5 docs + schema changes (when Ken gives go-ahead)
+2. **Fix Security Audit #2 findings** — 17 issues (3 CRITICAL, 4 HIGH, 7 MEDIUM, 3 LOW). See `docs/SECURITY-AUDIT-2.md`.
+3. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
+4. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
+5. **Delete or consolidate duplicate Vercel project** — `dealershipiq` (dealershipiq.vercel.app) is a duplicate with missing env vars. Production is `dealershipiq-wua7`.
+6. Sentry/Axiom observability (NR-002)
+7. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+8. Verify 3-exchange objection flow
+9. **Upstash Redis** for production rate limiting (S-010, S-011, S-021)
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available. Multi-segment SMS may fail on trial.
