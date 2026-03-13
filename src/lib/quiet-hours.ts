@@ -61,6 +61,24 @@ export function getLocalHour(timezone: string): number {
   return getLocalTime(timezone).hour;
 }
 
+/** C-004: Returns the local date string (YYYY-MM-DD) in the dealership's timezone. */
+export function getLocalDateString(timezone: string): string {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: timezone }).format(new Date());
+}
+
+/** C-004: Returns yesterday's local date string (YYYY-MM-DD) in the dealership's timezone. */
+export function getLocalYesterdayString(timezone: string): string {
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: timezone }).format(yesterday);
+}
+
+/** C-004: Returns true if today is Monday in the dealership's timezone. */
+export function isLocalMonday(timezone: string): boolean {
+  const { weekday } = getLocalTime(timezone);
+  return weekday === 'Mon';
+}
+
 /**
  * Get the dealership's configured training send hour.
  * Falls back to 10 if not set. Clamped to 9-12.
@@ -70,6 +88,10 @@ export function getTrainingSendHour(settings: Record<string, unknown> | null): n
   return Math.max(9, Math.min(12, Math.round(raw)));
 }
 
+/**
+ * H-008 fix: nextSendWindow uses hour deltas (UTC-safe) instead of setHours on UTC date.
+ * Returns approximate next send window as a Date object.
+ */
 export function nextSendWindow(timezone: string): Date {
   const now = new Date();
   const { hour, weekday } = getLocalTime(timezone);
@@ -79,19 +101,17 @@ export function nextSendWindow(timezone: string): Date {
   const openHour = isSunday ? 11 : 10;
 
   if (hour < openHour) {
-    const next = new Date(now);
-    next.setHours(next.getHours() + (openHour - hour));
-    return next;
+    // Before send window opens — advance by the difference in hours
+    return new Date(now.getTime() + (openHour - hour) * 60 * 60 * 1000);
   }
 
   if (hour >= 19) {
-    const next = new Date(now);
-    // Saturday evening → Monday 10 AM (skip Sunday training, but Sunday has its own window)
-    // Actually for proactive training (weekday-only), Saturday evening → Monday 10 AM
+    // After send window closes — advance to next day's open hour
+    const hoursUntilMidnight = 24 - hour;
     const nextDayOpenHour = isSaturday ? 11 : 10; // Sat→Sun=11, otherwise 10
-    next.setHours(next.getHours() + (24 - hour + nextDayOpenHour));
-    return next;
+    return new Date(now.getTime() + (hoursUntilMidnight + nextDayOpenHour) * 60 * 60 * 1000);
   }
 
+  // Within send window
   return now;
 }

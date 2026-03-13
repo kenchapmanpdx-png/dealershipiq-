@@ -130,13 +130,18 @@ export async function gradeResponse(opts: GradeOptions): Promise<GradingResult &
 
   const moodContext = opts.personaMood ? `\nCustomer persona mood: ${opts.personaMood}` : '';
 
+  // M-005 fix: Escape XML special chars in employee response to prevent delimiter injection
+  const sanitizedResponse = opts.employeeResponse
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
   const userPrompt = `Training mode: ${opts.mode}
 Opening scenario: ${opts.scenario}${moodContext}
 
 Full conversation:
 ${conversation}
 
-<employee_response>${opts.employeeResponse}</employee_response>
+<employee_response>${sanitizedResponse}</employee_response>
 
 Grade the salesperson's overall performance across all exchanges.`;
 
@@ -178,11 +183,14 @@ Grade the salesperson's overall performance across all exchanges.`;
         }
         return { ...gradingResult, model, promptVersionId: opts.promptVersionId };
       }
-    } catch {
+    } catch (err) {
+      console.error(`[AI-GRADING] ${model} failed:`, err);
       continue;
     }
   }
 
+  // H-005: Log at error level when falling back to template scores
+  console.error('[AI-GRADING] ALL MODELS FAILED — returning template fallback scores (3/3/3/3). AI grading is effectively DOWN.');
   return templateFallback(opts.mode);
 }
 

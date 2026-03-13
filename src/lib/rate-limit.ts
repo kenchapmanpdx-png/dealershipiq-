@@ -25,7 +25,8 @@ async function getRedis() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) {
-    console.warn('Rate limiting disabled: UPSTASH_REDIS_REST_URL/TOKEN not set');
+    // C-005: Log at error level so observability tools catch rate limiting is disabled
+    console.error('[RATE-LIMIT] DISABLED — UPSTASH_REDIS_REST_URL/TOKEN not set. All rate limits are NO-OP in production.');
     return null;
   }
 

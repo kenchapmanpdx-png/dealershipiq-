@@ -295,8 +295,9 @@ export async function selectTrainingContent(
     // Graceful degradation — proceed without vehicle data
   }
 
-  // Build prompts
-  const basePrompt = DOMAIN_PROMPTS[domain][mode];
+  // M-008 fix: Defensive check for domain key before indexing
+  const domainEntry = DOMAIN_PROMPTS[domain];
+  const basePrompt = domainEntry?.[mode] ?? DOMAIN_PROMPTS['objection_handling']?.[mode] ?? '';
   const systemPrompt = buildSystemPrompt(
     domain,
     mode,

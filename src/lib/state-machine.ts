@@ -36,5 +36,6 @@ export function assertTransition(from: SessionStatus, to: SessionStatus): void {
 
 /** True if this is the final exchange (should trigger grading). */
 export function isFinalExchange(stepIndex: number): boolean {
-  return stepIndex >= FINAL_STEP_INDEX;
+  // M-004 fix: Use === instead of >= to prevent out-of-range stepIndex from triggering grading
+  return stepIndex === FINAL_STEP_INDEX;
 }

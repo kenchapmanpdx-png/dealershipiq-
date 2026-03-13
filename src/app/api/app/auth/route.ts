@@ -124,25 +124,48 @@ export async function POST(request: NextRequest) {
       }
 
       recordAuthAttempt(normalized, true);
-      return createSessionResponse(user2, dealership_slug);
+      return await createSessionResponse(user2, dealership_slug);
     }
 
     recordAuthAttempt(normalized, true);
-    return createSessionResponse(user, dealership_slug);
+    return await createSessionResponse(user, dealership_slug);
   } catch (err) {
     console.error('Auth error:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
 
-function createSessionResponse(
+async function createSessionResponse(
   user: Record<string, unknown>,
-  _dealershipSlug: string
+  dealershipSlug: string
 ) {
   const userId = user.id as string;
-  const dealershipId = user.dealership_id as string;
   const firstName = ((user.full_name as string) ?? '').split(' ')[0] || 'there';
   const language = (user.language as string) ?? 'en';
+
+  // B-002 fix: Verify user belongs to the dealership identified by slug
+  const { data: dealership } = await serviceClient
+    .from('dealerships')
+    .select('id')
+    .eq('slug', dealershipSlug)
+    .single();
+
+  if (!dealership) {
+    return NextResponse.json({ error: 'Dealership not found' }, { status: 404 });
+  }
+
+  const { data: membership } = await serviceClient
+    .from('dealership_memberships')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('dealership_id', dealership.id)
+    .maybeSingle();
+
+  if (!membership) {
+    return NextResponse.json({ error: 'Not a member of this dealership' }, { status: 403 });
+  }
+
+  const dealershipId = dealership.id as string;
 
   // Create HMAC-signed session token
   const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days

@@ -6,6 +6,43 @@ import { serviceClient } from '@/lib/supabase/service';
 import { daysSinceUTC } from './subscription';
 import type { DunningStage, DunningTemplate } from '@/types/billing';
 
+// --- C-002: Consolidated dunning stage helpers (moved from dead lib/dunning.ts) ---
+
+export interface DunningStageInfo {
+  stage: number;
+  name: string;
+  daysOverdue: number;
+}
+
+export function getDunningStage(pastDueSince: Date): DunningStageInfo {
+  const now = new Date();
+  const daysOverdue = Math.floor((now.getTime() - pastDueSince.getTime()) / (1000 * 60 * 60 * 24));
+
+  let stage = 1;
+  if (daysOverdue >= 3) stage = 2;
+  if (daysOverdue >= 14) stage = 3;
+  if (daysOverdue >= 21) stage = 4;
+  if (daysOverdue >= 30) stage = 5;
+
+  const names: Record<number, string> = {
+    1: 'Initial Past Due',
+    2: 'Day 3 Reminder',
+    3: 'Day 14 Feature Restriction',
+    4: 'Day 21 Suspension',
+    5: 'Day 30 Cancellation',
+  };
+
+  return { stage, name: names[stage] ?? 'Unknown', daysOverdue };
+}
+
+export function shouldSuspend(stage: number): boolean {
+  return stage >= 4; // Day 21+
+}
+
+export function shouldCancel(stage: number): boolean {
+  return stage >= 5; // Day 30+
+}
+
 const DUNNING_TEMPLATES: Record<Exclude<DunningStage, 'none'>, DunningTemplate> = {
   day1: {
     subject: 'Action needed: Payment failed for DealershipIQ',

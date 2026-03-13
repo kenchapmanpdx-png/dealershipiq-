@@ -54,17 +54,33 @@ export async function GET(request: NextRequest) {
       flaggedUsers = flaggedList.length;
 
       // Phase 4.5B: Persist findings to red_flag_events for morning script consumption
+      // H-007 fix: Check for existing event today before inserting (prevent duplicates from 4x/day runs)
       if (flaggedList.length > 0) {
         const { serviceClient } = await import('@/lib/supabase/service');
+        const todayStart = new Date();
+        todayStart.setUTCHours(0, 0, 0, 0);
+
         for (const flaggedUser of flaggedList) {
           for (const flag of flaggedUser.flags) {
             try {
-              await serviceClient.from('red_flag_events').insert({
-                dealership_id: dealership.id,
-                user_id: flaggedUser.id,
-                signal_type: flag,
-                details: {},
-              });
+              // Check if this exact flag was already recorded today
+              const { data: existing } = await serviceClient
+                .from('red_flag_events')
+                .select('id')
+                .eq('user_id', flaggedUser.id)
+                .eq('dealership_id', dealership.id)
+                .eq('signal_type', flag)
+                .gte('created_at', todayStart.toISOString())
+                .maybeSingle();
+
+              if (!existing) {
+                await serviceClient.from('red_flag_events').insert({
+                  dealership_id: dealership.id,
+                  user_id: flaggedUser.id,
+                  signal_type: flag,
+                  details: {},
+                });
+              }
             } catch {
               // Non-critical — continue with SMS alerts
             }

@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
-import { isWithinSendWindow, isWeekday } from '@/lib/quiet-hours';
+import { isWithinSendWindow, isWeekday, getLocalDateString } from '@/lib/quiet-hours';
 import { sendSms } from '@/lib/sms';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { selectContent } from '@/lib/training/content-priority';
@@ -96,9 +96,8 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // H-002: Check message cap (3/day)
-        const today = new Date();
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+        // H-002: Check message cap (3/day) — C-004 fix: use dealership local date
+        const todayStart = getLocalDateString(dealership.timezone) + 'T00:00:00Z';
         const { count: outboundCount } = await serviceClient
           .from('sms_transcript_log')
           .select('id', { count: 'exact', head: true })

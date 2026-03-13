@@ -28,19 +28,23 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
     if (existing) {
       const token = existing.split('=')[1];
       try {
-        const decoded = atob(token);
-        const parts = decoded.split(':');
-        if (parts.length >= 4) {
+        // B-001 fix: Token is base64-encoded JSON (HMAC-signed), not colon-delimited
+        const decoded = JSON.parse(atob(token));
+        if (decoded.userId && decoded.dealershipId) {
+          // B-002 fix: Verify token's dealershipId matches the URL slug
+          // We can't do slug→dealershipId lookup client-side, but we store the slug
+          // and the server-side routes validate via verifyAppToken
           setSession({
-            userId: parts[0],
-            dealershipId: parts[1],
-            firstName: parts[2],
-            language: parts[3],
+            userId: decoded.userId,
+            dealershipId: decoded.dealershipId,
+            firstName: decoded.firstName ?? 'there',
+            language: decoded.language ?? 'en',
             token,
           });
         }
       } catch {
-        // Invalid cookie
+        // Invalid cookie — clear it
+        document.cookie = 'diq_session=; path=/; max-age=0';
       }
     }
     setLoading(false);
@@ -71,13 +75,13 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
       // Set cookie (24h expiry)
       document.cookie = `diq_session=${token}; path=/; max-age=86400; SameSite=Lax`;
 
-      const decoded = atob(token);
-      const parts = decoded.split(':');
+      // B-001 fix: Token is base64-encoded JSON, not colon-delimited
+      const decoded = JSON.parse(atob(token));
       setSession({
-        userId: parts[0],
-        dealershipId: parts[1],
-        firstName: parts[2],
-        language: parts[3],
+        userId: decoded.userId,
+        dealershipId: decoded.dealershipId,
+        firstName: decoded.firstName ?? 'there',
+        language: decoded.language ?? 'en',
         token,
       });
     } catch {

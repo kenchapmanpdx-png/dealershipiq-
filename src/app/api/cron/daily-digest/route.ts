@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { sendSms } from '@/lib/sms';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
+import { getLocalYesterdayString, getLocalDateString, isLocalMonday } from '@/lib/quiet-hours';
 import {
   getDealershipsByTimezoneHour,
   getManagersForDealership,
@@ -100,9 +101,8 @@ export async function GET(request: NextRequest) {
         });
       } else {
         // --- Legacy Daily Digest (backward compatible) ---
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayDateStr = yesterday.toISOString().split('T')[0];
+        // C-004 fix: Use dealership local timezone for "yesterday"
+        const yesterdayDateStr = getLocalYesterdayString(dealership.timezone ?? 'America/New_York');
 
         const stats = await getDailyDigestStats(
           dealership.id,
@@ -156,65 +156,58 @@ export async function GET(request: NextRequest) {
   }
 
   // --- Weekly Micro-Insight (Monday only) ---
-  const today = new Date();
-  const isMonday = today.getDay() === 1;
-
   let microInsightsSent = 0;
-  if (isMonday) {
-    for (const dealership of dealerships) {
-      try {
-        const coachEnabled = await isFeatureEnabled(
-          dealership.id,
-          'coach_mode_enabled'
-        );
-        if (!coachEnabled) continue;
 
-        const { data: coachUsers } = await serviceClient
-          .from('coach_sessions')
-          .select('user_id')
-          .eq('dealership_id', dealership.id);
+  // C-004 fix: Check Monday per-dealership in local timezone (not global UTC)
+  for (const dealership of dealerships) {
+    const isMondayLocal = isLocalMonday(dealership.timezone ?? 'America/New_York');
+    if (!isMondayLocal) continue;
 
-        const userIdSet = new Set(
-          (coachUsers ?? []).map((u) => u.user_id as string)
-        );
-        const uniqueUserIds: string[] = [];
-        userIdSet.forEach((id) => uniqueUserIds.push(id));
+    // Micro-insight processing for this dealership only
+    try {
+      const coachEnabled = await isFeatureEnabled(dealership.id, 'coach_mode_enabled');
+      if (!coachEnabled) continue;
 
-        for (const userId of uniqueUserIds) {
-          try {
-            const insight = await findPositiveInsight(userId, dealership.id);
-            if (!insight) continue;
+      const { data: coachUsers } = await serviceClient
+        .from('coach_sessions')
+        .select('user_id')
+        .eq('dealership_id', dealership.id);
 
-            const { data: user } = await serviceClient
-              .from('users')
-              .select('phone')
-              .eq('id', userId)
-              .single();
+      const userIdSet = new Set((coachUsers ?? []).map((u) => u.user_id as string));
+      const uniqueUserIds: string[] = [];
+      userIdSet.forEach((id) => uniqueUserIds.push(id));
 
-            if (!user?.phone) continue;
+      for (const userId of uniqueUserIds) {
+        try {
+          const insight = await findPositiveInsight(userId, dealership.id);
+          if (!insight) continue;
 
-            await closeStaleCoachSessions(userId);
+          const { data: user } = await serviceClient
+            .from('users')
+            .select('phone')
+            .eq('id', userId)
+            .single();
 
-            const msg = `Quick note from your Coach: ${insight}. Reply COACH anytime.`;
-            await sendSms(user.phone as string, msg);
-            await insertTranscriptLog({
-              userId,
-              dealershipId: dealership.id,
-              phone: user.phone as string,
-              direction: 'outbound',
-              messageBody: msg,
-            });
-            microInsightsSent++;
-          } catch (err) {
-            console.error(`Micro-insight error for user ${userId}:`, err);
-          }
+          if (!user?.phone) continue;
+
+          await closeStaleCoachSessions(userId);
+
+          const msg = `Quick note from your Coach: ${insight}. Reply COACH anytime.`;
+          await sendSms(user.phone as string, msg);
+          await insertTranscriptLog({
+            userId,
+            dealershipId: dealership.id,
+            phone: user.phone as string,
+            direction: 'outbound',
+            messageBody: msg,
+          });
+          microInsightsSent++;
+        } catch (err) {
+          console.error(`Micro-insight error for user ${userId}:`, err);
         }
-      } catch (err) {
-        console.error(
-          `Micro-insight error for dealership ${dealership.id}:`,
-          err
-        );
       }
+    } catch (err) {
+      console.error(`Micro-insight error for dealership ${dealership.id}:`, err);
     }
   }
 

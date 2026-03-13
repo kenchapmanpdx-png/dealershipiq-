@@ -18,6 +18,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No dealership' }, { status: 403 });
   }
 
+  // H-001: Verify user has manager/owner role
+  const userRole = user.app_metadata?.user_role as string;
+  if (!userRole || !['owner', 'manager'].includes(userRole)) {
+    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
+  }
+
   const { brands } = await request.json();
   if (!Array.isArray(brands) || brands.length === 0) {
     return NextResponse.json({ error: 'Brands required' }, { status: 400 });

@@ -1,15 +1,14 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyCronSecret } from '@/lib/cron-auth';
 import { getPastDueDealerships, updateDealershipBilling } from '@/lib/service-db';
-import { getDunningStage, shouldCancel, shouldSuspend } from '@/lib/dunning';
+import { getDunningStage, shouldCancel, shouldSuspend } from '@/lib/billing/dunning';
 
 export const maxDuration = 60;
 
-export async function GET(request: Request) {
-  // Verify CRON_SECRET
-  const authHeader = request.headers.get('authorization');
-  const expectedSecret = `Bearer ${process.env.CRON_SECRET}`;
-
-  if (authHeader !== expectedSecret) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+export async function GET(request: NextRequest) {
+  // C-001 fix: Use timing-safe comparison via verifyCronSecret
+  if (!verifyCronSecret(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
@@ -44,12 +43,12 @@ export async function GET(request: Request) {
       }
     }
 
-    return Response.json({
+    return NextResponse.json({
       success: true,
       processedCount: dealerships.length,
     });
   } catch (error) {
     console.error('Dunning check error:', error);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

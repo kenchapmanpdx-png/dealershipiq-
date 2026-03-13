@@ -78,9 +78,11 @@ export async function GET(request: NextRequest) {
       .select('phone, dealership_id')
       .eq('synced_from_sinch', true);
 
+    // H-006 fix: Use Set for O(1) lookup instead of O(N) array.includes
+    const smsOptOutSet = new Set(smsOptOuts);
     let resubscribed = 0;
     for (const local of localOptOuts ?? []) {
-      if (!smsOptOuts.includes(local.phone)) {
+      if (!smsOptOutSet.has(local.phone)) {
         await serviceClient
           .from('sms_opt_outs')
           .delete()

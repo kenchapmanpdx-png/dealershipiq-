@@ -38,8 +38,9 @@ export default function SignupPage() {
     setLoading(true);
     setError('');
 
-    if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters.');
+    // H-002: Align with login page (minLength=12)
+    if (formData.password.length < 12) {
+      setError('Password must be at least 12 characters.');
       setLoading(false);
       return;
     }
@@ -143,9 +144,9 @@ export default function SignupPage() {
               value={formData.password}
               onChange={handleChange}
               required
-              minLength={8}
+              minLength={12}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Minimum 8 characters"
+              placeholder="Minimum 12 characters"
             />
           </div>
 

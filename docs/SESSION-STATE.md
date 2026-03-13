@@ -601,24 +601,76 @@ All 8 SINCH_* env vars present: SINCH_PHONE_NUMBER (updated today), SINCH_API_TO
 
 **tsc --noEmit:** PASSING
 
-### Department-Aware Training Spec Received (03/13/2026)
+### Department-Aware Training — Doc Patches Applied (03/13/2026)
 
-Ken uploaded `Department-Cowork-Handoff-v1.md` — complete spec for adding department awareness to DealershipIQ. Saved to workspace root. NOT yet executed.
+Applied all 5 patches from `Department-Cowork-Handoff-v1.md`:
 
-**Scope:** Role rename (salesperson → employee), department column (sales/finance/service/bdc) on 8 tables, manager training opt-in (`receives_training`), feature flag gating (`department_content_enabled`), patches to 5 docs, global text corrections, CSV import changes, dashboard department filter, TRAIN: keyword department prefix, per-department leaderboards/challenges/digest/alerts.
+**Patch 1 — DealershipIQ-Build-Master.md:** Schema updates (department + receives_training on dealership_memberships), conversation_sessions department snapshot, department-aware training trigger, HELP keyword fix, onboarding department fields, dashboard department filter, push training department targeting, Ask IQ department context, daily digest scoping, red flag per-department, department transfer side effects, trainee mode department respect, monthly insights, adaptive weighting department-scoped, vehicle data service exception, TRAIN keyword department routing, daily/peer challenge department scoping, leaderboard department grouping, regression checkpoint, SMS cost estimate updated (30 employees × 22 days), prompt templates with employee_department tag.
 
-**Status:** Parked. Awaiting Ken's go-ahead to execute.
+**Patch 2 — COWORK-INSTRUCTIONS-v4.2.md:** Role Model table (owner/manager/employee), Department Model section, 3 Escalation Boundaries items, 2 Prohibited items, fallback table fix.
+
+**Patch 3 — DealershipIQ-Architecture-Reference.md:** Core Data Model description updated, Role Model table (salesperson→employee), Onboarding Sequence department fields, Bulk Employee Import CSV with department, AI Grading Prompt XML `<employee_department>` tag, Vehicle Data Pipeline service department exception, Training Curriculum department-aware description, Manager Quick-Create department column, "daily sales training" → "daily training" globally, salesperson→employee in prose.
+
+**Patch 4 — prompt templates:** Content merged into Build Master (all 5 templates include `<employee_department>`).
+
+**Patch 5 — DealershipIQ-Feature-List.md:** New file created with Department-Aware Training feature list.
+
+**Global text sweep:** `salesperson` → `employee` completed across all workspace docs. Codebase rename (TypeScript types, SQL migrations, API routes, AI prompts) deferred to Phase 1A migration — requires coordinated code change with new migration, type updates, and 30+ file edits.
+
+**Verification:** All 53 checklist items verified. 50 PASS, 2 fixed during verification (missed "daily sales training" instances in Architecture Reference), 1 DEFERRED (codebase salesperson→employee rename).
+
+### Full Code Audit #2 (03/13/2026)
+
+**Scope:** All 95+ TypeScript files — API routes, lib services, frontend pages, components, types.
+**Build status:** `tsc --noEmit` passes clean.
+**Report:** `docs/FULL-CODE-AUDIT-2026-03-13.md`
+
+**Findings:** 2 BLOCKER, 5 CRITICAL, 8 HIGH, 12 MEDIUM, 12 LOW.
+
+### Audit #2 Fixes Applied (03/13/2026)
+
+**16 issues fixed across 19 files (+278/-210 lines):**
+
+| ID | Severity | Fix |
+|----|----------|-----|
+| B-001 | BLOCKER | PWA token: `split(':')` → `JSON.parse(atob(token))` |
+| B-002 | BLOCKER | PWA auth: Added dealership slug + membership validation |
+| C-001 | CRITICAL | Dunning cron: `===` → `verifyCronSecret()` timing-safe |
+| C-002 | CRITICAL | Deleted dead `lib/dunning.ts`, consolidated into `billing/dunning.ts` |
+| C-004 | CRITICAL | Timezone: Added local date helpers, fixed message cap + digest + Monday detection |
+| C-005 | CRITICAL | Rate limit: Added error-level logging when rate limiting is disabled |
+| H-001 | HIGH | Onboarding: Added manager/owner role check to employees + brands |
+| H-002 | HIGH | Password: Aligned signup to 12 chars (was 8) |
+| H-003 | HIGH | MeetingScript: `document.cookie` parsing → `credentials: 'include'` |
+| H-005 | HIGH | AI grading: Added error logging when all models fail |
+| H-006 | HIGH | Sync opt-outs: `Array.includes` → `Set.has` (O(1)) |
+| H-007 | HIGH | Red flags: Added date-based dedup before inserting events |
+| H-008 | HIGH | quiet-hours: Rewrote `nextSendWindow()` with UTC-safe hour deltas |
+| M-004 | MEDIUM | State machine: `>=` → `===` for `isFinalExchange()` |
+| M-005 | MEDIUM | XML injection: Escape `<>` in employee response |
+| M-008 | MEDIUM | Training content: Defensive domain key check |
+
+**Not fixed (deferred):**
+- C-003: Service role in user routes → requires significant migration to RLS-first pattern (multi-sprint)
+- H-004: Webhook SMS cache leak → low impact on Vercel (cold starts reset memory)
+- M-001 through M-003, M-006, M-007, M-010, M-011: Moderate risk, deferred to next sprint
+- L-001 through L-012: Low risk, deferred
+
+**tsc --noEmit:** PASSING
 
 ## What's Next
-1. **Execute Department-Aware Training spec** — `Department-Cowork-Handoff-v1.md` patches to 5 docs + schema changes (when Ken gives go-ahead)
-2. **Fix Security Audit #2 findings** — 17 issues (3 CRITICAL, 4 HIGH, 7 MEDIUM, 3 LOW). See `docs/SECURITY-AUDIT-2.md`.
-3. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
-4. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
-5. **Delete or consolidate duplicate Vercel project** — `dealershipiq` (dealershipiq.vercel.app) is a duplicate with missing env vars. Production is `dealershipiq-wua7`.
-6. Sentry/Axiom observability (NR-002)
-7. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
-8. Verify 3-exchange objection flow
-9. **Upstash Redis** for production rate limiting (S-010, S-011, S-021)
+1. **C-003: Migrate user routes from service role → RLS** — 15+ routes need refactoring (multi-sprint effort)
+2. **Phase 1A codebase rename** — `salesperson` → `employee` across TypeScript + SQL (new migration, type update, ~30 files)
+3. **Fix Security Audit #2 findings** — 17 issues (3 CRITICAL, 4 HIGH, 7 MEDIUM, 3 LOW). See `docs/SECURITY-AUDIT-2.md`.
+4. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS
+5. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel
+6. **Delete or consolidate duplicate Vercel project** — `dealershipiq` (dealershipiq.vercel.app) is stale
+7. Sentry/Axiom observability (NR-002)
+8. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+9. Verify 3-exchange objection flow
+10. **Upstash Redis** for production rate limiting (S-010, S-011, S-021)
+11. **Integration tests** — Zero test files in codebase
+12. **Remaining Medium issues** — M-001 through M-003, M-006, M-007, M-010, M-011
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available. Multi-segment SMS may fail on trial.

@@ -12,10 +12,10 @@ export default function MeetingScript() {
   useEffect(() => {
     async function fetchScript() {
       try {
+        // H-003 fix: Use credentials: 'include' instead of fragile cookie parsing.
+        // The Supabase middleware injects the auth session from httpOnly cookies automatically.
         const res = await fetch('/api/dashboard/meeting-script', {
-          headers: {
-            Authorization: `Bearer ${document.cookie.split('sb-')[1]?.split('=')[1] ?? ''}`,
-          },
+          credentials: 'include',
         });
         if (!res.ok) {
           setLoading(false);
