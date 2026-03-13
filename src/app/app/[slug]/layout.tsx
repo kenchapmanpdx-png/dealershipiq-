@@ -4,23 +4,11 @@
 
 'use client';
 
-import { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { usePathname, useParams } from 'next/navigation';
 import Link from 'next/link';
-
-interface RepSession {
-  userId: string;
-  dealershipId: string;
-  firstName: string;
-  language: string;
-  token: string;
-}
-
-const SessionContext = createContext<RepSession | null>(null);
-
-export function useRepSession() {
-  return useContext(SessionContext);
-}
+import { SessionContext } from '@/lib/pwa/session-context';
+import type { RepSession } from '@/lib/pwa/session-context';
 
 export default function PWALayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<RepSession | null>(null);

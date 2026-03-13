@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useRepSession } from '../../layout';
+import { useRepSession } from '@/lib/pwa/session-context';
 import ChatInterface from '@/components/coach/ChatInterface';
 import type { CoachMessage } from '@/types/coach';
 

@@ -4,7 +4,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRepSession } from '../layout';
+import { useRepSession } from '@/lib/pwa/session-context';
 import ThreeDoors from '@/components/coach/ThreeDoors';
 import SessionList from '@/components/coach/SessionList';
 import ChatInterface from '@/components/coach/ChatInterface';
