@@ -13,40 +13,40 @@ const conversation: Message[] = [
   {
     from: 'system',
     text: "\"I really like the CR-V, but I think I need to sleep on it.\"",
-    delay: 1000,
+    delay: 1150,
   },
   {
     from: 'rep',
     text: "I get it. Is it the car you're not sure about, or is it the numbers?",
-    delay: 3600,
+    delay: 4150,
   },
   // Exchange 2 — real hesitation surfaces, rep creates urgency
   {
     from: 'system',
     text: "\"The numbers mostly. I just don't want to rush into something.\"",
-    delay: 6600,
+    delay: 7600,
   },
   {
     from: 'rep',
-    text: "Makes sense. We've got $1,500 in incentives that expire Saturday — let me get you the real out-the-door number so you're comparing facts tonight, not guesses.",
-    delay: 9600,
+    text: "There's $1,500 in incentives expiring Saturday — let me get you a real out-the-door number so you're comparing facts, not guesses.",
+    delay: 11050,
   },
   // Exchange 3 — buyer cracks the door, rep goes for the close
   {
     from: 'system',
     text: "\"I mean... I guess it can't hurt to see it.\"",
-    delay: 13100,
+    delay: 15100,
   },
   {
     from: 'rep',
     text: "Give me five minutes with my manager. If we land on a number that works, would you want to drive it home tonight?",
-    delay: 16100,
+    delay: 18500,
   },
   // AI grade — praise + correction
   {
     from: 'ai',
-    text: '⭐ 8.4/10 — Isolated hesitation to numbers, not the vehicle. Incentive deadline created urgency without pressure. 💡 Ask what he\'s paying now — "You\'re only $40 more for a brand new CR-V" hits harder than any discount.',
-    delay: 19600,
+    text: '⭐ 8.4/10 — Isolated the hesitation to numbers, not the car. Urgency without pressure. 💡 Ask what he pays now — "Only $40 more for a new CR-V" hits harder than any discount.',
+    delay: 22550,
   },
 ];
 
@@ -72,7 +72,7 @@ export default function PhoneMockup() {
       setTimeout(() => {
         setVisibleMessages(0);
         setCycle((c) => c + 1);
-      }, 26000)
+      }, 30000)
     );
 
     return () => timers.forEach(clearTimeout);
