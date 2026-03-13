@@ -13,40 +13,40 @@ const conversation: Message[] = [
   {
     from: 'system',
     text: "\"I can get the same truck cheaper at the dealer down the road.\"",
-    delay: 600,
+    delay: 800,
   },
   {
     from: 'rep',
     text: "That's great you're comparing — let's make sure it's apples to apples. What did they quote you?",
-    delay: 2200,
+    delay: 3000,
   },
   // Exchange 2 — customer pushback
   {
     from: 'system',
     text: "\"$2,400 less. Same model, same color. Why wouldn't I just go there?\"",
-    delay: 3800,
+    delay: 5100,
   },
   {
     from: 'rep',
     text: "Fair question. Does their price include the lifetime powertrain warranty and complimentary maintenance we bundle? That alone is worth $3,200 over five years.",
-    delay: 5600,
+    delay: 7600,
   },
   // Exchange 3 — final push
   {
     from: 'system',
     text: "\"I didn't ask about that. Can you match the price or not?\"",
-    delay: 7200,
+    delay: 9700,
   },
   {
     from: 'rep',
     text: "I hear you. Let me talk to my manager and see what we can do — but even before that, would you be open to a quick side-by-side so you can see the full picture?",
-    delay: 9000,
+    delay: 12200,
   },
   // AI grade
   {
     from: 'ai',
-    text: '9.2/10 — Strong reframe without being defensive. Good value pivot on exchange 2. Pro tip: ask for the competing quote in writing to anchor the negotiation.',
-    delay: 11000,
+    text: '⭐ 9.2/10 — What worked: Strong reframe without being defensive. Good value pivot on exchange 2. 💡 Pro tip: "Can I see that quote in writing?" anchors the negotiation.',
+    delay: 14900,
   },
 ];
 
@@ -72,7 +72,7 @@ export default function PhoneMockup() {
       setTimeout(() => {
         setVisibleMessages(0);
         setCycle((c) => c + 1);
-      }, 15000)
+      }, 20000)
     );
 
     return () => timers.forEach(clearTimeout);
