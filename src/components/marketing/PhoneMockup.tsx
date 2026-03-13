@@ -31,15 +31,15 @@ const conversation: Message[] = [
     text: "There's $1,500 in incentives expiring Saturday — let me get you a real out-the-door number so you're comparing facts, not guesses.",
     delay: 11050,
   },
-  // Exchange 3 — buyer cracks the door, rep goes for the close
+  // Exchange 3 — buyer reveals his number, rep closes
   {
     from: 'system',
-    text: "\"I mean... I guess it can't hurt to see it.\"",
+    text: "\"I'm really trying to stay under $500 a month.\"",
     delay: 15100,
   },
   {
     from: 'rep',
-    text: "Give me five minutes with my manager. If we land on a number that works, would you want to drive it home tonight?",
+    text: "If we land on a payment under $500, would you want to drive it home tonight?",
     delay: 19500,
   },
   // AI grade — praise + correction
