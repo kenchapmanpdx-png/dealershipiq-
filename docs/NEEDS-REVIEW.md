@@ -31,7 +31,7 @@
 
 ## NR-007: Sinch trial account upgrade for production
 - **Status:** BLOCKED — requires Ken's action
-- **Context:** Trial account: $2.00 credit, test number expires 03/24/2026, outbound restricted to verified numbers, "Test message from Sinch:" prepended to all messages.
+- **Context:** Trial account: $18.00 credit, test number expires 03/24/2026, outbound restricted to verified numbers, "Test message from Sinch:" prepended to all messages.
 - **Action needed:** Upgrade Sinch account (billing), register 10DLC campaign, rent production number.
 - **Recommendation:** CRITICAL before any real user testing. Budget ~$2/month for number + per-message costs.
 
@@ -69,3 +69,15 @@
 ## NR-014: Phase 6 feature flag enablement for testing
 - **Status:** RESOLVED 2026-03-12
 - **Resolution:** All 4 Phase 6 feature flags enabled for both pilot dealerships (Demo Honda + Test Dealership): manager_quick_create_enabled, daily_challenge_enabled, scenario_chains_enabled, peer_challenge_enabled.
+
+## NR-015: Sinch Conversation API dashboard broken
+- **Status:** Open — Sinch platform issue
+- **Context:** All Conversation API pages (/convapi/apps, /convapi/overview, /convapi/app/{id}) return "Oops! Something went wrong". Getting Started page works. This prevents UI verification of webhook target URL, triggers, and HMAC secret.
+- **Impact:** Cannot modify webhook config through dashboard if changes needed. Webhook was configured 03/10/2026 and SMS pipeline was verified working at that time.
+- **Recommendation:** Monitor. If webhook issues arise, use Sinch REST API (requires OAuth with SINCH_KEY_ID + SINCH_KEY_SECRET) or contact Sinch support.
+
+## NR-016: Duplicate Vercel project cleanup
+- **Status:** Open — requires Ken's action
+- **Context:** Two Vercel projects exist for DealershipIQ: `dealershipiq` (dealershipiq.vercel.app) and `dealershipiq-wua7` (dealershipiq-wua7.vercel.app). Both deploy from the same GitHub repo (kenchapmanpdx-png/dealershipiq-). The `dealershipiq` project has only 7 basic env vars (no SINCH_* vars) — it's incomplete/stale.
+- **Impact:** Both projects deploy on every push to main, wasting build minutes ($1.13 this cycle). The stale project could confuse future work.
+- **Recommendation:** Delete `dealershipiq` project (dealershipiq.vercel.app) to avoid confusion and save build minutes. Production is `dealershipiq-wua7`.

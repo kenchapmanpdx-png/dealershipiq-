@@ -163,7 +163,7 @@ Date: 03/10/2026
 
 ### Sinch Conversation API Configuration (UPDATED 03/10/2026)
 
-**Sinch Project:** My first project (USD $2.00 test credits — TRIAL ACCOUNT)
+**Sinch Project:** My first project (USD $18.00 credits — TRIAL ACCOUNT, expires 03/24/2026)
 
 **Conversation API App:** DealershipIQ
 - App ID: `01KKCA66G864KM336AZFT79X5K`
@@ -255,7 +255,7 @@ Date: 03/10/2026
 - New sessions created by daily cron (8 AM local) or manually via manager dashboard
 
 **Trial account info:**
-- Sinch: $2.00 credit (expires 03/24/2026)
+- Sinch: $18.00 credit (expires 03/24/2026)
 - Inbound number: `+12057010434`
 - Verified outbound number: `+13604485632` (Ken's phone)
 - Trial limitation: SMS body prepended with "Test message from Sinch:" — custom content still delivered
@@ -504,13 +504,48 @@ Each template: 3 steps, deterministic branching on empathy/close_attempt/product
 
 **tsc --noEmit:** PASSING
 
+### Security Audit #2 (03/12/2026)
+
+**Full re-scan:** 17 new findings (3 CRITICAL, 4 HIGH, 7 MEDIUM, 3 LOW). All previous 15 fixes verified holding. Report: `docs/SECURITY-AUDIT-2.md`
+
+**Key findings (not yet fixed):**
+- SA2-001 (CRITICAL): MeetingScript.tsx still parses auth token from document.cookie (S-003 fix missed this component)
+- SA2-002 (CRITICAL): Onboarding employees endpoint inserts nonexistent columns (email, role, dealership_id) — completely broken, every import silently fails
+- SA2-003 (CRITICAL): Auth callback open redirect via unvalidated `?next=` parameter
+- SA2-007 (HIGH): TCPA opt-out check fails open on database error (returns false instead of true)
+
+**Status:** Findings documented, fixes pending.
+
+### Sinch Configuration Verification (03/12/2026)
+
+**Verified via Sinch dashboard:**
+- Phone `+12057010434`: Active, SMS+VOICE, linked to service plan `bed..a56`
+- Service Plan: Active, API token confirmed
+- Project ID: `a8585c34-c1b0-4e3c-8e33-4e03ed5dd94c`
+- Access Key: `DealershipIQ Production` (Key ID: `819b8956-f53c-46cc-b550-e1613e64affc`)
+- SMS Channel in Conversation API: Active
+- Account credit: $18.00
+
+**Verified in Vercel (dealershipiq-wua7):**
+All 8 SINCH_* env vars present: SINCH_PHONE_NUMBER (updated today), SINCH_API_TOKEN, SINCH_SERVICE_PLAN_ID, SINCH_PROJECT_ID, SINCH_APP_ID, SINCH_KEY_ID, SINCH_KEY_SECRET, SINCH_WEBHOOK_SECRET.
+
+**Webhook endpoint verified:** `GET /api/webhooks/sms/sinch` returns 405 Method Not Allowed (correct — POST only).
+
+**Blocked:** Sinch Conversation API dashboard pages (/convapi/apps, /convapi/overview, /convapi/app/{id}) all return "Oops! Something went wrong". Cannot verify webhook target URL, triggers, or HMAC secret through dashboard. This is a Sinch platform issue. The Getting Started page works but doesn't expose webhook details.
+
+**Note:** Two Vercel projects exist — `dealershipiq` (dealershipiq.vercel.app) and `dealershipiq-wua7` (dealershipiq-wua7.vercel.app). Production is `dealershipiq-wua7`. The `dealershipiq` project has only 7 env vars (no SINCH_ vars) and should be deleted or consolidated.
+
 ## What's Next
-1. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
-2. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
-3. Sentry/Axiom observability (NR-002)
-4. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
-5. Verify 3-exchange objection flow
-6. **Upstash Redis** for production rate limiting (S-010, S-011, S-021)
+1. **Fix Security Audit #2 findings** — 17 issues (3 CRITICAL, 4 HIGH, 7 MEDIUM, 3 LOW). See `docs/SECURITY-AUDIT-2.md`.
+2. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS (requires Sinch trial to still be active)
+3. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel, configure Stripe webhook endpoint (see NR-010, NR-011)
+4. **Delete or consolidate duplicate Vercel project** — `dealershipiq` (dealershipiq.vercel.app) is a duplicate with missing env vars. Production is `dealershipiq-wua7`.
+5. Sentry/Axiom observability (NR-002)
+6. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
+7. Verify 3-exchange objection flow
+8. **Upstash Redis** for production rate limiting (S-010, S-011, S-021)
 
 ## Blocked Items
-- **Sinch trial account** — Test number expires 03/24/2026. $20 deposit processing (up to 1 day). Multi-segment SMS fails until credit clears. Single-segment still works.
+- **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available. Multi-segment SMS may fail on trial.
+- **Sinch Conversation API dashboard** — All Conversation API pages broken (platform issue). Cannot verify webhook config via UI. Need to use REST API or wait for Sinch to fix.
+- **Security Audit #2** — 17 findings documented, fixes pending.

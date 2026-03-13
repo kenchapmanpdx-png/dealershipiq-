@@ -6,9 +6,9 @@
 :root {
   /* Surfaces */
   --bg-primary: #09090b;
-  --bg-secondary: #111114;
-  --bg-card: #16161a;
-  --bg-elevated: #1c1c21;
+  --bg-secondary: #0f0f12;
+  --bg-card: #141418;
+  --bg-elevated: #1a1a1f;
 
   /* Text */
   --text-primary: #fafafa;
@@ -20,10 +20,14 @@
   --accent-hover: #60a5fa;
   --accent-glow: rgba(59, 130, 246, 0.35);
 
+  /* Secondary accent — emerald for success states */
+  --success: #10b981;
+  --success-glow: rgba(16, 185, 129, 0.2);
+
   /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-card: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-hover: rgba(255, 255, 255, 0.14);
 
   /* Shadows — layered system */
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.15);
@@ -37,8 +41,8 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* Fluid type — clamp(min, preferred, max) */
-  --text-hero: clamp(2.5rem, 5vw + 1rem, 4.5rem);
-  --text-section: clamp(1.75rem, 3vw + 0.5rem, 3rem);
+  --text-hero: clamp(2.75rem, 5.5vw + 1rem, 5rem);
+  --text-section: clamp(1.875rem, 3.5vw + 0.5rem, 3.25rem);
   --text-card-title: clamp(1.125rem, 1.5vw + 0.5rem, 1.375rem);
   --text-body: clamp(1rem, 0.5vw + 0.875rem, 1.125rem);
   --text-small: clamp(0.8125rem, 0.25vw + 0.75rem, 0.9375rem);
@@ -71,7 +75,7 @@ body {
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  opacity: 0.03;
+  opacity: 0.025;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
 }
 
@@ -85,79 +89,81 @@ body {
 }
 
 .orb-blue {
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.18) 0%, transparent 70%);
 }
 
 .orb-purple {
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
 }
 
 .orb-cyan {
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.10) 0%, transparent 70%);
 }
 
 /* ── Glass card ── */
 .glass {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-card);
 }
 
 .glass-header {
-  background: rgba(9, 9, 11, 0.7);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  background: rgba(9, 9, 11, 0.75);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
-/* ── Card hover ── */
+/* ── Card hover with gradient border ── */
 .card-hover {
+  position: relative;
   transition: transform 0.5s var(--ease-out-cubic),
               box-shadow 0.5s var(--ease-out-cubic),
               border-color 0.5s var(--ease-out-cubic);
 }
 .card-hover:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-lg);
   border-color: var(--border-hover);
 }
 
-/* ── Scroll reveal (CSS-only via scroll-driven) ── */
-@supports (animation-timeline: view()) {
-  .reveal {
-    animation: reveal-up linear both;
-    animation-timeline: view();
-    animation-range: entry 0% entry 30%;
-  }
-  @keyframes reveal-up {
-    from { opacity: 0; transform: translateY(24px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
+/* ── Gradient border card (for featured items) ── */
+.gradient-border {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
-
-/* Fallback for browsers without scroll-driven animations */
-@supports not (animation-timeline: view()) {
-  .reveal {
-    opacity: 1;
-  }
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(59,130,246,0.3), rgba(139,92,246,0.2), rgba(6,182,212,0.15));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 /* ── Hero stagger ── */
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(24px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 .hero-stagger > * {
   opacity: 0;
-  animation: fade-up 0.8s var(--ease-out-cubic) forwards;
+  animation: fade-up 0.9s var(--ease-out-cubic) forwards;
 }
-.hero-stagger > *:nth-child(1) { animation-delay: 0.1s; }
-.hero-stagger > *:nth-child(2) { animation-delay: 0.2s; }
-.hero-stagger > *:nth-child(3) { animation-delay: 0.35s; }
-.hero-stagger > *:nth-child(4) { animation-delay: 0.5s; }
-.hero-stagger > *:nth-child(5) { animation-delay: 0.65s; }
+.hero-stagger > *:nth-child(1) { animation-delay: 0.15s; }
+.hero-stagger > *:nth-child(2) { animation-delay: 0.3s; }
+.hero-stagger > *:nth-child(3) { animation-delay: 0.45s; }
+.hero-stagger > *:nth-child(4) { animation-delay: 0.6s; }
+.hero-stagger > *:nth-child(5) { animation-delay: 0.75s; }
+.hero-stagger > *:nth-child(6) { animation-delay: 0.9s; }
 
 /* ── Orb float ── */
 @keyframes orb-float {
@@ -170,6 +176,52 @@ body {
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 20px var(--accent-glow), 0 0 60px rgba(59, 130, 246, 0.1); }
   50%      { box-shadow: 0 0 30px var(--accent-glow), 0 0 80px rgba(59, 130, 246, 0.2); }
+}
+
+/* ── Message slide-in for phone mockup ── */
+@keyframes message-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Shimmer for loading states ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* ── Step number watermark ── */
+.step-number {
+  font-size: clamp(3rem, 6vw, 5rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.03) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ── Testimonial quote styling ── */
+.quote-mark {
+  font-size: 4rem;
+  line-height: 1;
+  background: linear-gradient(135deg, var(--accent) 0%, rgba(139,92,246,0.6) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ── Horizontal line with gradient fade ── */
+.gradient-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--border-subtle) 20%, var(--border-card) 50%, var(--border-subtle) 80%, transparent 100%);
 }
 
 /* ── Reduced motion ── */
