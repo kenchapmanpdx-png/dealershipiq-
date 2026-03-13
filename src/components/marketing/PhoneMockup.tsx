@@ -35,18 +35,18 @@ const conversation: Message[] = [
   {
     from: 'system',
     text: "\"I'm really trying to stay under $500 a month.\"",
-    delay: 15100,
+    delay: 16100,
   },
   {
     from: 'rep',
     text: "If we land on a payment under $500, would you want to drive it home tonight?",
-    delay: 19500,
+    delay: 20500,
   },
   // AI grade — praise + correction
   {
     from: 'ai',
     text: '⭐ 8.4/10 — Isolated the hesitation to numbers, not the car. Urgency without pressure. 💡 Ask what he pays now — "Only $40 more for a new CR-V" hits harder than any discount.',
-    delay: 24000,
+    delay: 25000,
   },
 ];
 
@@ -72,7 +72,7 @@ export default function PhoneMockup() {
       setTimeout(() => {
         setVisibleMessages(0);
         setCycle((c) => c + 1);
-      }, 33000)
+      }, 36000)
     );
 
     return () => timers.forEach(clearTimeout);
