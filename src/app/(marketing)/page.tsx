@@ -222,7 +222,7 @@ export default function LandingPage() {
               </h1>
 
               {/* Tagline */}
-              <p className="text-lg sm:text-xl font-medium text-white/50 tracking-wide mb-6">
+              <p className="text-xl sm:text-2xl font-semibold text-white/70 tracking-wide mb-6">
                 Not another order taker.
               </p>
 
