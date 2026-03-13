@@ -221,6 +221,11 @@ export default function LandingPage() {
                 </span>
               </h1>
 
+              {/* Tagline */}
+              <p className="text-lg sm:text-xl font-medium text-white/50 tracking-wide mb-6">
+                Not another order taker.
+              </p>
+
               {/* Subheadline */}
               <p className="text-body text-[var(--text-secondary)] max-w-lg mb-10 leading-relaxed">
                 Daily training delivered by text message. AI grades every response in seconds.
