@@ -33,10 +33,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user's dealership from JWT claims or membership
-    const dealershipId =
-      (user.app_metadata?.dealership_id as string) ??
-      (user.user_metadata?.dealership_id as string);
+    // C-007: Only trust app_metadata (server-set). user_metadata is client-editable.
+    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
 
     if (!dealershipId) {
       return NextResponse.json({ error: 'No dealership' }, { status: 403 });

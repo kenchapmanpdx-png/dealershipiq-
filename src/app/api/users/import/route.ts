@@ -160,10 +160,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get existing phones in dealership + opt-outs
+    // C-008: Scope phone lookup to THIS dealership only (was global — cross-tenant leak)
     const { data: existingUsers } = await serviceClient
-      .from('users')
-      .select('phone');
+      .from('dealership_memberships')
+      .select('users!inner(phone)')
+      .eq('dealership_id', dealershipId);
 
     const { data: optOuts } = await serviceClient
       .from('sms_opt_outs')
@@ -171,7 +172,10 @@ export async function POST(request: NextRequest) {
       .eq('dealership_id', dealershipId);
 
     const existingPhones = new Set(
-      (existingUsers ?? []).map((u: Record<string, unknown>) => u.phone)
+      (existingUsers ?? []).map((u: Record<string, unknown>) => {
+        const user = u.users as Record<string, unknown> | null;
+        return user?.phone;
+      }).filter(Boolean)
     );
     const optOutPhones = new Set(
       (optOuts ?? []).map((o: Record<string, unknown>) => o.phone)

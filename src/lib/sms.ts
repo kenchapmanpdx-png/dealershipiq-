@@ -40,28 +40,38 @@ export function sanitizeGsm7(text: string): string {
   return result;
 }
 
-// S-006: Real-time opt-out check before any SMS send (TCPA compliance)
+// S-006 + C-010: Real-time opt-out check before any SMS send (TCPA compliance)
+// FAIL-CLOSED: returns true (block SMS) on ANY error. TCPA fine: $500-$1,500/message.
 async function isOptedOut(phone: string): Promise<boolean> {
   try {
     const { createClient } = await import('@supabase/supabase-js');
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) return false; // Fail-open only if DB unavailable
+    if (!url || !key) {
+      console.error('[TCPA] isOptedOut: missing SUPABASE env vars — blocking SMS send');
+      return true; // Fail-closed: block send if DB unreachable
+    }
 
     const client = createClient(url, key);
     const normalized = phone.startsWith('+') ? phone : `+${phone}`;
     const alt = normalized.replace(/^\+/, '');
 
-    const { data } = await client
+    const { data, error } = await client
       .from('sms_opt_outs')
       .select('id')
       .or(`phone.eq.${normalized},phone.eq.${alt}`)
       .limit(1)
       .maybeSingle();
 
+    if (error) {
+      console.error('[TCPA] isOptedOut: DB query error — blocking SMS send:', error.message);
+      return true; // Fail-closed on query error
+    }
+
     return !!data;
-  } catch {
-    return false; // Fail-open — don't block SMS on DB errors
+  } catch (err) {
+    console.error('[TCPA] isOptedOut: unexpected error — blocking SMS send:', err);
+    return true; // Fail-closed on any exception
   }
 }
 

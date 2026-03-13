@@ -658,21 +658,40 @@ Applied all 5 patches from `Department-Cowork-Handoff-v1.md`:
 
 **tsc --noEmit:** PASSING
 
+### Code Audit #3 (2026-03-13)
+
+Full v3 audit executed (10-phase methodology with red-team lens, mandatory inventories).
+
+**New findings:** 14 (2 CRITICAL, 4 HIGH, 5 MEDIUM, 3 LOW)
+**Total open findings across all audits:** 35 + C-003 (deferred)
+
+Key new findings:
+- C-010: Opt-out check fails open on DB error (TCPA — $500-$1,500/message fine)
+- C-011: Stripe idempotency check ignores Supabase error object
+- H-014: HELP SMS response > 160 chars (TCPA delivery risk)
+- H-015: ALL_MOODS only includes TIER_3 — getMoodPromptModifier broken for TIER_1/TIER_2
+- H-016: Vehicle data falls back to wrong-brand vehicles
+- H-017: Promise.all kills entire consent SMS batch on single failure
+
+**Inventories completed:**
+- SMS string inventory: 44+ templates cataloged with char counts and GSM-7 compliance
+- serviceClient inventory: 26 usages (16 justified, 10 unjustified — need RLS migration)
+
+Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
+
 ## What's Next
-1. **C-003: Migrate user routes from service role → RLS** — 15+ routes need refactoring (multi-sprint effort)
-2. **Phase 1A codebase rename** — `salesperson` → `employee` across TypeScript + SQL (new migration, type update, ~30 files)
-3. **Fix Security Audit #2 findings** — 17 issues (3 CRITICAL, 4 HIGH, 7 MEDIUM, 3 LOW). See `docs/SECURITY-AUDIT-2.md`.
-4. **Phase 6 end-to-end testing:** Test TRAIN:/NOW/CHALLENGE/ACCEPT/PASS keywords via SMS
-5. **Ken manual steps for Phase 5:** Create Stripe product/price, set STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET + RESEND_API_KEY in Vercel
-6. **Delete or consolidate duplicate Vercel project** — `dealershipiq` (dealershipiq.vercel.app) is stale
-7. Sentry/Axiom observability (NR-002)
-8. Sinch production upgrade (NR-007 — trial expires 03/24/2026)
-9. Verify 3-exchange objection flow
-10. **Upstash Redis** for production rate limiting (S-010, S-011, S-021)
-11. **Integration tests** — Zero test files in codebase
-12. **Remaining Medium issues** — M-001 through M-003, M-006, M-007, M-010, M-011
+1. **Fix Tier 1 (deploy blockers):** C-006, C-007, C-008, C-009/C-011, C-010 (~1.5 hours)
+2. **Fix Tier 2 (high priority):** H-009 through H-017 (~5 hours)
+3. **C-003: Migrate 10 user-facing routes from serviceClient → RLS** (~12 hours)
+4. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
+5. **Ken manual steps for Phase 5:** Stripe product/price, env vars
+6. Sentry/Axiom observability (NR-002)
+7. Sinch production upgrade (trial expires 03/24/2026)
+8. Upstash Redis for production rate limiting
+9. Integration tests (zero exist)
+10. Remaining Medium/Low findings (~9 hours)
 
 ## Blocked Items
-- **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available. Multi-segment SMS may fail on trial.
-- **Sinch Conversation API dashboard** — All Conversation API pages broken (platform issue). Cannot verify webhook config via UI. Need to use REST API or wait for Sinch to fix.
-- **Security Audit #2** — 17 findings documented, fixes pending.
+- **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
+- **Sinch Conversation API dashboard** — Platform pages broken. Use REST API.
+- **35 audit findings pending fixes** — Tier 1 (5 CRITICAL) should be fixed before next deploy.

@@ -26,15 +26,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
-  // Idempotency check: skip if already processed
-  const { data: existing } = await serviceClient
-    .from('billing_events')
-    .select('id')
-    .eq('stripe_event_id', event.id)
-    .maybeSingle();
+  // C-009 + C-011: Idempotency check with full error handling.
+  // Must be inside try-catch AND check error object (not just data).
+  try {
+    const { data: existing, error: idempError } = await serviceClient
+      .from('billing_events')
+      .select('id')
+      .eq('stripe_event_id', event.id)
+      .maybeSingle();
 
-  if (existing) {
-    return NextResponse.json({ received: true, skipped: true });
+    if (idempError) {
+      console.error('Stripe idempotency check DB error:', idempError.message);
+      // Return 500 so Stripe retries later when DB is healthy
+      return NextResponse.json({ error: 'Idempotency check failed' }, { status: 500 });
+    }
+
+    if (existing) {
+      return NextResponse.json({ received: true, skipped: true });
+    }
+  } catch (idempErr) {
+    console.error('Stripe idempotency check exception:', idempErr);
+    return NextResponse.json({ error: 'Idempotency check failed' }, { status: 500 });
   }
 
   try {
