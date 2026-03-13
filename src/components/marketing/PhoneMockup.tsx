@@ -12,41 +12,41 @@ const conversation: Message[] = [
   // Exchange 1
   {
     from: 'system',
-    text: "\"My trade-in is worth way more than what you're offering.\"",
+    text: "\"I like this one, but I need to think about it.\"",
     delay: 1000,
   },
   {
     from: 'rep',
-    text: "I get it — what number did you have in mind?",
+    text: "Totally fair. What's the main thing you'd want to sleep on?",
     delay: 3600,
   },
   // Exchange 2 — customer pushback
   {
     from: 'system',
-    text: "\"KBB says $18,000. You're at $14,500.\"",
+    text: "\"I just don't want to rush into anything.\"",
     delay: 6100,
   },
   {
     from: 'rep',
-    text: "KBB is a great starting point. That range assumes perfect condition — let's walk through it together.",
+    text: "I respect that. Most of my happiest customers felt the same way. What would make you feel confident today?",
     delay: 9100,
   },
   // Exchange 3
   {
     from: 'system',
-    text: "\"So you're saying KBB is wrong?\"",
-    delay: 11600,
+    text: "\"Honestly, the monthly payment is a little higher than I planned.\"",
+    delay: 12100,
   },
   {
     from: 'rep',
-    text: "Not wrong — just broad. Once we factor in mileage and service history, I think we can close that gap.",
-    delay: 14600,
+    text: "Good to know — let me see what we can do with the term or down payment to get that number comfortable.",
+    delay: 15100,
   },
   // AI grade
   {
     from: 'ai',
-    text: '⭐ 9.2/10 — What worked: Validated the research without arguing. Smooth pivot to specifics. 💡 Pro tip: "Let\'s pull it up together" builds trust faster.',
-    delay: 17900,
+    text: '⭐ 9.4/10 — Uncovered the real objection behind "think about it." Didn\'t pressure. 💡 Pro tip: Ask about their target payment early to get there faster.',
+    delay: 18400,
   },
 ];
 
