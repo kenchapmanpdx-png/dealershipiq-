@@ -9,20 +9,44 @@ interface Message {
 }
 
 const conversation: Message[] = [
+  // Exchange 1
   {
     from: 'system',
-    text: "A customer says: \"I can get the same truck cheaper at the dealer down the road.\" How do you respond?",
-    delay: 800,
+    text: "\"I can get the same truck cheaper at the dealer down the road.\"",
+    delay: 600,
   },
   {
     from: 'rep',
-    text: "I'd say: \"I appreciate you doing your homework! Let's compare apples to apples — can you share what they quoted? Often the difference comes down to warranty coverage, service packages, or financing terms that save you more long-term.\"",
-    delay: 2800,
+    text: "That's great you're comparing — let's make sure it's apples to apples. What did they quote you?",
+    delay: 2200,
+  },
+  // Exchange 2 — customer pushback
+  {
+    from: 'system',
+    text: "\"$2,400 less. Same model, same color. Why wouldn't I just go there?\"",
+    delay: 3800,
   },
   {
+    from: 'rep',
+    text: "Fair question. Does their price include the lifetime powertrain warranty and complimentary maintenance we bundle? That alone is worth $3,200 over five years.",
+    delay: 5600,
+  },
+  // Exchange 3 — final push
+  {
+    from: 'system',
+    text: "\"I didn't ask about that. Can you match the price or not?\"",
+    delay: 7200,
+  },
+  {
+    from: 'rep',
+    text: "I hear you. Let me talk to my manager and see what we can do — but even before that, would you be open to a quick side-by-side so you can see the full picture?",
+    delay: 9000,
+  },
+  // AI grade
+  {
     from: 'ai',
-    text: '⭐ Score: 9.2/10 — Strong reframe. You acknowledged the objection without being defensive, then redirected to value comparison. Excellent use of the "apples to apples" technique.',
-    delay: 5200,
+    text: '9.2/10 — Strong reframe without being defensive. Good value pivot on exchange 2. Pro tip: ask for the competing quote in writing to anchor the negotiation.',
+    delay: 11000,
   },
 ];
 
@@ -46,7 +70,7 @@ export default function PhoneMockup() {
       setTimeout(() => {
         setVisibleMessages(0);
         setCycle((c) => c + 1);
-      }, 9000)
+      }, 15000)
     );
 
     return () => timers.forEach(clearTimeout);
@@ -110,7 +134,7 @@ export default function PhoneMockup() {
                 <p className={`text-[9px] text-white/30 mt-1 ${
                   msg.from === 'rep' ? 'text-right' : ''
                 }`}>
-                  {msg.from === 'system' ? 'DealershipIQ' : msg.from === 'rep' ? 'You' : 'AI Coach'}
+                  {msg.from === 'system' ? 'Customer' : msg.from === 'rep' ? 'You' : 'AI Coach'}
                 </p>
               </div>
             ))}
