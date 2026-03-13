@@ -9,44 +9,44 @@ interface Message {
 }
 
 const conversation: Message[] = [
-  // Persona: buyer likes the truck, test drove it, but balking at payment
+  // Persona: buyer likes the CR-V, needs to "sleep on it"
   {
     from: 'system',
-    text: "\"I love the truck but $640 a month is more than I wanted to spend.\"",
+    text: "\"I really like the CR-V, but I think I need to sleep on it.\"",
     delay: 1000,
   },
   {
     from: 'rep',
-    text: "Where were you hoping to be? Let's see what we can work with.",
+    text: "I get it. Is it the car you're not sure about, or is it the numbers?",
     delay: 3600,
   },
-  // Exchange 2 — buyer dodges giving a number, rep brackets
+  // Exchange 2 — real hesitation surfaces, rep creates urgency
   {
     from: 'system',
-    text: "\"I don't know, I just know that's out of my budget.\"",
+    text: "\"The numbers mostly. I just don't want to rush into something.\"",
     delay: 6600,
   },
   {
     from: 'rep',
-    text: "Are we talking $50 too high or $200? I want to fight for the right number.",
+    text: "Makes sense. We've got $1,500 in incentives that expire Saturday — let me get you the real out-the-door number so you're comparing facts tonight, not guesses.",
     delay: 9600,
   },
-  // Exchange 3 — buyer gives a number, rep closes
+  // Exchange 3 — buyer cracks the door, rep goes for the close
   {
     from: 'system',
-    text: "\"Probably around $550 is the most I can afford.\"",
-    delay: 12600,
+    text: "\"I mean... I guess it can't hurt to see it.\"",
+    delay: 13100,
   },
   {
     from: 'rep',
-    text: "That's a $90 gap. If I can get under $575, are we doing this today?",
-    delay: 15600,
+    text: "Give me five minutes with my manager. If we land on a number that works, would you want to drive it home tonight?",
+    delay: 16100,
   },
-  // AI grade
+  // AI grade — praise + correction
   {
     from: 'ai',
-    text: '⭐ 8.7/10 — Bracketing got him off the fence. Good close. 💡 Ask what he\'s paying now — anchors the upgrade value and makes the gap feel smaller.',
-    delay: 18900,
+    text: '⭐ 8.4/10 — Isolated hesitation to numbers, not the vehicle. Incentive deadline created urgency without pressure. 💡 Ask what he\'s paying now — "You\'re only $40 more for a brand new CR-V" hits harder than any discount.',
+    delay: 19600,
   },
 ];
 
@@ -72,7 +72,7 @@ export default function PhoneMockup() {
       setTimeout(() => {
         setVisibleMessages(0);
         setCycle((c) => c + 1);
-      }, 24000)
+      }, 26000)
     );
 
     return () => timers.forEach(clearTimeout);
