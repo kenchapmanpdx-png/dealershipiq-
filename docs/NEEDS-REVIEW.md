@@ -14,7 +14,7 @@
 
 ## NR-003: Sinch credentials
 - **Status:** RESOLVED 2026-03-10
-- **Resolution:** All Sinch credentials set in Vercel. Webhook configured. Test number `+12029983810` activated.
+- **Resolution:** All Sinch credentials set in Vercel. Webhook configured. Number `+12057010434` activated 03/12/2026 (replaced test `+12029983810`).
 
 ## NR-004: OpenAI API key
 - **Status:** RESOLVED 2026-03-10

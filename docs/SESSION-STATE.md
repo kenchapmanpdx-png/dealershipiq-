@@ -177,7 +177,8 @@ Date: 03/10/2026
 
 **Phone Number:**
 - Old (invalid): `+12085797336` — was never a provisioned number
-- New (test): `+12029983810` — activated 03/10/2026, expires 03/24/2026, $0/month
+- Previous (test): `+12029983810` — expired
+- New: `+12057010434` — activated 03/12/2026
 - Capabilities: SMS + VOICE
 - Linked to service plan `bed87a6bcbdc4ea6ab4ece8d6d999a56`
 
@@ -201,7 +202,7 @@ Date: 03/10/2026
 | NEXT_PUBLIC_BASE_URL | Pre-existing (11/27/25) |
 | SINCH_SERVICE_PLAN_ID | Pre-existing (11/26/25, MVP) |
 | SINCH_API_TOKEN | Pre-existing (11/26/25, MVP) |
-| SINCH_PHONE_NUMBER | Updated 03/10/2026 → `+12029983810` |
+| SINCH_PHONE_NUMBER | Updated 03/12/2026 → `+12057010434` |
 | ADMIN_API_KEY | Pre-existing (11/26/25) |
 
 ### Multi-Exchange + GPT-5.4 Upgrade (03/10/2026)
@@ -255,7 +256,7 @@ Date: 03/10/2026
 
 **Trial account info:**
 - Sinch: $2.00 credit (expires 03/24/2026)
-- Inbound number: `+12029983810` (SMS + VOICE capable)
+- Inbound number: `+12057010434`
 - Verified outbound number: `+13604485632` (Ken's phone)
 - Trial limitation: SMS body prepended with "Test message from Sinch:" — custom content still delivered
 
