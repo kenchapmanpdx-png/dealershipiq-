@@ -20,32 +20,32 @@ const conversation: Message[] = [
     text: "Where were you hoping to be? Let's see what we can work with.",
     delay: 3600,
   },
-  // Exchange 2 — buyer gives a number, rep reframes
+  // Exchange 2 — buyer dodges giving a number, rep brackets
   {
     from: 'system',
-    text: "\"Closer to $550. I've got other bills to think about.\"",
+    text: "\"I don't know, I just know that's out of my budget.\"",
     delay: 6600,
   },
   {
     from: 'rep',
-    text: "That's a $90 gap. If I can get it under $575 with the same term, is that something you'd move on today?",
+    text: "Are we talking $50 too high or $200? I want to fight for the right number.",
     delay: 9600,
   },
-  // Exchange 3 — buyer commits if the number works
+  // Exchange 3 — buyer gives a number, rep closes
   {
     from: 'system',
-    text: "\"If you can actually get there, yeah, I'm ready.\"",
+    text: "\"Probably around $550 is the most I can afford.\"",
     delay: 12600,
   },
   {
     from: 'rep',
-    text: "Give me ten minutes with my manager. I'll come back with real numbers, not a maybe.",
+    text: "That's a $90 gap. If I can get under $575, are we doing this today?",
     delay: 15600,
   },
   // AI grade
   {
     from: 'ai',
-    text: '⭐ 9.4/10 — Got a micro-commitment before going to the desk. Strong close setup. 💡 Recap the agreed terms when you come back.',
+    text: '⭐ 8.7/10 — Bracketing got him off the fence. Good close. 💡 Ask what he\'s paying now — anchors the upgrade value and makes the gap feel smaller.',
     delay: 18900,
   },
 ];
