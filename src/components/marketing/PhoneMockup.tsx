@@ -39,7 +39,7 @@ const conversation: Message[] = [
   },
   {
     from: 'rep',
-    text: "If we land on a payment under $500, would you want to drive it home tonight?",
+    text: "If we land on the right number under $500 a month, do we have a deal?",
     delay: 20500,
   },
   // AI grade — praise + correction
