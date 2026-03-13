@@ -28,24 +28,24 @@ const conversation: Message[] = [
   },
   {
     from: 'rep',
-    text: "That's fair. Want me to pull up warranty and resale side by side? Might help the conversation at home.",
+    text: "I hear you. What if I pull up the warranty and resale numbers side by side right now? Takes two minutes.",
     delay: 9600,
   },
-  // Exchange 3 — he's warming up, needs ammo for his wife
+  // Exchange 3 — he's warming up, rep anchors a next step
   {
     from: 'system',
-    text: "\"Yeah actually that'd help. She's the spreadsheet person.\"",
+    text: "\"Yeah, that'd actually help. She's the numbers person.\"",
     delay: 12600,
   },
   {
     from: 'rep',
-    text: "Love that. I'll put together a quick comparison you can show her tonight.",
+    text: "Let's do it. And if she wants to test drive it Saturday I'll set aside the same one for you.",
     delay: 15600,
   },
   // AI grade
   {
     from: 'ai',
-    text: '⭐ 9.1/10 — Respected the co-buyer dynamic instead of pushing a solo close. 💡 Offer to include her on a follow-up call.',
+    text: '⭐ 9.3/10 — Armed the buyer with data AND locked in a next step. 💡 Ask if she\'d like to jump on a quick call too.',
     delay: 18900,
   },
 ];
