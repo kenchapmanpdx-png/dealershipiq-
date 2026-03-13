@@ -36,7 +36,7 @@ export default function ScrollReveal({
           observer.unobserve(el);
         }
       },
-      { threshold: 0.15, rootMargin: '0px 0px -40px 0px' }
+      { threshold: 0.01, rootMargin: '0px 0px 80px 0px' }
     );
 
     observer.observe(el);
@@ -44,10 +44,10 @@ export default function ScrollReveal({
   }, [delay]);
 
   const transforms: Record<string, string> = {
-    up: 'translateY(32px)',
-    down: 'translateY(-32px)',
-    left: 'translateX(32px)',
-    right: 'translateX(-32px)',
+    up: 'translateY(20px)',
+    down: 'translateY(-20px)',
+    left: 'translateX(20px)',
+    right: 'translateX(-20px)',
   };
 
   return (
@@ -95,7 +95,7 @@ export function StaggerReveal({
           observer.unobserve(el);
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.01, rootMargin: '0px 0px 60px 0px' }
     );
 
     observer.observe(el);
@@ -110,7 +110,7 @@ export function StaggerReveal({
               key={i}
               style={{
                 opacity: isVisible ? 1 : 0,
-                transform: isVisible ? 'translateY(0)' : 'translateY(24px)',
+                transform: isVisible ? 'translateY(0)' : 'translateY(16px)',
                 transition: `opacity 0.6s cubic-bezier(0.33, 1, 0.68, 1) ${i * staggerMs}ms, transform 0.6s cubic-bezier(0.33, 1, 0.68, 1) ${i * staggerMs}ms`,
               }}
             >
