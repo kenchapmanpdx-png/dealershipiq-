@@ -679,19 +679,44 @@ Key new findings:
 
 Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
 
+### Audit #3 — Tier 1 Fixes Applied (03/13/2026, commit b621b98)
+
+**5 CRITICAL fixes across 6 files:**
+- C-010: isOptedOut() now fails-closed on DB error (TCPA compliance)
+- C-006: Auth callback validates ?next= redirect target
+- C-007: Meeting-script drops user_metadata fallback
+- C-008: User import phone lookup scoped to dealership
+- C-009/C-011: Stripe idempotency check in try-catch + checks error object
+
+### Audit #3 — Tier 2 Fixes Applied (03/13/2026, commit 9ac9dcb)
+
+**9 HIGH fixes across 13 files:**
+- H-009: Confirmed no user_metadata fallbacks anywhere (clean)
+- H-010: checkSubscriptionAccess() added to all 6 dashboard routes
+- H-011: Chain step recording uses atomic RPC with fallback
+- H-012: JSON.parse wrapped in try-catch in manager-create
+- H-013: Encourage route logs failed SMS, returns 502
+- H-014: HELP response trimmed to single SMS segment (<=160 chars)
+- H-015: ALL_MOODS includes all 3 tiers (was TIER_3 only)
+- H-016: Vehicle data returns null instead of wrong-brand vehicles
+- H-017: Consent SMS uses Promise.allSettled
+
+**tsc --noEmit:** PASSING
+
+**Remaining open:** 11 MEDIUM + 9 LOW + C-003 (deferred). H-011 RPC function needs to be created in Supabase SQL Editor (Ken manual step).
+
 ## What's Next
-1. **Fix Tier 1 (deploy blockers):** C-006, C-007, C-008, C-009/C-011, C-010 (~1.5 hours)
-2. **Fix Tier 2 (high priority):** H-009 through H-017 (~5 hours)
-3. **C-003: Migrate 10 user-facing routes from serviceClient → RLS** (~12 hours)
-4. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
-5. **Ken manual steps for Phase 5:** Stripe product/price, env vars
-6. Sentry/Axiom observability (NR-002)
-7. Sinch production upgrade (trial expires 03/24/2026)
-8. Upstash Redis for production rate limiting
-9. Integration tests (zero exist)
-10. Remaining Medium/Low findings (~9 hours)
+1. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
+2. **C-003: Migrate 10 user-facing routes from serviceClient → RLS** (~12 hours)
+3. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
+4. **Ken manual steps for Phase 5:** Stripe product/price, env vars
+5. Sentry/Axiom observability (NR-002)
+6. Sinch production upgrade (trial expires 03/24/2026)
+7. Upstash Redis for production rate limiting
+8. Integration tests (zero exist)
+9. Remaining Medium/Low findings (~9 hours)
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
 - **Sinch Conversation API dashboard** — Platform pages broken. Use REST API.
-- **35 audit findings pending fixes** — Tier 1 (5 CRITICAL) should be fixed before next deploy.
+- **20 audit findings remaining** — 11 MEDIUM, 9 LOW. No deploy blockers.
