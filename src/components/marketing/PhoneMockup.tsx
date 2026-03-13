@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface Message {
   from: 'system' | 'rep' | 'ai';
@@ -53,6 +53,8 @@ const conversation: Message[] = [
 export default function PhoneMockup() {
   const [visibleMessages, setVisibleMessages] = useState<number>(0);
   const [cycle, setCycle] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timers: NodeJS.Timeout[] = [];
@@ -75,6 +77,13 @@ export default function PhoneMockup() {
 
     return () => timers.forEach(clearTimeout);
   }, [cycle]);
+
+  // Auto-scroll to bottom when new messages appear
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [visibleMessages]);
 
   return (
     <div className="relative mx-auto w-[280px] sm:w-[320px]">
@@ -111,12 +120,19 @@ export default function PhoneMockup() {
             </div>
           </div>
 
-          {/* Messages area */}
-          <div className="px-3 py-4 min-h-[340px] sm:min-h-[380px] flex flex-col gap-3">
+          {/* Messages area — fixed height, scrolls like a real phone */}
+          <div
+            ref={scrollRef}
+            className="px-3 py-4 h-[340px] sm:h-[380px] overflow-y-auto flex flex-col gap-3"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            <style jsx>{`
+              div::-webkit-scrollbar { display: none; }
+            `}</style>
             {conversation.slice(0, visibleMessages).map((msg, i) => (
               <div
                 key={i}
-                className={`max-w-[92%] animate-[message-in_0.4s_ease-out_both] ${
+                className={`max-w-[92%] shrink-0 animate-[message-in_0.4s_ease-out_both] ${
                   msg.from === 'rep' ? 'self-end' : 'self-start'
                 }`}
               >
@@ -141,7 +157,7 @@ export default function PhoneMockup() {
 
             {/* Typing indicator */}
             {visibleMessages < conversation.length && visibleMessages > 0 && (
-              <div className="self-start">
+              <div className="self-start shrink-0">
                 <div className="bg-white/8 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-[bounce_1.4s_infinite_0ms]" />
                   <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-[bounce_1.4s_infinite_200ms]" />
@@ -149,6 +165,9 @@ export default function PhoneMockup() {
                 </div>
               </div>
             )}
+
+            {/* Scroll anchor */}
+            <div ref={bottomRef} />
           </div>
         </div>
       </div>
