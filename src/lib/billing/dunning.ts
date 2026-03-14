@@ -3,6 +3,7 @@
 // Uses Resend for transactional email.
 
 import { serviceClient } from '@/lib/supabase/service';
+import { getAppUrl } from '@/lib/url';
 import { daysSinceUTC } from './subscription';
 import type { DunningStage, DunningTemplate } from '@/types/billing';
 
@@ -216,7 +217,7 @@ export async function processDunning(): Promise<{
     if (!manager?.email) continue;
 
     // Build portal URL
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealershipiq-wua7.vercel.app';
+    const appUrl = getAppUrl();
     const portalUrl = `${appUrl}/dashboard/billing`;
 
     try {

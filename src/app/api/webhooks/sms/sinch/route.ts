@@ -19,6 +19,7 @@ export const maxDuration = 300;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySinchWebhookSignature } from '@/lib/sinch-auth';
+import { getAppUrl } from '@/lib/url';
 import { sendSms, detectKeyword, helpResponse } from '@/lib/sms';
 import { gradeResponse, generateFollowUp, ERROR_SMS } from '@/lib/openai';
 import { assertTransition, isFinalExchange } from '@/lib/state-machine';
@@ -256,7 +257,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       if (!coachEnabled) {
         await sendSms(phone, "Coach Mode isn't available yet. Stay tuned!");
       } else {
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.VERCEL_URL ?? '';
+        const baseUrl = getAppUrl();
         const slug = user.dealershipId;
         await sendSms(
           phone,

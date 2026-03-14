@@ -28,7 +28,7 @@
 | SINCH_PHONE_NUMBER | Vercel | Secret |
 | SINCH_WEBHOOK_SECRET | Vercel | Secret |
 | CRON_SECRET | Vercel | Secret |
-| NEXT_PUBLIC_APP_URL | Vercel | Public |
+| NEXT_PUBLIC_BASE_URL | Vercel | Public |
 
 ### Phase 5 (New)
 | Variable | Where | Required | Notes |
@@ -61,10 +61,10 @@
 ### URL Configuration
 | Variable | Where | Notes |
 |---|---|---|
-| NEXT_PUBLIC_APP_URL | Vercel | Canonical app URL. Used by Stripe, billing, dunning. |
-| NEXT_PUBLIC_BASE_URL | Vercel | Used by SMS webhook for consent link generation. Falls back to VERCEL_URL. |
+| NEXT_PUBLIC_BASE_URL | Vercel | Canonical app URL. All code reads via `getAppUrl()` from `src/lib/url.ts`. |
+| NEXT_PUBLIC_APP_URL | Vercel | Legacy alias — read as fallback if NEXT_PUBLIC_BASE_URL is not set. |
 
-Both URL vars should be set to the same value in production (`https://dealershipiq-wua7.vercel.app`). `NEXT_PUBLIC_APP_URL` is the canonical name for billing/Stripe flows. `NEXT_PUBLIC_BASE_URL` is used in the SMS webhook for consent links.
+Set `NEXT_PUBLIC_BASE_URL=https://dealershipiq-wua7.vercel.app` in production. `NEXT_PUBLIC_APP_URL` is kept as a fallback alias for backward compatibility. All code now uses `getAppUrl()` from `src/lib/url.ts` which checks `NEXT_PUBLIC_BASE_URL` → `NEXT_PUBLIC_APP_URL` → `VERCEL_URL` → hardcoded fallback.
 
 ## Ken Manual Steps (Phase 5)
 

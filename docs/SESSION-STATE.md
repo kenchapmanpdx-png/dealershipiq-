@@ -2,7 +2,7 @@
 
 ## Current Phase
 Phase: Production hardening + feature iteration
-Status: Phases 1-6 deployed. Audit 1 complete — all findings remediated, 5 migrations applied to Supabase (52 RLS policies active).
+Status: Phases 1-6 deployed. Audit 1 complete — all findings remediated, 6 migrations applied to Supabase (51 RLS policies active). Post-remediation cleanup done.
 
 ## What's Built
 
@@ -1051,6 +1051,26 @@ All 5 migrations applied successfully via SQL Editor:
 **New policies (4):** chain_templates_select_authenticated, model_years_select_public, meeting_scripts_select_manager, sms_transcript_log_insert_authenticated.
 **Pre-existing duplicate:** meeting_scripts has both "Managers see own meeting scripts" (old, `{public}`) and "meeting_scripts_select_manager" (new, `{authenticated}`). Both enforce dealership isolation + manager role. The old policy can be dropped in a future cleanup pass.
 **Total:** 52 (up from 48 pre-migration).
+
+### Post-Remediation Cleanup (2026-03-15)
+
+**Item 1: Duplicate meeting_scripts policy dropped.**
+- Dropped: `"Managers see own meeting scripts"` (old, `{public}` role, `current_setting()` pattern)
+- Kept: `meeting_scripts_select_manager` (`{authenticated}` role, `get_dealership_id()` helper)
+- Migration: `supabase/migrations/20260315000001_drop_duplicate_meeting_scripts_policy.sql`
+- Verified: 1 policy remaining on `meeting_scripts`. Total policies: 51.
+
+**Item 2: URL env var standardized.**
+- Created `src/lib/url.ts` with `getAppUrl()` — reads `NEXT_PUBLIC_BASE_URL` → `NEXT_PUBLIC_APP_URL` (legacy) → `VERCEL_URL` → hardcoded fallback.
+- Replaced all 5 direct `process.env.NEXT_PUBLIC_APP_URL` / `NEXT_PUBLIC_BASE_URL` references in: `stripe.ts` (×2), `billing/dunning.ts`, `webhooks/stripe/route.ts`, `webhooks/sms/sinch/route.ts`.
+- `.env.example` updated: `NEXT_PUBLIC_BASE_URL` is canonical.
+- `docs/ENVIRONMENTS.md` updated.
+
+**Item 3: red_flag_events RLS verified.**
+- `relrowsecurity = true` (RLS enabled)
+- 1 policy: `"Managers see own dealership red flags"` (SELECT, `{public}` role)
+- Uses `current_setting('request.jwt.claims')` pattern for dealership isolation + manager role check.
+- Written by red-flag-check cron (service role). Read by morning meeting script (service-db helper) and dashboard meeting script component (via `getAppUrl()` centralized URL). No code change needed.
 
 ---
 

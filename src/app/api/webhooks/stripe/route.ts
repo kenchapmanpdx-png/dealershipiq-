@@ -8,6 +8,7 @@ import { verifyWebhookSignature, Stripe } from '@/lib/stripe';
 import { serviceClient } from '@/lib/supabase/service';
 import { findDealershipByStripeCustomer } from '@/lib/billing/lookup';
 import { sendDunningEmail } from '@/lib/billing/dunning';
+import { getAppUrl } from '@/lib/url';
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -288,7 +289,7 @@ async function handlePaymentFailed(event: Stripe.Event) {
 
     const manager = managers?.[0];
     if (manager?.email) {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealershipiq-wua7.vercel.app';
+      const appUrl = getAppUrl();
       const sent = await sendDunningEmail({
         to: manager.email as string,
         managerName: (manager.full_name as string) || 'Manager',

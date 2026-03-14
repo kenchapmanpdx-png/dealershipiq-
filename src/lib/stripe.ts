@@ -3,6 +3,7 @@
 // Supports 30-day trial, client_reference_id for webhook correlation.
 
 import Stripe from 'stripe';
+import { getAppUrl } from '@/lib/url';
 
 let _stripe: Stripe | null = null;
 function getStripe(): Stripe {
@@ -34,7 +35,7 @@ export async function createCheckoutSession(options: {
     throw new Error('STRIPE_PRICE_ID must be set');
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealershipiq-wua7.vercel.app';
+  const appUrl = getAppUrl();
 
   // RT-009: Idempotency key prevents duplicate checkout sessions from double-submit.
   // Stripe deduplicates requests with matching keys within 24 hours.
@@ -73,7 +74,7 @@ export async function createCheckoutSession(options: {
 }
 
 export async function createBillingPortalSession(customerId: string): Promise<{ url: string }> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealershipiq-wua7.vercel.app';
+  const appUrl = getAppUrl();
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: `${appUrl}/dashboard/billing`,
