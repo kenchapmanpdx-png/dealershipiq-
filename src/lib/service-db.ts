@@ -451,6 +451,22 @@ export async function getEligibleUsers(dealershipId: string) {
   );
 }
 
+// ─── Message cap check ───────────────────────────────────────────────
+// X-009: Shared utility for 3/day outbound message cap.
+// Uses dealership-local date to count outbound messages.
+export async function getOutboundCountToday(userId: string, timezone?: string): Promise<number> {
+  const { getLocalDateString } = await import('@/lib/quiet-hours');
+  const tz = timezone ?? 'America/New_York';
+  const todayStart = getLocalDateString(tz) + 'T00:00:00Z';
+  const { count } = await serviceClient
+    .from('sms_transcript_log')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('direction', 'outbound')
+    .gte('created_at', todayStart);
+  return count ?? 0;
+}
+
 // ─── Orphaned session cleanup ────────────────────────────────────────
 
 export async function getOrphanedSessions(hoursThreshold: number = 2) {
@@ -459,7 +475,8 @@ export async function getOrphanedSessions(hoursThreshold: number = 2) {
   const { data, error } = await serviceClient
     .from('conversation_sessions')
     .select('id, user_id, dealership_id, status, created_at')
-    .in('status', ['active', 'grading'])
+    // X-006 + X-016: Include error and pending sessions in cleanup
+    .in('status', ['active', 'grading', 'error', 'pending'])
     .lt('updated_at', cutoff);
 
   if (error) throw error;

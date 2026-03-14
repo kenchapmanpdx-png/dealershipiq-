@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { sendSms } from '@/lib/sms';
 import { serviceClient } from '@/lib/supabase/service';
-import { insertTranscriptLog } from '@/lib/service-db';
+import { insertTranscriptLog, getOutboundCountToday } from '@/lib/service-db';
 import { rankChallengeResponses, buildResultsSMS } from '@/lib/challenges/daily';
 
 export const maxDuration = 60;
@@ -105,6 +105,10 @@ export async function GET(request: NextRequest) {
     let resultsSent = 0;
     for (const p of participants ?? []) {
       try {
+        // X-009: Check message cap before sending results
+        const outbound = await getOutboundCountToday(p.id as string, dealership?.timezone as string);
+        if (outbound >= 3) continue;
+
         await sendSms(p.phone as string, resultsSMS);
         await insertTranscriptLog({
           userId: p.id as string,

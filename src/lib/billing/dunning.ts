@@ -240,15 +240,17 @@ export async function processDunning(): Promise<{
         stage: targetStage,
       });
 
-      if (sent) emailsSent++;
-
-      // Record the dunning event for deduplication
-      await serviceClient.from('billing_events').insert({
-        stripe_event_id: `dunning_${targetStage}_${dealership.id}_${new Date().toISOString().split('T')[0]}`,
-        event_type: `dunning_${targetStage}`,
-        dealership_id: dealership.id as string,
-        payload: { days_past_due: days, manager_email: managerEmail },
-      });
+      // X-019: Only record billing_event on successful send.
+      // If email fails, no event → next cron run retries this stage.
+      if (sent) {
+        emailsSent++;
+        await serviceClient.from('billing_events').insert({
+          stripe_event_id: `dunning_${targetStage}_${dealership.id}_${new Date().toISOString().split('T')[0]}`,
+          event_type: `dunning_${targetStage}`,
+          dealership_id: dealership.id as string,
+          payload: { days_past_due: days, manager_email: managerEmail },
+        });
+      }
 
       // Day 30: cancel the subscription
       if (targetStage === 'day30_canceled') {

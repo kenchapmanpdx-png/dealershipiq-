@@ -2,7 +2,7 @@
 
 ## Current Phase
 Phase: Production hardening + feature iteration
-Status: Phases 1-6 deployed. Audits 1-3 complete (Audit 2 remediated). 8 migrations applied to Supabase (51 RLS policies active). Advisory lock fixed, SMS kill switch implemented.
+Status: Phases 1-6 deployed. Audits 1-4 complete (Audits 2-3 remediated). 8 migrations applied to Supabase (51 RLS policies active). Advisory lock fixed, SMS kill switch implemented.
 
 ## What's Built
 
@@ -789,8 +789,34 @@ See prior session for details. RT-001 through RT-009.
 - Fix 10 (F11-M-001): Stripe trial reads trial_end from subscription object, falls back to 30-day default.
 - Fix 11 (F5-M-002): chain_templates serviceClient usage documented as justified (global data, cron context).
 
+### Audit 4/4: Cross-Feature + Cross-Cutting (03/14/2026)
+
+**Scope:** 8 cross-cutting analysis sections. Document-only audit (no code changes).
+**Output:** `docs/AUDIT-4-CROSS-CUTTING.md`
+**Findings:** 0C / 4H / 6M / 2L / 3I
+
+**HIGH findings:**
+- X-001: Training cron + ACCEPT handler race — cron doesn't hold advisory lock, can create overlapping sessions
+- X-003: Manager scenario double-push — cron and NOW can both push same scenario (no CAS on pushed_at)
+- X-011: Peer challenge ACCEPT doesn't check `peer_challenge_enabled` feature flag
+- X-019: Resend dedup bug — dunning billing_event recorded even on email send failure, blocking retry
+
+**MEDIUM findings:**
+- X-006: Error-state sessions not cleaned by orphaned cron (only catches active/grading)
+- X-007: Active chains not canceled on opt-out
+- X-009: Push/encourage/challenge-results bypass 3/day message cap
+- X-016: Pending sessions from Sinch failure not cleaned by orphaned cron
+- X-017: Follow-up generation failure leaves session in error with no retry
+- X-020: Sinch outage session leak (cross-ref X-016)
+
+**VERIFIED clean:**
+- GSM-7: sanitizeGsm7() runs on all outbound via sendSms() — complete coverage
+- RLS: All tables have RLS enabled across 6 migration files
+- Content priority: Always falls through to adaptive (no dead-end)
+- Advisory lock: Properly serializes all state-modifying webhook paths
+
 ## What's Next
-1. **Audit 4/4** — Final audit pass (if planned)
+1. **Audit 4 Remediation** — 4 HIGH + 6 MEDIUM fixes from AUDIT-4-CROSS-CUTTING.md
 2. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
 3. **APP_TOKEN_SECRET in Vercel** — Must verify this env var exists in production (renamed from APP_AUTH_SECRET in commit 0acec24)
 4. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)

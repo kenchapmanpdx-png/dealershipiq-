@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
-import { isWithinSendWindow, isWeekday, getLocalDateString } from '@/lib/quiet-hours';
+import { isWithinSendWindow, isWeekday } from '@/lib/quiet-hours';
 import { sendSms } from '@/lib/sms';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { selectContent } from '@/lib/training/content-priority';
@@ -14,6 +14,8 @@ import { continueChain, startChain, getActiveChain } from '@/lib/chains/lifecycl
 import {
   getDealershipsReadyForTraining,
   getEligibleUsers,
+  getActiveSession,
+  getOutboundCountToday,
   createConversationSession,
   updateSessionStatus,
   insertTranscriptLog,
@@ -89,6 +91,13 @@ export async function GET(request: NextRequest) {
 
     for (const user of eligible) {
       try {
+        // X-001: Skip if user already has an active session (e.g. from ACCEPT)
+        const existingSession = await getActiveSession(user.id, dealership.id);
+        if (existingSession) {
+          skipped++;
+          continue;
+        }
+
         // Phase 4C: Check if user is scheduled off
         const scheduledOff = await isScheduledOff(user.id, dealership.id, new Date(), dealership.timezone ?? 'America/New_York');
         if (scheduledOff) {
@@ -96,15 +105,9 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // H-002: Check message cap (3/day) — C-004 fix: use dealership local date
-        const todayStart = getLocalDateString(dealership.timezone) + 'T00:00:00Z';
-        const { count: outboundCount } = await serviceClient
-          .from('sms_transcript_log')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('direction', 'outbound')
-          .gte('created_at', todayStart);
-        if ((outboundCount ?? 0) >= 3) {
+        // H-002: Check message cap (3/day) — X-009: uses shared utility
+        const outboundCount = await getOutboundCountToday(user.id, dealership.timezone);
+        if (outboundCount >= 3) {
           skipped++;
           continue;
         }
@@ -124,13 +127,17 @@ export async function GET(request: NextRequest) {
 
         if (content.type === 'manager_scenario' && content.scenarioText) {
           // Priority 1: Manager Quick-Create
+          // X-003: Atomic CAS — skip if NOW handler already pushed this scenario
+          if (content.sourceId) {
+            const claimed = await markScenarioPushed(content.sourceId);
+            if (!claimed) {
+              skipped++;
+              continue;
+            }
+          }
           question = content.scenarioText;
           mode = 'roleplay';
           trainingDomain = content.taxonomyDomain;
-          // M-009: Mark scenario as pushed immediately to prevent NOW from pushing same scenario
-          if (content.sourceId) {
-            await markScenarioPushed(content.sourceId);
-          }
         } else if (content.type === 'peer_challenge' && content.scenarioText) {
           // Priority 2: Peer challenge — already active, skip cron send (handled by webhook)
           skipped++;

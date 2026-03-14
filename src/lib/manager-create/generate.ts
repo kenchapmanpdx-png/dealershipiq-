@@ -170,16 +170,22 @@ export async function getPendingNowConfirmation(
 
 /**
  * Mark a manager scenario as pushed immediately (NOW confirmation).
+ * X-003: Atomic CAS — only updates if pushed_at IS NULL. Returns null if already pushed.
  */
-export async function markScenarioPushedNow(scenarioId: string): Promise<void> {
-  await serviceClient
+export async function markScenarioPushedNow(scenarioId: string): Promise<{ id: string } | null> {
+  const { data } = await serviceClient
     .from('manager_scenarios')
     .update({
       awaiting_now_confirmation: false,
       push_immediately: true,
       pushed_at: new Date().toISOString(),
     })
-    .eq('id', scenarioId);
+    .eq('id', scenarioId)
+    .is('pushed_at', null)
+    .select('id')
+    .maybeSingle();
+
+  return data as { id: string } | null;
 }
 
 /**
@@ -194,10 +200,16 @@ export async function clearNowConfirmation(scenarioId: string): Promise<void> {
 
 /**
  * Mark a manager scenario as pushed by the training cron.
+ * X-003: Atomic CAS — only updates if pushed_at IS NULL. Returns null if already pushed.
  */
-export async function markScenarioPushed(scenarioId: string): Promise<void> {
-  await serviceClient
+export async function markScenarioPushed(scenarioId: string): Promise<{ id: string } | null> {
+  const { data } = await serviceClient
     .from('manager_scenarios')
     .update({ pushed_at: new Date().toISOString() })
-    .eq('id', scenarioId);
+    .eq('id', scenarioId)
+    .is('pushed_at', null)
+    .select('id')
+    .maybeSingle();
+
+  return data as { id: string } | null;
 }

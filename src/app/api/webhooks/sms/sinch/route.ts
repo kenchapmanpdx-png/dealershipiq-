@@ -509,15 +509,35 @@ async function handleNowKeyword(
   if (!pending) return false;
 
   try {
-    await markScenarioPushedNow(pending.id);
+    // X-003: Atomic CAS — skip if training cron already pushed this scenario
+    const claimed = await markScenarioPushedNow(pending.id);
+    if (!claimed) {
+      await sendSms(phone, 'That scenario was already sent by the training system.');
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: 'NOW: scenario already pushed.',
+      });
+      return true;
+    }
 
     // Push scenario to all eligible reps now
-    const { getEligibleUsers } = await import('@/lib/service-db');
+    const { getEligibleUsers, getOutboundCountToday } = await import('@/lib/service-db');
     const eligible = await getEligibleUsers(user.dealershipId);
+    // Look up dealership timezone for cap check
+    const { serviceClient: scTz } = await import('@/lib/supabase/service');
+    const { data: dlrData } = await scTz.from('dealerships').select('timezone').eq('id', user.dealershipId).single();
+    const dlrTimezone = (dlrData?.timezone as string) || 'America/New_York';
     let pushed = 0;
 
     for (const rep of eligible) {
       try {
+        // X-009: Check message cap before pushing to each rep
+        const outboundCount = await getOutboundCountToday(rep.id, dlrTimezone);
+        if (outboundCount >= 3) continue;
+
         // Create session for each rep
         const session = await createConversationSession({
           userId: rep.id,
@@ -735,6 +755,20 @@ async function handleAcceptKeyword(
   user: { id: string; dealershipId: string; fullName: string },
   phone: string
 ): Promise<boolean> {
+  // X-011: Check feature flag — challenge may have been disabled after initial CHALLENGE keyword
+  const peerEnabled = await isFeatureEnabled(user.dealershipId, 'peer_challenge_enabled');
+  if (!peerEnabled) {
+    await sendSms(phone, 'Peer challenges are not currently enabled.');
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: 'ACCEPT: peer challenges disabled.',
+    });
+    return true;
+  }
+
   const pendingChallenge = await getPendingChallengeForUser(user.id);
   if (!pendingChallenge) return false;
 
@@ -1194,6 +1228,8 @@ async function handlePendingConsent(
     await updateUserStatus(user.id, 'inactive');
     const { registerOptOut } = await import('@/lib/service-db');
     await registerOptOut(phone, user.dealershipId);
+    // X-007: Cancel active chains/challenges on consent decline
+    await cancelUserActiveState(user.id);
 
     const declineMsg = 'You have opted out of DealershipIQ training. No messages will be sent. Reply START if you change your mind.';
     await sendSms(phone, declineMsg);
@@ -1226,6 +1262,9 @@ async function handleNaturalOptOut(
   const { registerOptOut } = await import('@/lib/service-db');
   await registerOptOut(phone, user.dealershipId);
 
+  // X-007: Cancel active chains and pending peer challenges on opt-out
+  await cancelUserActiveState(user.id);
+
   const confirmMsg = 'You have been unsubscribed from DealershipIQ training messages. Reply START to re-subscribe.';
   await sendSms(phone, confirmMsg);
   await insertTranscriptLog({
@@ -1235,6 +1274,32 @@ async function handleNaturalOptOut(
     direction: 'outbound',
     messageBody: confirmMsg,
   });
+}
+
+// X-007: Helper to cancel chains + peer challenges when user opts out
+async function cancelUserActiveState(userId: string) {
+  const { serviceClient: sc } = await import('@/lib/supabase/service');
+  try {
+    await sc
+      .from('scenario_chains')
+      .update({ status: 'canceled', completed_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('status', 'active');
+
+    await sc
+      .from('peer_challenges')
+      .update({ status: 'canceled' })
+      .eq('challenged_id', userId)
+      .in('status', ['pending', 'active']);
+
+    await sc
+      .from('peer_challenges')
+      .update({ status: 'canceled' })
+      .eq('challenger_id', userId)
+      .in('status', ['pending', 'active']);
+  } catch (err) {
+    console.error('[opt-out] Failed to cancel active state:', (err as Error).message ?? err);
+  }
 }
 
 // --- DETAILS keyword handler (morning meeting script, managers only) ---
