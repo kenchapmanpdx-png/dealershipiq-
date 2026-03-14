@@ -2,7 +2,7 @@
 
 ## Current Phase
 Phase: Production hardening + feature iteration
-Status: Phases 1-6 deployed. Audit 1 + Audit 2 complete with remediation. 8 migrations applied to Supabase (51 RLS policies active). Advisory lock fixed, SMS kill switch implemented.
+Status: Phases 1-6 deployed. Audits 1-3 complete (Audit 2 remediated). 8 migrations applied to Supabase (51 RLS policies active). Advisory lock fixed, SMS kill switch implemented.
 
 ## What's Built
 
@@ -755,15 +755,16 @@ See prior session for details. M-001 advisory lock, M-003 DB-backed rate limit, 
 See prior session for details. RT-001 through RT-009.
 
 ## What's Next
-1. **Merge 3 audit PRs** — batch3 → batch2 → batch1 (or all into main)
-2. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
-3. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
-4. **Ken manual steps for Phase 5:** Stripe product/price, env vars
-5. Sentry/Axiom observability (NR-002)
-6. Sinch production upgrade (trial expires 03/24/2026)
-7. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
-8. Integration tests (zero exist)
-9. L-013 coaching modal accessibility, L-014 dashboard pagination
+1. **Audit 3 Remediation** — 4 HIGH, 6 MEDIUM findings from AUDIT-3-DASHBOARD-COACH.md
+2. **Audit 4/4: Billing + Cron flows** — final audit pass
+3. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
+4. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
+5. **Ken manual steps for Phase 5:** Stripe product/price, env vars
+6. Sentry/Axiom observability (NR-002)
+7. Sinch production upgrade (trial expires 03/24/2026)
+8. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
+9. Integration tests (zero exist)
+10. L-013 coaching modal accessibility, L-014 dashboard pagination
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
@@ -1148,8 +1149,27 @@ All 5 migrations applied successfully via SQL Editor:
 
 **Accepted for pilot (no fix):** F2-M-001 (timezone overcounting), F2-M-002 (UTC dedup), F4-M-001 (Sinch sync delay), F1-L-001 (HMAC audit trail), F2-L-001 (hardcoded questions), F3-L-001 (consent retry), CF-L-001 (global opt-out).
 
+### Audit 3: Dashboard + Coach Mode (2026-03-15, commit addd69d)
+
+4 flows traced: Manager Dashboard, Coach Mode, Public Leaderboard, User Management.
+21 findings: 0 critical, 4 high, 6 medium, 6 low, 5 info.
+
+**HIGH findings:**
+- D1-H-001: Team API fetches ALL training_results per user (unbounded, no date filter)
+- D2-H-001: Coach session updates lack dealership_id scoping
+- D3-H-001: SSR leaderboard page queries by `name` not `slug` (always 404s)
+- CF-H-001: Dashboard layout is server component with client-side event handlers
+
+**MEDIUM findings:**
+- D1-M-001: Dealership switcher is dead code (query param never consumed)
+- D1-M-002: `window.location.href` in server component
+- D2-M-001: authenticateRep queries `users.dealership_id` which may not exist as column
+- D2-M-002: APP_AUTH_SECRET falls back to CRON_SECRET (shared secret concern)
+- D3-M-001: Leaderboard fetches all results (public endpoint, no rate limit)
+- D4-M-001: CSV import API expects text body but client sends FormData
+
 ### What's Next
-- Audit 3/4: Dashboard + Coach Mode flows
+- Audit 3 remediation
 - Audit 4/4: Billing + Cron flows
 - Sentry/Axiom observability setup
 - Verify 3-exchange objection flow with live Sinch
