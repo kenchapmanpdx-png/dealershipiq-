@@ -728,18 +728,32 @@ Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
 
 **tsc --noEmit:** PASSING
 
+### Red Team Findings — Batch 3 (03/13/2026, branch fix/batch3-red-team-findings)
+
+**Verified already fixed:** RT-001 (Sinch HMAC timingSafeEqual), RT-002 (Stripe constructEvent raw body), RT-007 (opt-out fail-closed), RT-008 (ALL_MOODS all tiers)
+
+**New fixes (9 findings, 13 files):**
+- RT-003: PII scrub — webhook log masked to last 4 digits
+- RT-004: "sales training" → "training" in consent SMS, leaderboard, AI prompts
+- RT-005: SMS length validation — warn >160 chars, error >320 chars on send
+- RT-006: Feature flags added to Ask IQ + Push Training; full 13-flag set on signup
+- RT-009: Stripe checkout idempotency key (dealershipId_email)
+
+**Lint fixes:** rules-of-hooks (M-018 useEffect), unused import (daily-digest)
+
+**tsc --noEmit:** PASSING | **next lint:** PASSING
+
 ## What's Next
-1. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
-2. **C-003: Migrate 10 user-facing routes from serviceClient → RLS** (~12 hours)
-3. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
-4. **Ken manual steps for Phase 5:** Stripe product/price, env vars
+1. **Batch 2 (in progress):** M-001 webhook lock, M-003 coach rate limit to DB, M-010 modal accessibility, C-005 rate limit logging, remaining LOW items
+2. **Batch 1:** C-003 serviceClient → RLS migration (10+ routes, ~12 hours)
+3. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011
+4. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
 5. Sentry/Axiom observability (NR-002)
 6. Sinch production upgrade (trial expires 03/24/2026)
-7. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
-8. Integration tests (zero exist)
-9. L-013 coaching modal accessibility, L-014 dashboard pagination
+7. Upstash Redis for production rate limiting
+8. Integration tests + vitest setup
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
 - **Sinch Conversation API dashboard** — Platform pages broken. Use REST API.
-- **Audit findings status:** 5 CRITICAL fixed, 9 HIGH fixed, 8 MEDIUM fixed (3 deferred), 5 LOW fixed (2 deferred). C-003 deferred (~12 hours).
+- **PR pending review:** `fix/batch3-red-team-findings` — Ken must create PR at https://github.com/kenchapmanpdx-png/dealershipiq-/pull/new/fix/batch3-red-team-findings
