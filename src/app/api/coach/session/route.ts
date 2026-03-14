@@ -604,23 +604,35 @@ async function authenticateRep(
   }
 }
 
-// --- Rate limiting (simple in-memory for MVP) ---
-
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+// --- Rate limiting (DB-backed via coach_sessions) ---
+// M-003: Replaced in-memory Map with DB query. Counts user messages across
+// all coach sessions in the last hour. Shared across Vercel instances, survives cold starts.
 
 async function checkRateLimit(userId: string): Promise<boolean> {
-  const now = Date.now();
-  const existing = rateLimitMap.get(userId);
+  try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
-  if (!existing || existing.resetAt < now) {
-    rateLimitMap.set(userId, {
-      count: 1,
-      resetAt: now + 60 * 60 * 1000,
-    });
-    return false;
+    const { data: sessions, error } = await serviceClient
+      .from('coach_sessions')
+      .select('messages')
+      .eq('user_id', userId)
+      .gte('created_at', oneHourAgo);
+
+    if (error) {
+      // Fail-open: allow request if DB check fails (non-TCPA, best-effort rate limit)
+      console.error('[Coach] Rate limit DB check failed:', error.message);
+      return false;
+    }
+
+    let userMessageCount = 0;
+    for (const s of sessions ?? []) {
+      const msgs = (s.messages as Array<{ role: string }>) ?? [];
+      userMessageCount += msgs.filter((m) => m.role === 'user').length;
+    }
+
+    return userMessageCount >= MAX_MESSAGES_PER_HOUR;
+  } catch (err) {
+    console.error('[Coach] Rate limit check error:', err);
+    return false; // Fail-open
   }
-
-  existing.count++;
-  if (existing.count > MAX_MESSAGES_PER_HOUR) return true;
-  return false;
 }

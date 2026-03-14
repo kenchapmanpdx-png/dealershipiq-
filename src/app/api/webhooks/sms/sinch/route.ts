@@ -165,51 +165,17 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
 
   const user = await getUserByPhone(phone);
   if (!user) {
-    console.warn(`Inbound SMS from unknown phone: ${phone.slice(0, 6)}****`);
+    console.warn(`Inbound SMS from unknown phone: ***${phone.slice(-4)}`);
     return;
   }
 
-  // Log inbound message
-  await insertTranscriptLog({
-    userId: user.id,
-    dealershipId: user.dealershipId,
-    phone,
-    direction: 'inbound',
-    messageBody: text,
-    sinchMessageId: messageId,
-  });
-
+  // M-001: Advisory lock acquired BEFORE any state-modifying operations.
+  // Covers: opt-out, consent, resubscribe, schedule, and state machine transitions.
+  // HELP keyword is read-only (just sends a response) so it's checked before lock.
   const trimmedText = text.trim();
   const trimmedUpper = trimmedText.toUpperCase();
 
-  // ==========================================================================
-  // KEYWORD PRIORITY ORDER (C-004 audit fix)
-  // ==========================================================================
-  // 1. STOP/END/UNSUBSCRIBE/CANCEL/QUIT (opt-out) — intercepted by Sinch
-  // 2. HELP — CTIA compliance
-  // 3. PARAR/CANCELAR — Spanish opt-out
-  // 4. START — re-subscribe
-  // 5. Consent handling (YES/NO for pending_consent users)
-  // 6. COACH
-  // 7. DETAILS (manager only)
-  // 8. OFF/VACATION (schedule)
-  // 9. TRAIN: (manager only)
-  // 10. NOW (manager only)
-  // 11. CHALLENGE
-  // 12. ACCEPT/PASS
-  // 13. Disambiguation numbers
-  // 14. Everything else → state machine
-  // ==========================================================================
-
-  // Check opt-out status (DB-level opt-out)
-  const isOptedOut = await checkOptOut(phone, user.dealershipId);
-  if (isOptedOut) return;
-
-  // Check for active session (for keyword detection context)
-  const activeSession = await getActiveSession(user.id, user.dealershipId);
-  const hasActiveSession = !!activeSession && activeSession.status === 'active';
-
-  // 2. HELP keyword (CTIA compliant)
+  // 2. HELP keyword (CTIA compliant — read-only, no lock needed)
   if (trimmedUpper === 'HELP' || trimmedUpper === 'INFO' || trimmedUpper === 'AYUDA') {
     const helpMsg = helpResponse(user.dealershipName);
     await sendSms(phone, helpMsg);
@@ -223,79 +189,115 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     return;
   }
 
-  // 3. PARAR/CANCELAR (Spanish opt-out)
-  if (trimmedUpper === 'PARAR' || trimmedUpper === 'CANCELAR') {
-    await handleNaturalOptOut(user, phone);
-    return;
-  }
-
-  // 4. START — re-subscribe (exact match)
-  if (trimmedUpper === 'START' || trimmedUpper === 'YES' || trimmedUpper === 'UNSTOP') {
-    await handleResubscribe(user, phone);
-    return;
-  }
-
-  // 5. Consent handling for pending_consent users
-  if (user.status === 'pending_consent') {
-    await handlePendingConsent(user, phone, text);
-    return;
-  }
-
-  // 6. COACH keyword
-  if (trimmedUpper === 'COACH') {
-    const coachEnabled = await isFeatureEnabled(user.dealershipId, 'coach_mode_enabled');
-    if (!coachEnabled) {
-      await sendSms(phone, "Coach Mode isn't available yet. Stay tuned!");
-    } else {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.VERCEL_URL ?? '';
-      const slug = user.dealershipId;
-      await sendSms(
-        phone,
-        `DealershipIQ Coach is ready. Tap to start: ${baseUrl}/app/${slug}/coach`
-      );
-    }
-    await insertTranscriptLog({
-      userId: user.id,
-      dealershipId: user.dealershipId,
-      phone,
-      direction: 'outbound',
-      messageBody: 'COACH keyword response',
-    });
-    return;
-  }
-
-  // 7. DETAILS keyword (manager only — morning meeting script)
-  if (trimmedUpper === 'DETAILS') {
-    await handleDetailsKeyword(user, phone);
-    return;
-  }
-
-  // 8. OFF/VACATION (schedule keywords)
-  const scheduleResult = parseScheduleKeyword(text);
-  if (scheduleResult.success) {
-    try {
-      await updateEmployeeSchedule(user.id, user.dealershipId, scheduleResult.data ?? {});
-      await sendSms(phone, scheduleResult.message ?? 'Schedule updated.');
-      await insertTranscriptLog({
-        userId: user.id,
-        dealershipId: user.dealershipId,
-        phone,
-        direction: 'outbound',
-        messageBody: scheduleResult.message ?? 'Schedule updated.',
-      });
-    } catch (scheduleErr) {
-      console.error('Schedule update failed:', scheduleErr);
-      await sendSms(phone, 'Could not update schedule. Please try again.');
-    }
-    return;
-  }
-
-  // --- Advisory Lock (M-005 audit fix: acquire BEFORE Phase 6 keywords) ---
+  // --- Advisory Lock: all state-modifying paths below are protected ---
   const { tryLockUser } = await import('@/lib/service-db');
   const locked = await tryLockUser(phone);
   if (!locked) return;
 
   try {
+    // Log inbound message
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'inbound',
+      messageBody: text,
+      sinchMessageId: messageId,
+    });
+
+    // ==========================================================================
+    // KEYWORD PRIORITY ORDER (C-004 audit fix)
+    // ==========================================================================
+    // 1. STOP/END/UNSUBSCRIBE/CANCEL/QUIT (opt-out) — intercepted by Sinch
+    // 2. HELP — CTIA compliance (handled above, outside lock)
+    // 3. PARAR/CANCELAR — Spanish opt-out
+    // 4. START — re-subscribe
+    // 5. Consent handling (YES/NO for pending_consent users)
+    // 6. COACH
+    // 7. DETAILS (manager only)
+    // 8. OFF/VACATION (schedule)
+    // 9. TRAIN: (manager only)
+    // 10. NOW (manager only)
+    // 11. CHALLENGE
+    // 12. ACCEPT/PASS
+    // 13. Disambiguation numbers
+    // 14. Everything else → state machine
+    // ==========================================================================
+
+    // Check opt-out status (DB-level opt-out)
+    const isOptedOut = await checkOptOut(phone, user.dealershipId);
+    if (isOptedOut) return;
+
+    // Check for active session (for keyword detection context)
+    const activeSession = await getActiveSession(user.id, user.dealershipId);
+    const hasActiveSession = !!activeSession && activeSession.status === 'active';
+
+    // 3. PARAR/CANCELAR (Spanish opt-out)
+    if (trimmedUpper === 'PARAR' || trimmedUpper === 'CANCELAR') {
+      await handleNaturalOptOut(user, phone);
+      return;
+    }
+
+    // 4. START — re-subscribe (exact match)
+    if (trimmedUpper === 'START' || trimmedUpper === 'YES' || trimmedUpper === 'UNSTOP') {
+      await handleResubscribe(user, phone);
+      return;
+    }
+
+    // 5. Consent handling for pending_consent users
+    if (user.status === 'pending_consent') {
+      await handlePendingConsent(user, phone, text);
+      return;
+    }
+
+    // 6. COACH keyword
+    if (trimmedUpper === 'COACH') {
+      const coachEnabled = await isFeatureEnabled(user.dealershipId, 'coach_mode_enabled');
+      if (!coachEnabled) {
+        await sendSms(phone, "Coach Mode isn't available yet. Stay tuned!");
+      } else {
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.VERCEL_URL ?? '';
+        const slug = user.dealershipId;
+        await sendSms(
+          phone,
+          `DealershipIQ Coach is ready. Tap to start: ${baseUrl}/app/${slug}/coach`
+        );
+      }
+      await insertTranscriptLog({
+        userId: user.id,
+        dealershipId: user.dealershipId,
+        phone,
+        direction: 'outbound',
+        messageBody: 'COACH keyword response',
+      });
+      return;
+    }
+
+    // 7. DETAILS keyword (manager only — morning meeting script)
+    if (trimmedUpper === 'DETAILS') {
+      await handleDetailsKeyword(user, phone);
+      return;
+    }
+
+    // 8. OFF/VACATION (schedule keywords)
+    const scheduleResult = parseScheduleKeyword(text);
+    if (scheduleResult.success) {
+      try {
+        await updateEmployeeSchedule(user.id, user.dealershipId, scheduleResult.data ?? {});
+        await sendSms(phone, scheduleResult.message ?? 'Schedule updated.');
+        await insertTranscriptLog({
+          userId: user.id,
+          dealershipId: user.dealershipId,
+          phone,
+          direction: 'outbound',
+          messageBody: scheduleResult.message ?? 'Schedule updated.',
+        });
+      } catch (scheduleErr) {
+        console.error('Schedule update failed:', scheduleErr);
+        await sendSms(phone, 'Could not update schedule. Please try again.');
+      }
+      return;
+    }
     // 9. TRAIN: keyword (manager/owner only)
     if (trimmedUpper.startsWith('TRAIN:')) {
       await handleTrainKeyword(user, phone, trimmedText);
