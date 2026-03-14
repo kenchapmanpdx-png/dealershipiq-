@@ -150,11 +150,12 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     return;
   }
 
-  // Mark as processed in both caches
+  // M-020: Mark as processed with hard cap enforcement (evict oldest half when full)
   processedMessages.add(messageId);
   if (processedMessages.size > MAX_PROCESSED_CACHE) {
     const entries = Array.from(processedMessages);
-    for (let i = 0; i < 1000; i++) processedMessages.delete(entries[i]);
+    const evictCount = Math.floor(entries.length / 2);
+    for (let i = 0; i < evictCount; i++) processedMessages.delete(entries[i]);
   }
 
   const phone = payload.message.channel_identity.identity;
@@ -371,7 +372,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     }
 
     if (session.status === 'grading') {
-      await sendSms(phone, "Still processing your last response — hang tight!");
+      await sendSms(phone, "Still processing your last response - hang tight!");
       return;
     }
 

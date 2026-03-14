@@ -459,9 +459,10 @@ export function buildPeerResultsSMS(
   const result = youWon ? `You win!` : `${opponentName} wins.`;
   let sms = `Challenge result: You ${Math.round(yourScore)}%, ${opponentName} ${Math.round(opponentScore)}%. ${result} Your strength: ${bestDimension.replace(/_/g, ' ')}. Work on: ${weakestDimension.replace(/_/g, ' ')}.`;
 
-  // Truncate to fit 2 SMS segments (320 GSM-7 chars)
+  // M-014: Truncate at word boundary to fit 2 SMS segments (320 GSM-7 chars)
   if (sms.length > 320) {
-    sms = sms.substring(0, 317) + '...';
+    const cutpoint = sms.lastIndexOf(' ', 317);
+    sms = sms.substring(0, cutpoint > 0 ? cutpoint : 317) + '...';
   }
 
   return sms;

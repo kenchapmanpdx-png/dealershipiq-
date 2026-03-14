@@ -30,7 +30,11 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
       try {
         // B-001 fix: Token is base64-encoded JSON (HMAC-signed), not colon-delimited
         const decoded = JSON.parse(atob(token));
-        if (decoded.userId && decoded.dealershipId) {
+        // L-020: Check token expiration client-side before using
+        if (decoded.expiresAt && decoded.expiresAt < Date.now()) {
+          // Token expired — clear cookie and force re-auth
+          document.cookie = 'diq_session=; path=/; max-age=0';
+        } else if (decoded.userId && decoded.dealershipId) {
           // B-002 fix: Verify token's dealershipId matches the URL slug
           // We can't do slug→dealershipId lookup client-side, but we store the slug
           // and the server-side routes validate via verifyAppToken
@@ -77,12 +81,14 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
 
       // B-001 fix: Token is base64-encoded JSON, not colon-delimited
       const decoded = JSON.parse(atob(token));
+      // M-018: Store slug from auth for later validation
       setSession({
         userId: decoded.userId,
         dealershipId: decoded.dealershipId,
         firstName: decoded.firstName ?? 'there',
         language: decoded.language ?? 'en',
         token,
+        authenticatedSlug: slug,
       });
     } catch {
       setAuthError('Connection error. Try again.');
@@ -138,6 +144,14 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+
+  // M-018: If user changes URL slug after auth, clear session and force re-auth
+  useEffect(() => {
+    if (session?.authenticatedSlug && session.authenticatedSlug !== slug) {
+      document.cookie = 'diq_session=; path=/; max-age=0';
+      setSession(null);
+    }
+  }, [slug, session]);
 
   // Check if Coach tab should be hidden (Spanish language)
   const showCoach = session.language !== 'es';

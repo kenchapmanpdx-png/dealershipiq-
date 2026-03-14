@@ -210,9 +210,23 @@ export function buildChainCompletionSMS(
   customerName: string,
   stepResults: StepResult[]
 ): string {
-  const scores = stepResults.map((r, i) => `Day ${i + 1}: ${Math.round((Object.values(r.scores).reduce((a, b) => a + b, 0) / Object.values(r.scores).length / 5) * 100)}%`);
-  const first = stepResults[0] ? Object.values(stepResults[0].scores).reduce((a, b) => a + b, 0) / Object.values(stepResults[0].scores).length : 0;
-  const last = stepResults[stepResults.length - 1] ? Object.values(stepResults[stepResults.length - 1].scores).reduce((a, b) => a + b, 0) / Object.values(stepResults[stepResults.length - 1].scores).length : 0;
+  if (stepResults.length === 0) {
+    return `${customerName}'s story is complete. No scored steps recorded.`;
+  }
+
+  // L-017: Guard against empty scores objects to prevent division by zero
+  const avgScore = (scores: Record<string, number>): number => {
+    const vals = Object.values(scores);
+    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  };
+
+  const scores = stepResults.map((r, i) => {
+    const avg = avgScore(r.scores);
+    return `Day ${i + 1}: ${Math.round((avg / 5) * 100)}%`;
+  });
+
+  const first = avgScore(stepResults[0].scores);
+  const last = avgScore(stepResults[stepResults.length - 1].scores);
   const improved = last > first;
 
   return `${customerName}'s story is complete. Your scores: ${scores.join(', ')}. ${improved ? 'Nice improvement across the arc.' : 'Solid effort. Review your feedback for growth areas.'}`;
@@ -250,12 +264,19 @@ export async function incrementMissedDay(chainId: string): Promise<boolean> {
 /**
  * Load an active chain for a user.
  */
-export async function getActiveChain(userId: string): Promise<ScenarioChain | null> {
-  const { data } = await serviceClient
+export async function getActiveChain(userId: string, dealershipId?: string): Promise<ScenarioChain | null> {
+  let query = serviceClient
     .from('scenario_chains')
     .select('*')
     .eq('user_id', userId)
-    .eq('status', 'active')
+    .eq('status', 'active');
+
+  // M-022: Scope to dealership when available (defense-in-depth tenant isolation)
+  if (dealershipId) {
+    query = query.eq('dealership_id', dealershipId);
+  }
+
+  const { data } = await query
     .limit(1)
     .maybeSingle();
 

@@ -29,9 +29,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Brands required' }, { status: 400 });
   }
 
-  // Insert into dealership_brands (if table exists) or store in settings
+  // M-017: Single source of truth — dealership_brands table only (no settings fallback)
   try {
-    // Try dealership_brands table first
     const brandRows = brands.map((brand: string) => ({
       dealership_id: dealershipId,
       brand_name: brand,
@@ -42,22 +41,12 @@ export async function POST(request: NextRequest) {
       .upsert(brandRows, { onConflict: 'dealership_id,brand_name' });
 
     if (error) {
-      // Fallback: store in dealership settings
-      await serviceClient
-        .from('dealerships')
-        .update({
-          settings: { brands },
-        })
-        .eq('id', dealershipId);
+      console.error('Brands upsert failed:', error.message);
+      return NextResponse.json({ error: 'Failed to save brands' }, { status: 500 });
     }
-  } catch {
-    // Store in settings as fallback
-    await serviceClient
-      .from('dealerships')
-      .update({
-        settings: { brands },
-      })
-      .eq('id', dealershipId);
+  } catch (err) {
+    console.error('Brands save error:', err);
+    return NextResponse.json({ error: 'Failed to save brands' }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

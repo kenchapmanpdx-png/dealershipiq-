@@ -42,7 +42,13 @@ export function selectCoachingPrompt(
   competitorModel?: string | null
 ): string | null {
   const prompts = COACHING_PROMPTS[domain];
-  if (!prompts || prompts.length === 0) return null;
+  if (!prompts || prompts.length === 0) {
+    // M-015: Log unknown domains so missing content is visible
+    if (!COACHING_PROMPTS[domain]) {
+      console.warn(`[coaching-prompts] Unknown domain: "${domain}". Known: ${Object.keys(COACHING_PROMPTS).join(', ')}`);
+    }
+    return null;
+  }
 
   const idx = Math.floor(Math.random() * prompts.length);
   let prompt = prompts[idx];

@@ -8,6 +8,7 @@ export interface RepSession {
   firstName: string;
   language: string;
   token: string;
+  authenticatedSlug?: string; // M-018: Track which slug was used for auth
 }
 
 export const SessionContext = createContext<RepSession | null>(null);

@@ -54,7 +54,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Rate limit (simple in-memory counter — production would use Upstash)
+    // M-021: In-memory rate limit — resets on cold start, not shared across Vercel instances.
+    // TODO: Replace with Upstash Redis for production. Acceptable for MVP.
     const rateLimited = await checkRateLimit(userId);
     if (rateLimited) {
       return NextResponse.json(

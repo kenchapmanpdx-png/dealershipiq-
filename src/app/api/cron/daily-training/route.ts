@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
         } else if (content.type === 'chain_step') {
           // Priority 3: Scenario chain continuation
           try {
-            const activeChain = await getActiveChain(user.id);
+            const activeChain = await getActiveChain(user.id, dealership.id);
             if (activeChain) {
               const chainResult = await continueChain(activeChain);
               if (chainResult) {

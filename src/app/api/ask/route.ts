@@ -19,6 +19,21 @@ interface AskResponse {
   confidence: number;
 }
 
+// L-015: Simple in-memory rate limit (MVP — replace with Upstash for production)
+const askRateMap = new Map<string, { count: number; resetAt: number }>();
+const MAX_ASK_PER_HOUR = 60;
+
+function checkAskRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const existing = askRateMap.get(userId);
+  if (!existing || existing.resetAt < now) {
+    askRateMap.set(userId, { count: 1, resetAt: now + 60 * 60 * 1000 });
+    return false;
+  }
+  existing.count++;
+  return existing.count > MAX_ASK_PER_HOUR;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient();
@@ -31,6 +46,14 @@ export async function POST(request: NextRequest) {
     const dealershipId = user.app_metadata?.dealership_id as string | undefined;
     if (!dealershipId) {
       return NextResponse.json({ error: 'No dealership' }, { status: 403 });
+    }
+
+    // L-015: Rate limit check
+    if (checkAskRateLimit(user.id)) {
+      return NextResponse.json(
+        { error: 'Too many questions. Try again later.' },
+        { status: 429 }
+      );
     }
 
     const body = await request.json() as AskRequest;
