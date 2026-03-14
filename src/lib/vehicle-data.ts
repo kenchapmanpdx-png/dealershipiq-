@@ -47,7 +47,7 @@ export async function getVehicleContextForScenario(
 
     return { primary, competitor, sellingPoints, competitiveNotes };
   } catch (err) {
-    console.error('Vehicle context fetch failed:', err);
+    console.error('Vehicle context fetch failed:', (err as Error).message ?? err);
     return null;
   }
 }

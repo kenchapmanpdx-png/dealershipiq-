@@ -31,7 +31,7 @@ export default function GapsPage() {
         setGaps(data.gaps ?? []);
       }
     } catch (err) {
-      console.error('Failed to fetch knowledge gaps:', err);
+      console.error('Failed to fetch knowledge gaps:', (err as Error).message ?? err);
     }
     setLoading(false);
   }, []);

@@ -67,7 +67,7 @@ export async function GET() {
       .limit(100);
 
     if (gapsError) {
-      console.error('Failed to fetch knowledge gaps:', gapsError);
+      console.error('Failed to fetch knowledge gaps:', (gapsError as Error).message ?? gapsError);
       return NextResponse.json(
         { error: 'Failed to fetch knowledge gaps' },
         { status: 500 }
@@ -88,7 +88,7 @@ export async function GET() {
 
     return NextResponse.json({ gaps: transformed });
   } catch (err) {
-    console.error('GET /api/dashboard/gaps error:', err);
+    console.error('GET /api/dashboard/gaps error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

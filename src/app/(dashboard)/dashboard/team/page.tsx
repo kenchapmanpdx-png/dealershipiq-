@@ -35,7 +35,7 @@ export default function TeamPage() {
         setData(await res.json());
       }
     } catch (err) {
-      console.error('Failed to fetch team:', err);
+      console.error('Failed to fetch team:', (err as Error).message ?? err);
     }
     setLoading(false);
   }, []);
@@ -70,7 +70,7 @@ export default function TeamPage() {
         alert('Failed to add team member');
       }
     } catch (err) {
-      console.error('Failed to add team member:', err);
+      console.error('Failed to add team member:', (err as Error).message ?? err);
       alert('Error adding team member');
     } finally {
       setAdding(false);
@@ -97,7 +97,7 @@ export default function TeamPage() {
         alert('Import failed');
       }
     } catch (err) {
-      console.error('Import error:', err);
+      console.error('Import error:', (err as Error).message ?? err);
       alert('Error importing CSV');
     }
 

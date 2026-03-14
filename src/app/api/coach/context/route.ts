@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const context = await buildRepContext(userId, dealershipId);
     return NextResponse.json({ data: context, error: null });
   } catch (err) {
-    console.error('Coach context error:', err);
+    console.error('Coach context error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Failed to load rep context' },
       { status: 500 }

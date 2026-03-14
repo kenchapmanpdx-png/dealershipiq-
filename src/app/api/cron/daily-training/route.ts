@@ -182,7 +182,7 @@ export async function GET(request: NextRequest) {
               }
             }
           } catch (chainErr) {
-            console.error(`Chain error for ${user.id}:`, chainErr);
+            console.error(`Chain error for ${user.id}:`, (chainErr as Error).message ?? chainErr);
             question = getTrainingQuestion(selectTrainingMode());
             mode = selectTrainingMode();
           }
@@ -268,7 +268,7 @@ export async function GET(request: NextRequest) {
         sent++;
         await new Promise((r) => setTimeout(r, 50));
       } catch (err) {
-        console.error(`Failed to send training to ${user.id}:`, err);
+        console.error(`Failed to send training to ${user.id}:`, (err as Error).message ?? err);
         errors++;
       }
     }

@@ -36,7 +36,7 @@ export default function SessionsPage() {
         setData(await res.json());
       }
     } catch (err) {
-      console.error('Failed to fetch sessions:', err);
+      console.error('Failed to fetch sessions:', (err as Error).message ?? err);
     }
     setLoading(false);
   }, [days]);

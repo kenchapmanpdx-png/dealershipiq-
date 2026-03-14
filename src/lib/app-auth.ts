@@ -44,7 +44,7 @@ export function verifyAppToken(token: string): {
       language: payload.language,
     };
   } catch (err) {
-    console.error('Failed to verify app token:', err);
+    console.error('Failed to verify app token:', (err as Error).message ?? err);
     return null;
   }
 }

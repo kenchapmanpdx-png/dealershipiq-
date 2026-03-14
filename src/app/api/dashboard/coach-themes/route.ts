@@ -46,7 +46,7 @@ export async function GET() {
       .gte('created_at', sevenDaysAgo.toISOString());
 
     if (fetchError) {
-      console.error('Coach themes query error:', fetchError);
+      console.error('Coach themes query error:', (fetchError as Error).message ?? fetchError);
       return NextResponse.json({ data: null, error: 'Query failed' }, { status: 500 });
     }
 
@@ -107,7 +107,7 @@ export async function GET() {
       error: null,
     });
   } catch (err) {
-    console.error('Coach themes error:', err);
+    console.error('Coach themes error:', (err as Error).message ?? err);
     return NextResponse.json({ data: null, error: 'Internal error' }, { status: 500 });
   }
 }

@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       processedCount: dealerships.length,
     });
   } catch (error) {
-    console.error('Dunning check error:', error);
+    console.error('Dunning check error:', (error as Error).message ?? error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

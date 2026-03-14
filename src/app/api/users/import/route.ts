@@ -370,7 +370,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (err) {
-    console.error('POST /api/users/import error:', err);
+    console.error('POST /api/users/import error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

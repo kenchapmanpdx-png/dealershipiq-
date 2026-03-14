@@ -49,7 +49,7 @@ export default async function LeaderboardPage({
     .order('created_at', { ascending: false });
 
   if (resultsError) {
-    console.error('Failed to fetch leaderboard:', resultsError);
+    console.error('Failed to fetch leaderboard:', (resultsError as Error).message ?? resultsError);
     notFound();
   }
 

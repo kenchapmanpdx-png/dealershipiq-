@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       return await startNewSession(userId, dealershipId, body.door, body.message);
     }
   } catch (err) {
-    console.error('Coach session error:', err);
+    console.error('Coach session error:', (err as Error).message ?? err);
     return NextResponse.json(
       { data: null, error: 'Internal server error' },
       { status: 500 }
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: { sessions: formatted }, error: null });
   } catch (err) {
-    console.error('Coach session list error:', err);
+    console.error('Coach session list error:', (err as Error).message ?? err);
     return NextResponse.json({ data: null, error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -201,7 +201,7 @@ async function startNewSession(
     .single();
 
   if (insertError || !session) {
-    console.error('Failed to create coach session:', insertError);
+    console.error('Failed to create coach session:', (insertError as Error).message ?? insertError);
     return NextResponse.json(
       { data: null, error: 'Failed to create session' },
       { status: 500 }
@@ -464,7 +464,7 @@ async function generateCoachResponse(
         classification: null,
       };
     }
-    console.error('GPT-4o coach error:', err);
+    console.error('GPT-4o coach error:', (err as Error).message ?? err);
     return null;
   }
 }
@@ -565,7 +565,7 @@ async function closeStaleSessionsForUser(userId: string): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('Error closing stale sessions:', err);
+    console.error('Error closing stale sessions:', (err as Error).message ?? err);
   }
 }
 
@@ -632,7 +632,7 @@ async function checkRateLimit(userId: string): Promise<boolean> {
 
     return userMessageCount >= MAX_MESSAGES_PER_HOUR;
   } catch (err) {
-    console.error('[Coach] Rate limit check error:', err);
+    console.error('[Coach] Rate limit check error:', (err as Error).message ?? err);
     return false; // Fail-open
   }
 }

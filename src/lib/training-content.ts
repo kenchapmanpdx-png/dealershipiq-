@@ -291,7 +291,7 @@ export async function selectTrainingContent(
       vehiclePrompt = formatVehiclePrompt(vehicleCtx);
     }
   } catch (err) {
-    console.error('Vehicle context fetch failed (non-blocking):', err);
+    console.error('Vehicle context fetch failed (non-blocking):', (err as Error).message ?? err);
     // Graceful degradation — proceed without vehicle data
   }
 

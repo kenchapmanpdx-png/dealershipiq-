@@ -81,7 +81,7 @@ export async function checkAiGradingLimit(dealershipId: string): Promise<RateLim
     const result = await limiter.limit(dealershipId);
     return { success: result.success, remaining: result.remaining, reset: result.reset };
   } catch (err) {
-    console.error('Rate limit check failed:', err);
+    console.error('Rate limit check failed:', (err as Error).message ?? err);
     return PASS_THROUGH;
   }
 }
@@ -104,7 +104,7 @@ export async function checkSmsSendLimit(): Promise<RateLimitResult> {
     const result = await limiter.limit('global');
     return { success: result.success, remaining: result.remaining, reset: result.reset };
   } catch (err) {
-    console.error('SMS rate limit check failed:', err);
+    console.error('SMS rate limit check failed:', (err as Error).message ?? err);
     return PASS_THROUGH;
   }
 }

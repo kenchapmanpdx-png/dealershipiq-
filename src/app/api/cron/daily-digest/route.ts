@@ -203,11 +203,11 @@ export async function GET(request: NextRequest) {
           });
           microInsightsSent++;
         } catch (err) {
-          console.error(`Micro-insight error for user ${userId}:`, err);
+          console.error(`Micro-insight error for user ${userId}:`, (err as Error).message ?? err);
         }
       }
     } catch (err) {
-      console.error(`Micro-insight error for dealership ${dealership.id}:`, err);
+      console.error(`Micro-insight error for dealership ${dealership.id}:`, (err as Error).message ?? err);
     }
   }
 
@@ -315,7 +315,7 @@ async function generateAndSendMorningScript(
       }
     }
   } catch (err) {
-    console.error(`Morning script generation failed for ${dealershipId}:`, err);
+    console.error(`Morning script generation failed for ${dealershipId}:`, (err as Error).message ?? err);
     errs++;
   }
 

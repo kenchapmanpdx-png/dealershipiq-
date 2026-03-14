@@ -78,7 +78,7 @@ export async function GET(
       .eq('status', 'active');
 
     if (usersError) {
-      console.error('Failed to fetch users:', usersError);
+      console.error('Failed to fetch users:', (usersError as Error).message ?? usersError);
       return NextResponse.json(
         { error: 'Failed to fetch leaderboard' },
         { status: 500 }
@@ -138,7 +138,7 @@ export async function GET(
 
     return NextResponse.json(response);
   } catch (err) {
-    console.error('GET /api/leaderboard/[slug] error:', err);
+    console.error('GET /api/leaderboard/[slug] error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -96,7 +96,7 @@ export async function getBenchmark(
       brand: brandLabel,
     };
   } catch (err) {
-    console.error('Benchmark query failed:', err);
+    console.error('Benchmark query failed:', (err as Error).message ?? err);
     return null;
   }
 }

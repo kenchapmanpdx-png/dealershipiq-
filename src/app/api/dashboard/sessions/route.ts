@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false });
 
     if (resultsError) {
-      console.error('Failed to fetch sessions:', resultsError);
+      console.error('Failed to fetch sessions:', (resultsError as Error).message ?? resultsError);
       return NextResponse.json(
         { error: 'Failed to fetch sessions' },
         { status: 500 }
@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ sessions, days });
   } catch (err) {
-    console.error('GET /api/dashboard/sessions error:', err);
+    console.error('GET /api/dashboard/sessions error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

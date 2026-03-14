@@ -283,7 +283,7 @@ export async function tryLockUser(phone: string): Promise<boolean> {
   });
 
   if (error) {
-    console.error('Advisory lock error:', error);
+    console.error('Advisory lock error:', (error as Error).message ?? error);
     return false;
   }
   return data === true;

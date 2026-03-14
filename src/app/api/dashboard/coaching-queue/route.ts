@@ -70,7 +70,7 @@ export async function GET() {
       .order('created_at', { ascending: false });
 
     if (resultsError) {
-      console.error('Failed to fetch coaching queue:', resultsError);
+      console.error('Failed to fetch coaching queue:', (resultsError as Error).message ?? resultsError);
       return NextResponse.json(
         { error: 'Failed to fetch coaching queue' },
         { status: 500 }
@@ -115,7 +115,7 @@ export async function GET() {
 
     return NextResponse.json({ queue: coachingQueue });
   } catch (err) {
-    console.error('GET /api/dashboard/coaching-queue error:', err);
+    console.error('GET /api/dashboard/coaching-queue error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

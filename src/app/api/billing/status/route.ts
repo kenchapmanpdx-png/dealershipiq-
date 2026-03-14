@@ -81,7 +81,7 @@ export async function GET() {
 
     return NextResponse.json({ ...billingState, stripe: stripeStatus });
   } catch (error) {
-    console.error('Status error:', error);
+    console.error('Status error:', (error as Error).message ?? error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

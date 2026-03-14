@@ -39,7 +39,7 @@ export default function CoachingPage() {
         setData(await res.json());
       }
     } catch (err) {
-      console.error('Failed to fetch coaching queue:', err);
+      console.error('Failed to fetch coaching queue:', (err as Error).message ?? err);
     }
     setLoading(false);
   }, []);
@@ -68,7 +68,7 @@ export default function CoachingPage() {
         await fetchData();
       }
     } catch (err) {
-      console.error('Failed to send encouragement:', err);
+      console.error('Failed to send encouragement:', (err as Error).message ?? err);
     } finally {
       setSendingEncouragement(null);
     }

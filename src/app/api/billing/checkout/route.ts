@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         );
       }
-      console.error('Auth user creation failed:', authError);
+      console.error('Auth user creation failed:', (authError as Error).message ?? authError);
       return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
     }
 
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (dealershipError || !dealership) {
-      console.error('Dealership creation failed:', dealershipError);
+      console.error('Dealership creation failed:', (dealershipError as Error).message ?? dealershipError);
       await serviceClient.auth.admin.deleteUser(userId);
       return NextResponse.json({ error: 'Failed to create dealership' }, { status: 500 });
     }
@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
-    console.error('Checkout error:', error);
+    console.error('Checkout error:', (error as Error).message ?? error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

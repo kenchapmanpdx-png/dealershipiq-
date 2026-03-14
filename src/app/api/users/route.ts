@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (createError) {
-      console.error('Failed to create user:', createError);
+      console.error('Failed to create user:', (createError as Error).message ?? createError);
       return NextResponse.json(
         { error: 'Failed to create user' },
         { status: 500 }
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
       });
 
     if (memberError) {
-      console.error('Failed to add dealership membership:', memberError);
+      console.error('Failed to add dealership membership:', (memberError as Error).message ?? memberError);
       // Rollback user creation
       await serviceClient.from('users').delete().eq('id', newUser.id);
       return NextResponse.json(
@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response, { status: 201 });
   } catch (err) {
-    console.error('POST /api/users error:', err);
+    console.error('POST /api/users error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

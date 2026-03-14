@@ -75,7 +75,7 @@ export async function getShoutout(
       score: scorePercent,
     };
   } catch (err) {
-    console.error('Shoutout query failed:', err);
+    console.error('Shoutout query failed:', (err as Error).message ?? err);
     return null;
   }
 }
@@ -153,7 +153,7 @@ export async function getTeamGap(
 
     return null;
   } catch (err) {
-    console.error('Team gap query failed:', err);
+    console.error('Team gap query failed:', (err as Error).message ?? err);
     return null;
   }
 }
@@ -272,7 +272,7 @@ export async function getCoachingFocus(
 
     return null;
   } catch (err) {
-    console.error('Coaching focus query failed:', err);
+    console.error('Coaching focus query failed:', (err as Error).message ?? err);
     return null;
   }
 }
@@ -413,7 +413,7 @@ export async function getAtRiskReps(
     userSignals.forEach((v) => result.push(v));
     return result;
   } catch (err) {
-    console.error('At-risk query failed:', err);
+    console.error('At-risk query failed:', (err as Error).message ?? err);
     return [];
   }
 }
@@ -513,7 +513,7 @@ export async function getTeamNumbers(
       delta: thisWeekRate - lastWeekRate,
     };
   } catch (err) {
-    console.error('Team numbers query failed:', err);
+    console.error('Team numbers query failed:', (err as Error).message ?? err);
     return { completion_rate: 0, prior_week_rate: 0, delta: 0 };
   }
 }

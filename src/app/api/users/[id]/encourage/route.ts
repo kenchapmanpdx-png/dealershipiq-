@@ -120,7 +120,7 @@ export async function PUT(
       recipient: targetUser.phone,
     });
   } catch (err) {
-    console.error('PUT /api/users/[id]/encourage error:', err);
+    console.error('PUT /api/users/[id]/encourage error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Failed to send encouragement message' },
       { status: 500 }

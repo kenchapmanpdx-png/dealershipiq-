@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save brands' }, { status: 500 });
     }
   } catch (err) {
-    console.error('Brands save error:', err);
+    console.error('Brands save error:', (err as Error).message ?? err);
     return NextResponse.json({ error: 'Failed to save brands' }, { status: 500 });
   }
 

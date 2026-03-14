@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
       .in('id', body.user_ids);
 
     if (usersError) {
-      console.error('Failed to fetch users:', usersError);
+      console.error('Failed to fetch users:', (usersError as Error).message ?? usersError);
       return NextResponse.json(
         { error: 'Failed to fetch users' },
         { status: 500 }
@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
         // Stagger: 50ms between sends
         await new Promise((r) => setTimeout(r, 50));
       } catch (err) {
-        console.error(`Failed to push training to ${targetUser.id}:`, err);
+        console.error(`Failed to push training to ${targetUser.id}:`, (err as Error).message ?? err);
         result.failed++;
         result.users.push({
           user_id: targetUser.id,
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (err) {
-    console.error('POST /api/push/training error:', err);
+    console.error('POST /api/push/training error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -184,7 +184,7 @@ Grade the salesperson's overall performance across all exchanges.`;
         return { ...gradingResult, model, promptVersionId: opts.promptVersionId };
       }
     } catch (err) {
-      console.error(`[AI-GRADING] ${model} failed:`, err);
+      console.error(`[AI-GRADING] ${model} failed:`, (err as Error).message ?? err);
       continue;
     }
   }
@@ -517,7 +517,7 @@ export async function getOpenAICompletion(
 
     return content;
   } catch (error) {
-    console.error(`AI completion failed (${logLabel}):`, error);
+    console.error(`AI completion failed (${logLabel}):`, (error as Error).message ?? error);
     throw error;
   }
 }

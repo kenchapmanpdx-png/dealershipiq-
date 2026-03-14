@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     .select('id, name');
 
   if (error) {
-    console.error('Failed to fetch dealerships:', error);
+    console.error('Failed to fetch dealerships:', (error as Error).message ?? error);
     return NextResponse.json(
       { error: 'Failed to fetch dealerships' },
       { status: 500 }
@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
   try {
     dunningResults = await processDunning();
   } catch (err) {
-    console.error('Dunning processing error:', err);
+    console.error('Dunning processing error:', (err as Error).message ?? err);
   }
 
   return NextResponse.json({

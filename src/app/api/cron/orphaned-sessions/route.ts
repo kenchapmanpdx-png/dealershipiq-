@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
         `Orphaned session ${session.id} (${session.status}) for user ${session.user_id} — marked abandoned`
       );
     } catch (err) {
-      console.error(`Failed to clean orphaned session ${session.id}:`, err);
+      console.error(`Failed to clean orphaned session ${session.id}:`, (err as Error).message ?? err);
     }
   }
 
@@ -60,12 +60,12 @@ export async function GET(request: NextRequest) {
             if (expired) chainsExpired++;
           }
         } catch (err) {
-          console.error(`Failed to process chain ${chain.id}:`, err);
+          console.error(`Failed to process chain ${chain.id}:`, (err as Error).message ?? err);
         }
       }
     }
   } catch (err) {
-    console.error('Scenario chain expiry error:', err);
+    console.error('Scenario chain expiry error:', (err as Error).message ?? err);
   }
 
   // --- Phase 6D: Expire peer challenges ---
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
   try {
     peerExpiry = await expirePeerChallenges();
   } catch (err) {
-    console.error('Peer challenge expiry error:', err);
+    console.error('Peer challenge expiry error:', (err as Error).message ?? err);
   }
 
   return NextResponse.json({

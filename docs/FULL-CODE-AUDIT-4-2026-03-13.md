@@ -80,6 +80,26 @@ Branch: `audit/v4-fresh-pass` (merged batch1 + batch2 + batch3 fixes)
 - V4-M-006: C-003 comments
 
 ### Batch 1: Deferred / Documentation
-- V4-L-001, V4-L-002: Note as future cleanup (SQL migration needed)
-- V4-L-003: Note vitest as Ken action item
-- V4-M-001: Error object sanitization (log .message only)
+- V4-M-001: Error object sanitization (log .message only) — 43 files, 62 locations FIXED
+- V4-L-001, V4-L-002: DEFERRED — RLS policy consistency requires SQL migration
+- V4-L-003: DEFERRED — vitest setup is Ken action item (no test infrastructure exists)
+
+## Resolution Status
+
+| ID | Status | Branch |
+|----|--------|--------|
+| V4-C-001 | FIXED | fix/audit-v4-batch3 |
+| V4-C-002 | FIXED | fix/audit-v4-batch3 |
+| V4-H-001 | FIXED | fix/audit-v4-batch2 |
+| V4-H-002 | FIXED | fix/audit-v4-batch2 |
+| V4-H-003 | FIXED | fix/audit-v4-batch2 |
+| V4-H-004 | DOCUMENTED (already guarded) | fix/audit-v4-batch2 |
+| V4-M-001 | FIXED (43 files) | fix/audit-v4-batch1 |
+| V4-M-002 | FIXED | fix/audit-v4-batch2 |
+| V4-M-003 | FIXED | fix/audit-v4-batch2 |
+| V4-M-004 | FIXED | fix/audit-v4-batch2 |
+| V4-M-005 | FIXED | fix/audit-v4-batch2 |
+| V4-M-006 | FIXED | fix/audit-v4-batch2 |
+| V4-L-001 | DEFERRED (SQL migration) | — |
+| V4-L-002 | DEFERRED (SQL migration) | — |
+| V4-L-003 | DEFERRED (Ken action) | — |

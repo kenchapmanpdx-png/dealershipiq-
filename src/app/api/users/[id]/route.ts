@@ -56,7 +56,7 @@ export async function DELETE(
       .eq('id', id);
 
     if (updateError) {
-      console.error('Failed to deactivate user:', updateError);
+      console.error('Failed to deactivate user:', (updateError as Error).message ?? updateError);
       return NextResponse.json(
         { error: 'Failed to deactivate user' },
         { status: 500 }
@@ -65,7 +65,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error('DELETE /api/users/[id] error:', err);
+    console.error('DELETE /api/users/[id] error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

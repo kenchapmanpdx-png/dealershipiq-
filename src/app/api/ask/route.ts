@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError) {
-      console.error('Failed to log query:', insertError);
+      console.error('Failed to log query:', (insertError as Error).message ?? insertError);
       return NextResponse.json(
         { error: 'Failed to process question' },
         { status: 500 }
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (err) {
-    console.error('POST /api/ask error:', err);
+    console.error('POST /api/ask error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

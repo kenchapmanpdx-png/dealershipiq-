@@ -108,7 +108,7 @@ export default function DashboardPage() {
 
       setLoading(false);
     } catch (err) {
-      console.error('Failed to fetch dashboard:', err);
+      console.error('Failed to fetch dashboard:', (err as Error).message ?? err);
       setError('An error occurred');
       setLoading(false);
     }

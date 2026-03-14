@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
         resultsSent++;
         await new Promise(r => setTimeout(r, 50));
       } catch (err) {
-        console.error(`Failed to send challenge results to ${p.id}:`, err);
+        console.error(`Failed to send challenge results to ${p.id}:`, (err as Error).message ?? err);
       }
     }
 

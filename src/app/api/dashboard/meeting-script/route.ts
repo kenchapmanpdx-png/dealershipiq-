@@ -78,7 +78,7 @@ export async function GET() {
     };
     return NextResponse.json(response);
   } catch (err) {
-    console.error('Meeting script API error:', err);
+    console.error('Meeting script API error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal error' },
       { status: 500 }

@@ -64,7 +64,7 @@ export async function GET() {
       .eq('dealership_memberships.dealership_id', dealershipId);
 
     if (usersError) {
-      console.error('Failed to fetch team members:', usersError);
+      console.error('Failed to fetch team members:', (usersError as Error).message ?? usersError);
       return NextResponse.json(
         { error: 'Failed to fetch team members' },
         { status: 500 }
@@ -99,7 +99,7 @@ export async function GET() {
 
     return NextResponse.json({ team });
   } catch (err) {
-    console.error('GET /api/dashboard/team error:', err);
+    console.error('GET /api/dashboard/team error:', (err as Error).message ?? err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

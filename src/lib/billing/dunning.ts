@@ -153,7 +153,7 @@ export async function sendDunningEmail(params: {
 
     return true;
   } catch (err) {
-    console.error('Dunning email error:', err);
+    console.error('Dunning email error:', (err as Error).message ?? err);
     return false;
   }
 }
@@ -246,7 +246,7 @@ export async function processDunning(): Promise<{
           .eq('id', dealership.id as string);
       }
     } catch (err) {
-      console.error(`Dunning error for ${dealership.id}:`, err);
+      console.error(`Dunning error for ${dealership.id}:`, (err as Error).message ?? err);
       errors++;
     }
   }

@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   try {
     event = verifyWebhookSignature(body, signature, webhookSecret) as Stripe.Event;
   } catch (err) {
-    console.error('Stripe webhook signature verification failed:', err);
+    console.error('Stripe webhook signature verification failed:', (err as Error).message ?? err);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, skipped: true });
     }
   } catch (idempErr) {
-    console.error('Stripe idempotency check exception:', idempErr);
+    console.error('Stripe idempotency check exception:', (idempErr as Error).message ?? idempErr);
     return NextResponse.json({ error: 'Idempotency check failed' }, { status: 500 });
   }
 
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     await recordEvent(event);
     return NextResponse.json({ received: true });
   } catch (err) {
-    console.error(`Stripe webhook handler error for ${event.type}:`, err);
+    console.error(`Stripe webhook handler error for ${event.type}:`, (err as Error).message ?? err);
     await recordEvent(event, err);
     return NextResponse.json({ error: 'Handler error' }, { status: 500 });
   }
@@ -345,6 +345,6 @@ async function recordEvent(event: Stripe.Event, error?: unknown) {
       },
     });
   } catch (err) {
-    console.error('Failed to record billing event:', err);
+    console.error('Failed to record billing event:', (err as Error).message ?? err);
   }
 }

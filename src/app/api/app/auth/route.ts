@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     recordAuthAttempt(normalized, true);
     return await createSessionResponse(user, dealership_slug);
   } catch (err) {
-    console.error('Auth error:', err);
+    console.error('Auth error:', (err as Error).message ?? err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

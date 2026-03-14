@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
       await handleInboundMessage(payload as SinchInboundMessage);
     }
   } catch (err) {
-    console.error('Webhook processing error:', err);
+    console.error('Webhook processing error:', (err as Error).message ?? err);
   }
 
   return NextResponse.json({ status: 'ok' });
@@ -293,7 +293,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
           messageBody: scheduleResult.message ?? 'Schedule updated.',
         });
       } catch (scheduleErr) {
-        console.error('Schedule update failed:', scheduleErr);
+        console.error('Schedule update failed:', (scheduleErr as Error).message ?? scheduleErr);
         await sendSms(phone, 'Could not update schedule. Please try again.');
       }
       return;
@@ -392,7 +392,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       await handleMidExchange(session, user, phone, text, mode, stepIndex);
     }
   } catch (err) {
-    console.error('State machine error:', err);
+    console.error('State machine error:', (err as Error).message ?? err);
   }
   // Note (H-012): Advisory lock is transaction-scoped and auto-released by connection pool
 }
@@ -480,7 +480,7 @@ async function handleTrainKeyword(
       metadata: { type: 'manager_scenario_preview', scenarioId },
     });
   } catch (err) {
-    console.error('TRAIN: scenario generation failed:', err);
+    console.error('TRAIN: scenario generation failed:', (err as Error).message ?? err);
     await sendSms(phone, 'Could not generate that scenario. Try again with a clearer description.');
     await insertTranscriptLog({
       userId: user.id,
@@ -538,7 +538,7 @@ async function handleNowKeyword(
         pushed++;
         await new Promise(r => setTimeout(r, 50));
       } catch (repErr) {
-        console.error(`NOW push failed for ${rep.id}:`, repErr);
+        console.error(`NOW push failed for ${rep.id}:`, (repErr as Error).message ?? repErr);
       }
     }
 
@@ -552,7 +552,7 @@ async function handleNowKeyword(
     });
     return true;
   } catch (err) {
-    console.error('NOW push failed:', err);
+    console.error('NOW push failed:', (err as Error).message ?? err);
     await sendSms(phone, 'Something went wrong pushing that scenario. Try again.');
     return true;
   }
@@ -660,7 +660,7 @@ async function handleChallengeKeyword(
       messageBody: disambMsg,
     });
   } catch (err) {
-    console.error('CHALLENGE handler error:', err);
+    console.error('CHALLENGE handler error:', (err as Error).message ?? err);
     await sendSms(phone, 'Something went wrong. Try again.');
   }
 }
@@ -718,7 +718,7 @@ async function handleDisambiguationReply(
     }
     return true;
   } catch (err) {
-    console.error('Disambiguation resolve error:', err);
+    console.error('Disambiguation resolve error:', (err as Error).message ?? err);
     await sendSms(phone, 'Something went wrong. Try CHALLENGE again.');
     return true;
   }
@@ -803,7 +803,7 @@ async function handleAcceptKeyword(
 
     return true;
   } catch (err) {
-    console.error('ACCEPT handler error:', err);
+    console.error('ACCEPT handler error:', (err as Error).message ?? err);
     await sendSms(phone, 'Something went wrong accepting the challenge. Try again.');
     return true;
   }
@@ -849,7 +849,7 @@ async function handlePassKeyword(
 
     return true;
   } catch (err) {
-    console.error('PASS handler error:', err);
+    console.error('PASS handler error:', (err as Error).message ?? err);
     return true;
   }
 }
@@ -930,7 +930,7 @@ async function handleFinalExchange(
           averageScore
         );
       } catch (weightErr) {
-        console.error('Priority vector update failed:', weightErr);
+        console.error('Priority vector update failed:', (weightErr as Error).message ?? weightErr);
       }
     }
 
@@ -990,7 +990,7 @@ async function handleFinalExchange(
           }
         }
       } catch (chainErr) {
-        console.error('Chain step recording failed:', chainErr);
+        console.error('Chain step recording failed:', (chainErr as Error).message ?? chainErr);
       }
     }
 
@@ -1069,11 +1069,11 @@ async function handleFinalExchange(
           }
         }
       } catch (peerErr) {
-        console.error('Peer challenge completion check failed:', peerErr);
+        console.error('Peer challenge completion check failed:', (peerErr as Error).message ?? peerErr);
       }
     }
   } catch (gradingErr) {
-    console.error('AI grading failed:', gradingErr);
+    console.error('AI grading failed:', (gradingErr as Error).message ?? gradingErr);
     await updateSessionStatus(session.id, 'error');
 
     const errorMsg = ERROR_SMS.ai_timeout;
@@ -1137,7 +1137,7 @@ async function handleMidExchange(
 
     await updateSessionStep(session.id, stepIndex + 1);
   } catch (err) {
-    console.error('Follow-up generation failed:', err);
+    console.error('Follow-up generation failed:', (err as Error).message ?? err);
     await updateSessionStatus(session.id, 'error');
     const errorMsg = ERROR_SMS.ai_timeout;
     await sendSms(phone, errorMsg);
@@ -1286,7 +1286,7 @@ async function handleDetailsKeyword(
       metadata: { type: 'morning_script_details' },
     });
   } catch (err) {
-    console.error('DETAILS keyword handler error:', err);
+    console.error('DETAILS keyword handler error:', (err as Error).message ?? err);
   }
 }
 
