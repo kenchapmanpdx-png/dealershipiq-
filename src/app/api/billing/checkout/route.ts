@@ -40,6 +40,8 @@ export async function POST(request: NextRequest) {
       email,
       password,
       email_confirm: true,
+      // C-007: user_metadata used ONLY for display name (profile UI).
+      // Auth decisions use app_metadata set below (line ~113). Never trust user_metadata for auth.
       user_metadata: {
         full_name: managerName,
       },
