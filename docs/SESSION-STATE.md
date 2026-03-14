@@ -2,7 +2,7 @@
 
 ## Current Phase
 Phase: Production hardening + feature iteration
-Status: Phases 1-6 deployed. Audit 1 complete — all findings remediated, 6 migrations applied to Supabase (51 RLS policies active). Post-remediation cleanup done. Audit 2 (Core SMS Flows) complete — 0 critical, 3 high, 6 medium findings.
+Status: Phases 1-6 deployed. Audit 1 + Audit 2 complete with remediation. 8 migrations applied to Supabase (51 RLS policies active). Advisory lock fixed, SMS kill switch implemented.
 
 ## What's Built
 
@@ -1133,8 +1133,22 @@ All 5 migrations applied successfully via SQL Editor:
 
 **Full report:** `docs/AUDIT-2-CORE-FLOWS.md`
 
+### Audit 2 Remediation (2026-03-15)
+
+**6 fixes applied.** Commit `4cee9df`. Quality gates: tsc clean, lint clean, 17/17 tests, build passes.
+
+| Fix | Finding | Change |
+|-----|---------|--------|
+| 1 | F1-H-001 (HIGH) | `try_lock_user` SQL: `pg_try_advisory_xact_lock` → `pg_try_advisory_lock` (session-scoped). Added `unlock_user` function + `unlockUser()` in finally block. Migration `20260315000002`. |
+| 2 | F4-H-001 (HIGH) | `ENABLE_SMS_SEND=false` gate added to top of `sendSms()`. SMS kill switch now functional. |
+| 3 | F1-M-001 (MEDIUM) | Delivery report direction: `'outbound'` → `'delivery_report'`. CHECK constraint updated. Migration `20260315000003`. |
+| 4 | CF-M-001 (MEDIUM) | `isOptedOut()`: `createClient()` per call → shared `serviceClient` import. |
+| 5 | F3-M-001 (MEDIUM) | Bulk CSV import: 500-row cap added. Returns 400 if exceeded. |
+| 6 | F1-L-002 (LOW) | Template fallback feedback: "count this tomorrow" → accurate placeholder score text. ERROR_SMS updated. |
+
+**Accepted for pilot (no fix):** F2-M-001 (timezone overcounting), F2-M-002 (UTC dedup), F4-M-001 (Sinch sync delay), F1-L-001 (HMAC audit trail), F2-L-001 (hardcoded questions), F3-L-001 (consent retry), CF-L-001 (global opt-out).
+
 ### What's Next
-- Audit 2 remediation (fix high/medium findings from AUDIT-2-CORE-FLOWS.md)
 - Audit 3/4: Dashboard + Coach Mode flows
 - Audit 4/4: Billing + Cron flows
 - Sentry/Axiom observability setup
