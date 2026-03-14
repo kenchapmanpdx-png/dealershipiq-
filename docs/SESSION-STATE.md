@@ -705,6 +705,29 @@ Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
 
 **Remaining open:** 11 MEDIUM + 9 LOW + C-003 (deferred). H-011 RPC function needs to be created in Supabase SQL Editor (Ken manual step).
 
+### Audit #3 — Tier 3+4 Fixes Applied (03/13/2026, commit a1db0d9)
+
+**11 MEDIUM + LOW fixes across 11 files:**
+- M-014: Peer challenge SMS word-boundary truncation
+- M-015: Log unknown coaching prompt domains
+- M-017: Onboarding brands single source of truth (no settings fallback)
+- M-018: PWA slug client-side validation (clear session on URL slug change)
+- M-019: Replace non-GSM-7 em-dash in sinch webhook SMS string
+- M-020: SMS dedup cache evicts oldest half (was fixed 1000)
+- M-021: Documented in-memory rate limit limitation (deferred to Upstash)
+- M-022: getActiveChain scoped to dealershipId for tenant isolation
+- L-015: In-memory rate limiting added to Ask IQ route
+- L-017: buildChainCompletionSMS guards empty scores (division by zero)
+- L-018: Stripe billing portal API call has 10s timeout
+- L-020: PWA token expiration checked client-side
+- L-021: Stripe portal URL validated before returning to client
+
+**False positives verified:** M-013 (coach division by zero — already guarded), M-023 (daily challenge division by zero — early return), L-019 (login/reset buttons — already disabled during loading), L-016 (Sinch dedup — addressed by M-020)
+
+**Deferred:** L-013 (coaching modal accessibility), L-014 (dashboard pagination) — frontend UX, not security/correctness. M-021 needs Upstash Redis.
+
+**tsc --noEmit:** PASSING
+
 ## What's Next
 1. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
 2. **C-003: Migrate 10 user-facing routes from serviceClient → RLS** (~12 hours)
@@ -712,11 +735,11 @@ Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
 4. **Ken manual steps for Phase 5:** Stripe product/price, env vars
 5. Sentry/Axiom observability (NR-002)
 6. Sinch production upgrade (trial expires 03/24/2026)
-7. Upstash Redis for production rate limiting
+7. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
 8. Integration tests (zero exist)
-9. Remaining Medium/Low findings (~9 hours)
+9. L-013 coaching modal accessibility, L-014 dashboard pagination
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
 - **Sinch Conversation API dashboard** — Platform pages broken. Use REST API.
-- **20 audit findings remaining** — 11 MEDIUM, 9 LOW. No deploy blockers.
+- **Audit findings status:** 5 CRITICAL fixed, 9 HIGH fixed, 8 MEDIUM fixed (3 deferred), 5 LOW fixed (2 deferred). C-003 deferred (~12 hours).
