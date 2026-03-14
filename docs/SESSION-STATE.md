@@ -754,17 +754,35 @@ See prior session for details. M-001 advisory lock, M-003 DB-backed rate limit, 
 ### Audit Batch 3 — Red Team Findings (03/12/2026, branch `fix/batch3-red-team-findings`)
 See prior session for details. RT-001 through RT-009.
 
+### Audit 3/4: Advanced Features (03/14/2026)
+
+**Scope:** 12 advanced flows (Flows 5-16). Document-only, no fixes applied.
+**Report:** `docs/AUDIT-3-ADVANCED.md`
+**Findings:** 2 CRITICAL, 3 HIGH, 9 MEDIUM, 5 LOW, 8 INFO
+
+**Critical findings:**
+- F11-C-001 + F11-C-001b: Entire dunning email pipeline broken — both Stripe webhook (day 1) and cron (day 3/14/21/30) query `users.dealership_id`, `users.role`, `users.email` — none of which exist on the users table. Zero dunning emails ever sent.
+- F12-C-001: Self-service signup completely broken — checkout route INSERT into users table includes nonexistent columns (`email`, `role`, `dealership_id`). Every signup attempt fails at user creation step.
+
+**High findings:**
+- F9-H-001: Coach Mode `closeSession()` missing dealership scope — multi-tenant risk
+- F11-H-001: Payment failed dunning path broken (subset of F11-C-001)
+- F12-H-001: Signup rollback doesn't clean up memberships/flags (orphaned rows)
+
+**Not implemented (logged and skipped):** Streaks, Rematch, Language Switching (SMS keyword), Trainee Mode Toggle, Model Hot Swap
+
 ## What's Next
-1. **Audit 3 Remediation** — 4 HIGH, 6 MEDIUM findings from AUDIT-3-DASHBOARD-COACH.md
-2. **Audit 4/4: Billing + Cron flows** — final audit pass
+1. **Audit 3/4 Remediation** — 2 CRITICAL, 3 HIGH from AUDIT-3-ADVANCED.md (signup + dunning broken)
+2. **Audit 3 Remediation (remaining)** — Dashboard/Coach items from AUDIT-3-DASHBOARD-COACH.md
 3. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
-4. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
-5. **Ken manual steps for Phase 5:** Stripe product/price, env vars
-6. Sentry/Axiom observability (NR-002)
-7. Sinch production upgrade (trial expires 03/24/2026)
-8. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
-9. Integration tests (zero exist)
-10. L-013 coaching modal accessibility, L-014 dashboard pagination
+4. **APP_TOKEN_SECRET in Vercel** — Must verify this env var exists in production (renamed from APP_AUTH_SECRET in commit 0acec24)
+5. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
+6. **Ken manual steps for Phase 5:** Stripe product/price, env vars
+7. Sentry/Axiom observability (NR-002)
+8. Sinch production upgrade (trial expires 03/24/2026)
+9. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
+10. Integration tests (zero exist)
+11. L-013 coaching modal accessibility, L-014 dashboard pagination
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
