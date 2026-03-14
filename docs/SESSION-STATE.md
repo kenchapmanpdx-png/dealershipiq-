@@ -728,9 +728,35 @@ Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
 
 **tsc --noEmit:** PASSING
 
+### Audit Batch 1 — C-003 serviceClient → RLS Migration (03/13/2026, commit c99fa0d)
+Branch: `fix/batch1-serviceclient-rls`
+
+**10 route files migrated from serviceClient to RLS-backed authenticated client:**
+- `users/route.ts` — opt-out check, user INSERT, membership INSERT → RLS. Cross-tenant phone check + rollback DELETE stay serviceClient.
+- `users/[id]/route.ts` — membership SELECT, user UPDATE → RLS. serviceClient import removed entirely.
+- `users/[id]/encourage/route.ts` — user+membership SELECT → RLS with `!inner` join. serviceClient import removed.
+- `users/import/route.ts` — membership+optout SELECT, user+membership INSERT → RLS. serviceClient import removed.
+- `onboarding/brands/route.ts` — dealership_brands UPSERT → RLS (FOR ALL policy). serviceClient import removed.
+- `onboarding/employees/route.ts` — user+membership INSERT → RLS. serviceClient import removed.
+- `push/training/route.ts` — user+membership SELECT → RLS with `!inner` join. serviceClient import removed.
+- `dashboard/meeting-script/route.ts` — meeting_scripts SELECT → RLS. Fully migrated, no serviceClient.
+- `dashboard/coach-themes/route.ts` — auth migrated to RLS. coach_sessions stays serviceClient (deny-all RLS).
+
+**Justified serviceClient retained (14 files):** webhooks (sms/sinch, stripe), crons (4), billing/checkout, admin/costs, app/auth (PWA HMAC), coach/session (deny-all RLS), leaderboard (public endpoint), ask (no INSERT policy on askiq_queries), users/route.ts (cross-tenant phone check).
+
+**Also fixed:** daily-digest unused import, layout.tsx hooks-order violation.
+
+**Quality gates:** tsc ✅, eslint ✅, next build ✅
+
+### Audit Batch 2 — Deferred Items (03/13/2026, branch `fix/batch2-deferred-items`)
+See prior session for details. M-001 advisory lock, M-003 DB-backed rate limit, M-010 modal accessibility, C-005 bypass logging.
+
+### Audit Batch 3 — Red Team Findings (03/12/2026, branch `fix/batch3-red-team-findings`)
+See prior session for details. RT-001 through RT-009.
+
 ## What's Next
-1. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
-2. **C-003: Migrate 10 user-facing routes from serviceClient → RLS** (~12 hours)
+1. **Merge 3 audit PRs** — batch3 → batch2 → batch1 (or all into main)
+2. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
 3. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
 4. **Ken manual steps for Phase 5:** Stripe product/price, env vars
 5. Sentry/Axiom observability (NR-002)
@@ -742,4 +768,4 @@ Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
 - **Sinch Conversation API dashboard** — Platform pages broken. Use REST API.
-- **Audit findings status:** 5 CRITICAL fixed, 9 HIGH fixed, 8 MEDIUM fixed (3 deferred), 5 LOW fixed (2 deferred). C-003 deferred (~12 hours).
+- **Audit findings status:** 5 CRITICAL fixed, 9 HIGH fixed, 8 MEDIUM fixed (3 deferred), 5 LOW fixed (2 deferred). C-003 COMPLETE (Batch 1).
