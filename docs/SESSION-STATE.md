@@ -871,6 +871,80 @@ cron/daily-training, cron/daily-digest, cron/challenge-results, cron/red-flag-ch
 - `npx tsc --noEmit` — PASS
 - `npx vitest run` — 2 files, 17 tests, all PASS
 
+### Supabase Applied — RLS Policies + H-011 RPC (2026-03-13)
+
+**C-003 RLS policies applied in Supabase SQL Editor:**
+- `coach_sessions_select_manager` — SELECT for authenticated managers, scoped to `get_dealership_id()` + `is_manager()`
+- `askiq_insert_authenticated` — INSERT for authenticated users, scoped to `get_dealership_id()`
+
+**H-011 `record_chain_step` RPC created:**
+- Function: `public.record_chain_step(p_chain_id uuid, p_step int, p_result jsonb) → boolean`
+- Language: plpgsql, SECURITY DEFINER
+- Atomic check-and-update: appends step result only if step number not already present
+- Returns true if chain is complete (step_results length >= total_steps)
+- GRANT EXECUTE to authenticated + service_role
+
+**Verification — 48 active RLS policies (pg_policies query output):**
+
+| Table | Policy | Cmd |
+|-------|--------|-----|
+| askiq_queries | askiq_insert_authenticated | INSERT |
+| askiq_queries | askiq_select | SELECT |
+| coach_sessions | coach_sessions_deny_anon | ALL |
+| coach_sessions | coach_sessions_select_manager | SELECT |
+| consent_records | consent_insert_manager | INSERT |
+| consent_records | consent_select_manager | SELECT |
+| conversation_sessions | sessions_select | SELECT |
+| custom_training_content | custom_training_dealership_isolation | SELECT |
+| custom_training_content | custom_training_insert_manager | INSERT |
+| custom_training_content | custom_training_update_manager | UPDATE |
+| daily_challenges | daily_challenges_dealership_isolation | SELECT |
+| daily_challenges | daily_challenges_insert_manager | INSERT |
+| daily_challenges | daily_challenges_update_manager | UPDATE |
+| dealership_brands | Managers manage own dealership brands | ALL |
+| dealership_brands | Managers see own dealership brands | SELECT |
+| dealership_memberships | memberships_delete_manager | DELETE |
+| dealership_memberships | memberships_insert_manager | INSERT |
+| dealership_memberships | memberships_select_own_dealership | SELECT |
+| dealership_memberships | memberships_update_manager | UPDATE |
+| dealerships | dealerships_select_member | SELECT |
+| dealerships | dealerships_update_manager | UPDATE |
+| employee_priority_vectors | priority_vectors_select | SELECT |
+| employee_schedules | schedules_manage_manager | ALL |
+| employee_schedules | schedules_select | SELECT |
+| feature_flags | feature_flags_manage_owner | ALL |
+| feature_flags | feature_flags_select | SELECT |
+| knowledge_gaps | gaps_manage_manager | UPDATE |
+| knowledge_gaps | gaps_select | SELECT |
+| leaderboard_entries | leaderboard_select | SELECT |
+| meeting_scripts | Managers see own meeting scripts | SELECT |
+| peer_challenges | peer_challenges_dealership_isolation | SELECT |
+| peer_challenges | peer_challenges_insert_own | INSERT |
+| peer_challenges | peer_challenges_update_participant | UPDATE |
+| prompt_versions | prompt_versions_select | SELECT |
+| red_flag_events | Managers see own dealership red flags | SELECT |
+| scenario_chains | scenario_chains_dealership_isolation | SELECT |
+| scenario_chains | scenario_chains_insert_own | INSERT |
+| scenario_chains | scenario_chains_update_own | UPDATE |
+| sms_delivery_log | delivery_log_select_manager | SELECT |
+| sms_opt_outs | opt_outs_select_manager | SELECT |
+| sms_transcript_log | transcript_select_manager | SELECT |
+| system_messages | system_messages_select | SELECT |
+| training_results | training_results_select | SELECT |
+| usage_tracking | usage_select_manager | SELECT |
+| users | users_insert_manager | INSERT |
+| users | users_select_own | SELECT |
+| users | users_update_manager | UPDATE |
+| users | users_update_own | UPDATE |
+
+**Function verification:**
+```
+routine_name: record_chain_step
+routine_type: FUNCTION
+return_type: boolean
+security_type: DEFINER
+```
+
 ### What's Next
 - Push `fix/remaining-remediation` branch
 - Merge to main
