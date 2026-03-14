@@ -95,13 +95,13 @@ export async function sendSms(
   }
 
   // Sanitize for GSM-7 before sending
-  const sanitized = sanitizeGsm7(text);
+  let sanitized = sanitizeGsm7(text);
 
-  // RT-005: Log warning if single-segment SMS exceeds 160 chars after interpolation.
-  // Multi-segment concatenated SMS is fine (up to 320 chars for 2 segments),
-  // but single-segment messages >160 chars split unexpectedly.
+  // V4-C-001/RT-005: Hard enforcement — truncate if >320 chars (2-segment max).
+  // Log warning for multi-segment (>160 chars).
   if (sanitized.length > 320) {
-    console.error(`[SMS] Message exceeds 2-segment limit (${sanitized.length} chars) to ***${phone.slice(-4)}`);
+    console.error(`[SMS] Truncating message from ${sanitized.length} to 317 chars for ***${phone.slice(-4)}`);
+    sanitized = sanitized.slice(0, 317) + '...';
   } else if (sanitized.length > 160) {
     console.warn(`[SMS] Multi-segment message (${sanitized.length} chars) to ***${phone.slice(-4)}`);
   }

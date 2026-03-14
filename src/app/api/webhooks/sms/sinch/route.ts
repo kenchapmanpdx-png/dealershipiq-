@@ -1170,7 +1170,9 @@ async function handlePendingConsent(
       consentSource: 'keyword_consent',
     });
 
-    const welcomeMsg = `Welcome to DealershipIQ training at ${user.dealershipName}! You'll receive daily practice questions. Reply STOP anytime to opt out. Msg&data rates apply.`;
+    // V4-C-001: Truncate dealership name to keep ≤160 chars. Template = ~130 chars without name.
+    const dName = (user.dealershipName ?? '').slice(0, 30);
+    const welcomeMsg = `Welcome to DealershipIQ at ${dName}! Daily practice questions via text. Reply STOP anytime to opt out. Msg&data rates apply.`;
     await sendSms(phone, welcomeMsg);
     await insertTranscriptLog({
       userId: user.id,
@@ -1303,7 +1305,9 @@ async function handleResubscribe(
     consentSource: 'keyword_start',
   });
 
-  const welcomeMsg = `Welcome back to DealershipIQ training at ${user.dealershipName}! You'll receive daily training questions. Reply STOP to opt out.`;
+  // V4-C-002: Truncate dealership name to keep ≤160 chars.
+  const reName = (user.dealershipName ?? '').slice(0, 30);
+  const welcomeMsg = `Welcome back to DealershipIQ at ${reName}! Daily training questions via text. Reply STOP to opt out.`;
   await sendSms(phone, welcomeMsg);
   await insertTranscriptLog({
     userId: user.id,
