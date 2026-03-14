@@ -266,7 +266,7 @@ Generate the customer's next message. Sound like a real person texting. 1-3 sent
   // For quiz: generate the next question
   if (opts.mode === 'quiz') {
     const questionNum = opts.stepIndex + 2; // step 0 = answered Q1, now sending Q2
-    const prompt = `This is a sales training quiz. The salesperson just answered question ${opts.stepIndex + 1}.
+    const prompt = `This is a training quiz. The employee just answered question ${opts.stepIndex + 1}.
 
 Previous conversation:
 ${conversation}

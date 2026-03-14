@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
     // Send consent SMS (non-blocking — don't fail the add if SMS fails)
     try {
       const dealershipName = await getDealershipName(dealershipId);
-      const consentMsg = `${dealershipName} uses DealershipIQ for sales training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
+      const consentMsg = `${dealershipName} uses DealershipIQ for training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
       const smsResponse = await sendSms(normalizedPhone, consentMsg);
       await insertTranscriptLog({
         userId: newUser.id,

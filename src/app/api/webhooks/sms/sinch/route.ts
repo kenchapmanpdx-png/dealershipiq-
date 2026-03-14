@@ -165,7 +165,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
 
   const user = await getUserByPhone(phone);
   if (!user) {
-    console.warn(`Inbound SMS from unknown phone: ${phone.slice(0, 6)}****`);
+    console.warn(`Inbound SMS from unknown phone: ***${phone.slice(-4)}`);
     return;
   }
 

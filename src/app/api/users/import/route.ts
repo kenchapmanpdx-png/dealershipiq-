@@ -331,7 +331,7 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < usersToNotify.length; i += BATCH_SIZE) {
       const batch = usersToNotify.slice(i, i + BATCH_SIZE);
-      const consentMsg = `${dealershipName} uses DealershipIQ for sales training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
+      const consentMsg = `${dealershipName} uses DealershipIQ for training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
 
       // H-017: Use Promise.allSettled — one Sinch failure must not kill entire batch
       await Promise.allSettled(

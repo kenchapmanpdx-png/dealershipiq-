@@ -328,7 +328,7 @@ async function generateChainScenario(
         messages: [
           {
             role: 'system',
-            content: `You are writing a customer dialogue for automotive sales training. Generate what the customer says — natural, conversational, under 300 characters. No meta-framing, no labels, no emoji. Just the customer talking. ${moodInfo} ${priorInfo}`,
+            content: `You are writing a customer dialogue for automotive training. Generate what the customer says — natural, conversational, under 300 characters. No meta-framing, no labels, no emoji. Just the customer talking. ${moodInfo} ${priorInfo}`,
           },
           { role: 'user', content: promptTemplate },
         ],

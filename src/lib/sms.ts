@@ -97,6 +97,15 @@ export async function sendSms(
   // Sanitize for GSM-7 before sending
   const sanitized = sanitizeGsm7(text);
 
+  // RT-005: Log warning if single-segment SMS exceeds 160 chars after interpolation.
+  // Multi-segment concatenated SMS is fine (up to 320 chars for 2 segments),
+  // but single-segment messages >160 chars split unexpectedly.
+  if (sanitized.length > 320) {
+    console.error(`[SMS] Message exceeds 2-segment limit (${sanitized.length} chars) to ***${phone.slice(-4)}`);
+  } else if (sanitized.length > 160) {
+    console.warn(`[SMS] Multi-segment message (${sanitized.length} chars) to ***${phone.slice(-4)}`);
+  }
+
   // Strip leading + from phone numbers for XMS API
   const to = phone.replace(/^\+/, '');
   const from = fromNumber.replace(/^\+/, '');

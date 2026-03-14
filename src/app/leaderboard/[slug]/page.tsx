@@ -111,7 +111,7 @@ export default async function LeaderboardPage({
             {dealership.name} Leaderboard
           </h1>
           <p className="text-gray-600">
-            Top performers in sales training
+            Top performers in training
           </p>
         </div>
 

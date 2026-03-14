@@ -36,6 +36,10 @@ export async function createCheckoutSession(options: {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealershipiq-wua7.vercel.app';
 
+  // RT-009: Idempotency key prevents duplicate checkout sessions from double-submit.
+  // Stripe deduplicates requests with matching keys within 24 hours.
+  const idempotencyKey = `checkout_${options.dealershipId}_${options.email}`;
+
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
     line_items: [
@@ -61,6 +65,8 @@ export async function createCheckoutSession(options: {
     },
     automatic_tax: { enabled: true },
     tax_id_collection: { enabled: true },
+  }, {
+    idempotencyKey,
   });
 
   return { url: session.url };

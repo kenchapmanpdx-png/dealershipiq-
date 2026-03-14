@@ -15,6 +15,7 @@ import {
   updateSessionStatus,
   insertTranscriptLog,
   insertDeliveryLog,
+  isFeatureEnabled,
 } from '@/lib/service-db';
 
 interface PushTrainingRequest {
@@ -56,6 +57,15 @@ export async function POST(request: NextRequest) {
     const userRole = user.app_metadata?.user_role as string | undefined;
     if (userRole !== 'manager' && userRole !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // RT-006: Feature flag gate
+    const pushEnabled = await isFeatureEnabled(dealershipId, 'push_training_enabled');
+    if (!pushEnabled) {
+      return NextResponse.json(
+        { error: 'Push training is not enabled for your dealership' },
+        { status: 403 }
+      );
     }
 
     // Phase 5: subscription gating

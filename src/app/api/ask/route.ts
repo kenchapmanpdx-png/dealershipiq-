@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { serviceClient } from '@/lib/supabase/service';
+import { isFeatureEnabled } from '@/lib/service-db';
 
 interface AskRequest {
   question: string;
@@ -46,6 +47,15 @@ export async function POST(request: NextRequest) {
     const dealershipId = user.app_metadata?.dealership_id as string | undefined;
     if (!dealershipId) {
       return NextResponse.json({ error: 'No dealership' }, { status: 403 });
+    }
+
+    // RT-006: Feature flag gate
+    const askEnabled = await isFeatureEnabled(dealershipId, 'ask_iq_enabled');
+    if (!askEnabled) {
+      return NextResponse.json(
+        { error: 'Ask IQ is not enabled for your dealership' },
+        { status: 403 }
+      );
     }
 
     // L-015: Rate limit check

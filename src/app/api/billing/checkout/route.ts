@@ -116,12 +116,21 @@ export async function POST(request: NextRequest) {
 
       if (metadataError) throw metadataError;
 
-      // 6. Default feature flags
+      // 6. Default feature flags (RT-006: all features gated)
       const defaultFlags = [
         { flag_name: 'morning_script_enabled', enabled: false },
         { flag_name: 'coach_mode_enabled', enabled: false },
         { flag_name: 'persona_moods_enabled', enabled: true },
         { flag_name: 'billing_enabled', enabled: true },
+        { flag_name: 'ask_iq_enabled', enabled: true },
+        { flag_name: 'push_training_enabled', enabled: true },
+        { flag_name: 'scenario_chains_enabled', enabled: true },
+        { flag_name: 'peer_challenge_enabled', enabled: true },
+        { flag_name: 'daily_challenge_enabled', enabled: true },
+        { flag_name: 'manager_quick_create_enabled', enabled: true },
+        { flag_name: 'behavioral_scoring_urgency', enabled: false },
+        { flag_name: 'behavioral_scoring_competitive', enabled: false },
+        { flag_name: 'vehicle_data_enabled', enabled: false },
       ];
       for (const flag of defaultFlags) {
         const { error: flagError } = await serviceClient.from('feature_flags').insert({
