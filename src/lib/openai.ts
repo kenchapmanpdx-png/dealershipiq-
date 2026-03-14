@@ -468,8 +468,9 @@ function templateFallback(mode: string): GradingResult & { model: string } {
     tone_rapport: 3,
     addressed_concern: 3,
     close_attempt: 3,
-    feedback: "Thanks for your response! We're having trouble with our grading system right now. We'll count this tomorrow!",
-    reasoning: `Template fallback — AI grading unavailable. Mode: ${mode}`,
+    // F1-L-002: Feedback text must match reality — response IS recorded with placeholder scores
+    feedback: "Thanks for your response! Our AI grader is temporarily unavailable. Your response has been recorded with a placeholder score.",
+    reasoning: `Template fallback — AI grading unavailable. Mode: ${mode}. TODO: Add is_fallback column to training_results to distinguish template grades.`,
     model: 'template-fallback',
   };
 }
@@ -524,8 +525,8 @@ export async function getOpenAICompletion(
 
 // --- Error UX messages (Build Master 2D table) ---
 export const ERROR_SMS: Record<string, string> = {
-  ai_timeout: "Having trouble right now. We'll count this tomorrow!",
-  ai_down: "Having trouble right now. We'll count this tomorrow!",
+  ai_timeout: "Having trouble grading right now. Your response was saved - we'll get your score to you soon!",
+  ai_down: "Having trouble grading right now. Your response was saved - we'll get your score to you soon!",
   invalid_response: 'Hmm, can you give me a fuller answer? Try again!',
   system_error: 'Something went wrong. Our team is on it.',
 };

@@ -118,11 +118,12 @@ async function handleDeliveryReport(report: SinchDeliveryReport) {
   const user = await getUserByPhone(phone);
   if (!user) return;
 
+  // F1-M-001: Use 'delivery_report' direction to avoid inflating outbound message cap counts
   await insertTranscriptLog({
     userId: user.id,
     dealershipId: user.dealershipId,
     phone,
-    direction: 'outbound',
+    direction: 'delivery_report',
     messageBody: `[DELIVERY_REPORT: ${status}]`,
     sinchMessageId: message_id,
     metadata: { status, reportTime: report.event_time },
@@ -191,7 +192,9 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   }
 
   // --- Advisory Lock: all state-modifying paths below are protected ---
-  const { tryLockUser } = await import('@/lib/service-db');
+  // F1-H-001: Uses pg_try_advisory_lock (session-scoped). Lock held until
+  // unlockUser() in the finally block below, preventing concurrent processing.
+  const { tryLockUser, unlockUser } = await import('@/lib/service-db');
   const locked = await tryLockUser(phone);
   if (!locked) return;
 
@@ -394,8 +397,10 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     }
   } catch (err) {
     console.error('State machine error:', (err as Error).message ?? err);
+  } finally {
+    // F1-H-001: Explicitly release session-scoped advisory lock after all processing.
+    await unlockUser(phone);
   }
-  // M-001: Advisory lock uses pg_try_advisory_xact_lock (transaction-scoped, auto-released at txn end)
 }
 
 // =============================================================================

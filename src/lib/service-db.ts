@@ -158,7 +158,7 @@ export async function updateSessionStep(sessionId: string, stepIndex: number) {
 // ─── Session transcript (for AI context in multi-exchange) ─────────────
 
 export interface TranscriptEntry {
-  direction: 'inbound' | 'outbound';
+  direction: 'inbound' | 'outbound' | 'delivery_report';
   messageBody: string;
   createdAt: string;
 }
@@ -195,7 +195,7 @@ export async function insertTranscriptLog(entry: {
   userId: string;
   dealershipId: string;
   phone: string;
-  direction: 'inbound' | 'outbound';
+  direction: 'inbound' | 'outbound' | 'delivery_report';
   messageBody: string;
   sinchMessageId?: string;
   sessionId?: string;
@@ -281,6 +281,9 @@ export async function insertTrainingResult(result: {
 // ─── Advisory lock ────────────────────────────────────────────────────
 // Build Master 2B: prevents concurrent processing for same phone
 
+// F1-H-001: Uses pg_try_advisory_lock (session-scoped) — lock held until
+// explicitly released via unlockUser() or connection closes. Must call
+// unlockUser() in a finally block after all state-modifying operations.
 export async function tryLockUser(phone: string): Promise<boolean> {
   const { data, error } = await serviceClient.rpc('try_lock_user', {
     user_phone: phone,
@@ -291,6 +294,18 @@ export async function tryLockUser(phone: string): Promise<boolean> {
     return false;
   }
   return data === true;
+}
+
+// F1-H-001: Explicitly release session-scoped advisory lock.
+// Called in the webhook handler's finally block after processing completes.
+export async function unlockUser(phone: string): Promise<void> {
+  const { error } = await serviceClient.rpc('unlock_user', {
+    user_phone: phone,
+  });
+
+  if (error) {
+    console.error('Advisory unlock error:', (error as Error).message ?? error);
+  }
 }
 
 // ─── Opt-out management ──────────────────────────────────────────────

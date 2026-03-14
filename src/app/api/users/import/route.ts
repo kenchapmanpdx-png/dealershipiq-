@@ -166,6 +166,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // F3-M-001: Cap import size to prevent Vercel function timeout and partial state
+    const MAX_IMPORT_ROWS = 500;
+    if (rows.length > MAX_IMPORT_ROWS) {
+      return NextResponse.json(
+        { error: `Import limited to ${MAX_IMPORT_ROWS} employees per batch. File contains ${rows.length} rows.` },
+        { status: 400 }
+      );
+    }
+
     // C-003 + C-008: RLS-backed — memberships + opt_outs SELECT policies auto-filter by dealership from JWT
     const { data: existingUsers } = await supabase
       .from('dealership_memberships')

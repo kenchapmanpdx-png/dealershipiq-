@@ -42,21 +42,14 @@ export function sanitizeGsm7(text: string): string {
 
 // S-006 + C-010: Real-time opt-out check before any SMS send (TCPA compliance)
 // FAIL-CLOSED: returns true (block SMS) on ANY error. TCPA fine: $500-$1,500/message.
+// CF-M-001: Uses shared serviceClient instead of creating a new client per call.
 async function isOptedOut(phone: string): Promise<boolean> {
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) {
-      console.error('[TCPA] isOptedOut: missing SUPABASE env vars — blocking SMS send');
-      return true; // Fail-closed: block send if DB unreachable
-    }
-
-    const client = createClient(url, key);
+    const { serviceClient } = await import('@/lib/supabase/service');
     const normalized = phone.startsWith('+') ? phone : `+${phone}`;
     const alt = normalized.replace(/^\+/, '');
 
-    const { data, error } = await client
+    const { data, error } = await serviceClient
       .from('sms_opt_outs')
       .select('id')
       .or(`phone.eq.${normalized},phone.eq.${alt}`)
@@ -80,6 +73,12 @@ export async function sendSms(
   text: string,
   _metadata?: string
 ): Promise<SmsSendResult> {
+  // F4-H-001: Global SMS kill switch. Set ENABLE_SMS_SEND=false to disable all outbound.
+  if (process.env.ENABLE_SMS_SEND === 'false') {
+    console.log(`[SMS] Send disabled via ENABLE_SMS_SEND. Would have sent to ***${phone.slice(-4)}`);
+    return { id: 'disabled', message_id: 'disabled', to: [phone], from: process.env.SINCH_PHONE_NUMBER ?? '' };
+  }
+
   const servicePlanId = process.env.SINCH_SERVICE_PLAN_ID;
   const apiToken = process.env.SINCH_API_TOKEN;
   const fromNumber = process.env.SINCH_PHONE_NUMBER;
