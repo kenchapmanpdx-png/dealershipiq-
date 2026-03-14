@@ -2,7 +2,7 @@
 
 ## Current Phase
 Phase: Production hardening + feature iteration
-Status: Phases 1-6 deployed. Audit 1 complete — all findings remediated, 6 migrations applied to Supabase (51 RLS policies active). Post-remediation cleanup done.
+Status: Phases 1-6 deployed. Audit 1 complete — all findings remediated, 6 migrations applied to Supabase (51 RLS policies active). Post-remediation cleanup done. Audit 2 (Core SMS Flows) complete — 0 critical, 3 high, 6 medium findings.
 
 ## What's Built
 
@@ -1118,8 +1118,24 @@ All 5 migrations applied successfully via SQL Editor:
 
 ---
 
+### Audit 2: Core SMS Flows (2026-03-15)
+
+**Scope:** Document-only trace of 4 flows: Inbound SMS, Daily Training Cron, Employee Onboarding, STOP Opt-Out.
+
+**Results:** 0 Critical, 3 High, 6 Medium, 5 Low, 4 Info.
+
+**High findings:**
+- F1-H-001: Advisory lock (`tryLockUser`) may release immediately after RPC call (transaction-scoped `pg_try_advisory_xact_lock`), providing no concurrency protection during webhook processing.
+- F4-H-001: `ENABLE_SMS_SEND` documented in .env.example and ENVIRONMENTS.md but not referenced anywhere in source code. The SMS kill switch does not exist.
+- CF-M-001 (elevated): `isOptedOut()` in sms.ts creates a new Supabase client on every call instead of reusing shared serviceClient.
+
+**Medium findings:** Delivery report direction misleading (F1-M-001), message cap timezone math over-counts (F2-M-001), eligible user session dedup uses UTC date (F2-M-002), no row count limit on bulk import (F3-M-001), Sinch STOP sync delay up to 60 min (F4-M-001), new client per isOptedOut call (CF-M-001).
+
+**Full report:** `docs/AUDIT-2-CORE-FLOWS.md`
+
 ### What's Next
-- Apply 5 migrations to Supabase SQL Editor
-- Commit and push remediation branch
-- Run Audit 2 (Core Flows) against main repo
-- Verify in production
+- Audit 2 remediation (fix high/medium findings from AUDIT-2-CORE-FLOWS.md)
+- Audit 3/4: Dashboard + Coach Mode flows
+- Audit 4/4: Billing + Cron flows
+- Sentry/Axiom observability setup
+- Verify 3-exchange objection flow with live Sinch
