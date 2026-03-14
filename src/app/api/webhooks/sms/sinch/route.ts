@@ -394,7 +394,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   } catch (err) {
     console.error('State machine error:', (err as Error).message ?? err);
   }
-  // Note (H-012): Advisory lock is transaction-scoped and auto-released by connection pool
+  // M-001: Advisory lock uses pg_try_advisory_xact_lock (transaction-scoped, auto-released at txn end)
 }
 
 // =============================================================================

@@ -84,7 +84,7 @@ export async function PUT(
     try {
       smsResponse = await sendSms(targetUser.phone, messageText);
     } catch (smsErr) {
-      console.error(`Encourage SMS failed for user ${id}:`, smsErr);
+      console.error(`Encourage SMS failed for user ${id}:`, (smsErr as Error).message ?? smsErr);
       // Log failed attempt for audit trail
       try {
         await insertTranscriptLog({

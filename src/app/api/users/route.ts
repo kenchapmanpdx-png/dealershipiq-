@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
         metadata: { type: 'consent_request' },
       });
     } catch (smsErr) {
-      console.error('Consent SMS failed (user still created):', smsErr);
+      console.error('Consent SMS failed (user still created):', (smsErr as Error).message ?? smsErr);
     }
 
     const response: CreateUserResponse = {

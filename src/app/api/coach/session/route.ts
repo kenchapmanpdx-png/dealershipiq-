@@ -424,7 +424,7 @@ async function generateCoachResponse(
     clearTimeout(timeout);
 
     if (!res.ok) {
-      console.error('GPT-4o coach error:', res.status, await res.text());
+      console.error('GPT-4o coach error:', res.status);
       return null;
     }
 

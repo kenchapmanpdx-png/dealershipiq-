@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ checkoutUrl: url });
     } catch (operationError) {
       // Rollback: delete orphaned Auth user and dealership
-      console.error('Signup flow failed, rolling back:', operationError);
+      console.error('Signup flow failed, rolling back:', (operationError as Error).message ?? operationError);
       await serviceClient.auth.admin.deleteUser(userId);
       await serviceClient.from('dealerships').delete().eq('id', dealershipId);
       return NextResponse.json(

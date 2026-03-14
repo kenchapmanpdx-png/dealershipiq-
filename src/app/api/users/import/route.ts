@@ -355,8 +355,8 @@ export async function POST(request: NextRequest) {
             });
           } catch (smsErr) {
             console.error(
-              `Consent SMS failed for ${user.phone.slice(0, 6)}**** (${user.fullName}):`,
-              smsErr
+              `Consent SMS failed for ${user.phone.slice(0, 6)}****:`,
+              (smsErr as Error).message ?? smsErr
             );
           }
         })
