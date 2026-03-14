@@ -1,8 +1,8 @@
 # Session State
 
 ## Current Phase
-Phase: SMS Pipeline debugging (Phase 2 prerequisite)
-Status: SMS END-TO-END WORKING — first successful grading + SMS reply delivered
+Phase: Production hardening + feature iteration
+Status: Phases 1-6 deployed. Audit 1 complete — all findings remediated, 5 migrations applied to Supabase (52 RLS policies active).
 
 ## What's Built
 
@@ -958,7 +958,7 @@ security_type: DEFINER
 All findings remediated in code. Migrations written but not yet applied to Supabase. Build gates passing (tsc, lint, vitest, next build).
 
 **Batch 1 (Criticals):**
-- C-001 + C-002: Migration `20260314000001_c001_c002_enable_rls.sql` — enables RLS on `chain_templates` (dealership-scoped SELECT) and `model_years` (public SELECT)
+- C-001 + C-002: Migration `20260314000001_c001_c002_enable_rls.sql` — enables RLS on `chain_templates` (global reference, authenticated SELECT) and `model_years` (authenticated SELECT)
 - C-003: `billing_events` documented as service-role-only by design (COMMENT ON TABLE in migration)
 - C-004: Migration `20260314000002_c004_meeting_scripts_policy.sql` — adds manager SELECT policy
 
@@ -978,7 +978,79 @@ All findings remediated in code. Migrations written but not yet applied to Supab
 
 **Pre-existing lint fixes:** `supabase-mock.ts` (let→const), `tenant-isolation.test.ts` (unused var prefix)
 
-**Pending:** Apply 5 migrations to Supabase SQL Editor. Commit and push.
+### Migrations Applied to Supabase (2026-03-14)
+
+All 5 migrations applied successfully via SQL Editor:
+1. `20260314000001_c001_c002_enable_rls.sql` — chain_templates + model_years RLS enabled
+2. `20260314000002_c004_meeting_scripts_policy.sql` — meeting_scripts manager SELECT policy
+3. `20260314000003_h001_missing_fk_indexes.sql` — 8 FK indexes
+4. `20260314000004_h002_standardize_phase6_rls.sql` — 12 Phase 6 policies refactored (4 tables × 3 policies each)
+5. `20260314000005_h004_transcript_insert_policy.sql` — sms_transcript_log INSERT policy + billing_events comment
+
+**Corrections during application:**
+- Migration 1: `chain_templates` has no `dealership_id` column (global reference data). Changed to `USING (true)`.
+- Migration 4: Production policies use `TO public` role (not `TO authenticated`). Rewrote to match. Excluded `dealership_brands` (already uses `current_setting()`) and `manager_scenarios` (zero policies in DB).
+
+**Verification — 52 active RLS policies (pg_policies query, post-migration):**
+
+| tablename | policyname | cmd | roles |
+|---|---|---|---|
+| askiq_queries | askiq_insert_authenticated | INSERT | {authenticated} |
+| askiq_queries | askiq_select | SELECT | {authenticated} |
+| chain_templates | chain_templates_select_authenticated | SELECT | {authenticated} |
+| coach_sessions | coach_sessions_deny_anon | ALL | {public} |
+| coach_sessions | coach_sessions_select_manager | SELECT | {authenticated} |
+| consent_records | consent_insert_manager | INSERT | {authenticated} |
+| consent_records | consent_select_manager | SELECT | {authenticated} |
+| conversation_sessions | sessions_select | SELECT | {authenticated} |
+| custom_training_content | custom_training_dealership_isolation | SELECT | {public} |
+| custom_training_content | custom_training_insert_manager | INSERT | {public} |
+| custom_training_content | custom_training_update_manager | UPDATE | {public} |
+| daily_challenges | daily_challenges_dealership_isolation | SELECT | {public} |
+| daily_challenges | daily_challenges_insert_manager | INSERT | {public} |
+| daily_challenges | daily_challenges_update_manager | UPDATE | {public} |
+| dealership_brands | Managers manage own dealership brands | ALL | {public} |
+| dealership_brands | Managers see own dealership brands | SELECT | {public} |
+| dealership_memberships | memberships_delete_manager | DELETE | {authenticated} |
+| dealership_memberships | memberships_insert_manager | INSERT | {authenticated} |
+| dealership_memberships | memberships_select_own_dealership | SELECT | {authenticated} |
+| dealership_memberships | memberships_update_manager | UPDATE | {authenticated} |
+| dealerships | dealerships_select_member | SELECT | {authenticated} |
+| dealerships | dealerships_update_manager | UPDATE | {authenticated} |
+| employee_priority_vectors | priority_vectors_select | SELECT | {authenticated} |
+| employee_schedules | schedules_manage_manager | ALL | {authenticated} |
+| employee_schedules | schedules_select | SELECT | {authenticated} |
+| feature_flags | feature_flags_manage_owner | ALL | {authenticated} |
+| feature_flags | feature_flags_select | SELECT | {authenticated} |
+| knowledge_gaps | gaps_manage_manager | UPDATE | {authenticated} |
+| knowledge_gaps | gaps_select | SELECT | {authenticated} |
+| leaderboard_entries | leaderboard_select | SELECT | {authenticated} |
+| meeting_scripts | Managers see own meeting scripts | SELECT | {public} |
+| meeting_scripts | meeting_scripts_select_manager | SELECT | {authenticated} |
+| model_years | model_years_select_public | SELECT | {authenticated} |
+| peer_challenges | peer_challenges_dealership_isolation | SELECT | {public} |
+| peer_challenges | peer_challenges_insert_own | INSERT | {public} |
+| peer_challenges | peer_challenges_update_participant | UPDATE | {public} |
+| prompt_versions | prompt_versions_select | SELECT | {authenticated} |
+| red_flag_events | Managers see own dealership red flags | SELECT | {public} |
+| scenario_chains | scenario_chains_dealership_isolation | SELECT | {public} |
+| scenario_chains | scenario_chains_insert_own | INSERT | {public} |
+| scenario_chains | scenario_chains_update_own | UPDATE | {public} |
+| sms_delivery_log | delivery_log_select_manager | SELECT | {authenticated} |
+| sms_opt_outs | opt_outs_select_manager | SELECT | {authenticated} |
+| sms_transcript_log | sms_transcript_log_insert_authenticated | INSERT | {authenticated} |
+| sms_transcript_log | transcript_select_manager | SELECT | {authenticated} |
+| system_messages | system_messages_select | SELECT | {authenticated} |
+| training_results | training_results_select | SELECT | {authenticated} |
+| usage_tracking | usage_select_manager | SELECT | {authenticated} |
+| users | users_insert_manager | INSERT | {authenticated} |
+| users | users_select_own | SELECT | {authenticated} |
+| users | users_update_manager | UPDATE | {authenticated} |
+| users | users_update_own | UPDATE | {authenticated} |
+
+**New policies (4):** chain_templates_select_authenticated, model_years_select_public, meeting_scripts_select_manager, sms_transcript_log_insert_authenticated.
+**Pre-existing duplicate:** meeting_scripts has both "Managers see own meeting scripts" (old, `{public}`) and "meeting_scripts_select_manager" (new, `{authenticated}`). Both enforce dealership isolation + manager role. The old policy can be dropped in a future cleanup pass.
+**Total:** 52 (up from 48 pre-migration).
 
 ---
 
