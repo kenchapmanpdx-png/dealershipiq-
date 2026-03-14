@@ -769,3 +769,35 @@ See prior session for details. RT-001 through RT-009.
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
 - **Sinch Conversation API dashboard** — Platform pages broken. Use REST API.
 - **Audit findings status:** 5 CRITICAL fixed, 9 HIGH fixed, 8 MEDIUM fixed (3 deferred), 5 LOW fixed (2 deferred). C-003 COMPLETE (Batch 1).
+
+## V4 Fresh Audit (2026-03-13)
+
+Ran 6-agent parallel audit after all prior fixes merged. Found 14 new issues.
+
+### Branches
+- `fix/audit-v4-batch3` — V4-C-001, V4-C-002: Welcome SMS ≤160 chars + hard truncation at 320
+- `fix/audit-v4-batch2` — V4-H-001..H-004: Division by zero guards + V4-M-002..M-006: Robustness
+- `fix/audit-v4-batch1` — V4-M-001: Error object sanitization (43 files, 62 locations) + checklist remediation
+
+### Completion Criteria: 12/12 PASS
+1. Zero serviceClient in user-facing routes — PASS (all justified with C-003 comments)
+2. RLS policies verified — PASS
+3. Sinch HMAC timing-safe — PASS
+4. Stripe raw body signature — PASS
+5. Zero PII in logs — PASS
+6. Zero "sales training" in SMS — PASS
+7. SMS length validation — PASS (hard truncate at 320)
+8. Feature flags on gated features — PASS
+9. Opt-out fail-closed — PASS
+10. Stripe checkout idempotency — PASS
+11. All auth from app_metadata — PASS (user_metadata documented as display-only)
+12. Division by zero guards — PASS (4 locations)
+
+### Deferred
+- V4-L-001/L-002: RLS policy consistency (SQL migration needed)
+- V4-L-003: vitest infrastructure (Ken action item)
+
+### PR URLs
+- Batch 3: https://github.com/kenchapmanpdx-png/dealershipiq-/pull/new/fix/audit-v4-batch3
+- Batch 2: https://github.com/kenchapmanpdx-png/dealershipiq-/pull/new/fix/audit-v4-batch2
+- Batch 1: https://github.com/kenchapmanpdx-png/dealershipiq-/pull/new/fix/audit-v4-batch1
