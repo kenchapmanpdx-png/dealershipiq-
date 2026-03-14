@@ -157,7 +157,8 @@ export async function recordChainStepResult(
   chainId: string,
   stepResult: StepResult
 ): Promise<boolean> {
-  // Try atomic RPC first (requires record_chain_step function in DB)
+  // F5-M-001: Atomic RPC only — no fallback with race window.
+  // If RPC not available, log error and fail safely.
   const { data: rpcResult, error: rpcError } = await serviceClient
     .rpc('record_chain_step', {
       p_chain_id: chainId,
@@ -165,42 +166,14 @@ export async function recordChainStepResult(
       p_result: stepResult,
     });
 
-  // If RPC exists and succeeded, use its result
-  if (!rpcError) {
-    return !!rpcResult;
+  if (rpcError) {
+    // RPC not deployed yet — fail safely rather than use racy fallback.
+    // Ken: create record_chain_step RPC in Supabase (see NEEDS-REVIEW.md).
+    console.error('[chains] record_chain_step RPC failed:', rpcError.message);
+    return false;
   }
 
-  // Fallback: application-level check (original logic, still has race window)
-  console.warn('[chains] record_chain_step RPC not available, using fallback:', rpcError.message);
-
-  const { data: chain } = await serviceClient
-    .from('scenario_chains')
-    .select('step_results, current_step, total_steps')
-    .eq('id', chainId)
-    .single();
-
-  if (!chain) return false;
-
-  const existingResults = (chain.step_results as StepResult[]) ?? [];
-
-  // Defense in depth: verify this step hasn't already been recorded
-  if (existingResults.some(r => r.step === stepResult.step)) {
-    return (chain.current_step as number) >= (chain.total_steps as number);
-  }
-
-  const results = [...existingResults, stepResult];
-  const isComplete = (chain.current_step as number) >= (chain.total_steps as number);
-
-  await serviceClient
-    .from('scenario_chains')
-    .update({
-      step_results: results,
-      status: isComplete ? 'completed' : 'active',
-      last_step_at: new Date().toISOString(),
-    })
-    .eq('id', chainId);
-
-  return isComplete;
+  return !!rpcResult;
 }
 
 /**

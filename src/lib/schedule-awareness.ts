@@ -5,6 +5,7 @@ import {
   getEmployeeSchedule,
   upsertEmployeeSchedule,
 } from '@/lib/service-db';
+import { getLocalDayOfWeek, getLocalDateString } from '@/lib/quiet-hours';
 
 export type ScheduleStatus = 'working' | 'day_off' | 'vacation' | 'gone_dark';
 
@@ -144,16 +145,19 @@ export function parseScheduleKeyword(text: string): ParseResult {
 }
 
 // Check if employee is scheduled off on a given date
+// F13-M-001: Added optional timezone param — uses dealership-local day instead of UTC
 export async function isScheduledOff(
   userId: string,
   dealershipId: string,
-  date: Date
+  date: Date,
+  timezone?: string
 ): Promise<boolean> {
   const schedule = await getEmployeeSchedule(userId, dealershipId);
   if (!schedule) return false;
 
-  const dateStr = date.toISOString().split('T')[0];
-  const dayOfWeekNum = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  // Use dealership-local date/day if timezone available, else fall back to UTC
+  const dateStr = timezone ? getLocalDateString(timezone) : date.toISOString().split('T')[0];
+  const dayOfWeekNum = timezone ? getLocalDayOfWeek(timezone) : date.getDay();
 
   // Check one-off absence (specific date)
   if (schedule.oneOffAbsences?.includes(dateStr)) {

@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     for (const user of eligible) {
       try {
         // Phase 4C: Check if user is scheduled off
-        const scheduledOff = await isScheduledOff(user.id, dealership.id, new Date());
+        const scheduledOff = await isScheduledOff(user.id, dealership.id, new Date(), dealership.timezone ?? 'America/New_York');
         if (scheduledOff) {
           skipped++;
           continue;
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Phase 6: Content priority system
-        const content = await selectContent(user.id, dealership.id);
+        const content = await selectContent(user.id, dealership.id, dealership.timezone ?? 'America/New_York');
         contentTypes[content.type] = (contentTypes[content.type] ?? 0) + 1;
 
         const firstName = extractFirstName(user.full_name);

@@ -771,18 +771,35 @@ See prior session for details. RT-001 through RT-009.
 
 **Not implemented (logged and skipped):** Streaks, Rematch, Language Switching (SMS keyword), Trainee Mode Toggle, Model Hot Swap
 
+### Audit 3/4 Remediation (03/14/2026)
+
+**Scope:** 11 fixes across 12 files. All 2 CRITICAL, 3 HIGH, 9 MEDIUM from AUDIT-3-ADVANCED.md.
+**Quality gates:** tsc ✓ | lint ✓ | vitest 17/17 ✓ | build ✓
+
+**Fixes applied:**
+- Fix 1 (F11-C-001, F11-C-001b, F12-C-001, F11-H-001, F12-H-001): Root cause — all ghost column queries on users table replaced. Dunning pipeline uses dealership_memberships + auth.admin.getUserById(). Signup INSERT uses correct schema. Rollback cleans up memberships + feature_flags.
+- Fix 2 (F9-H-001): Coach closeSession + closeStaleSessionsForUser scoped by dealership_id. Also fixed closeStaleCoachSessions in daily-digest cron.
+- Fix 3 (F5-M-001): Chain step recording fallback with race window removed. RPC-only path; fails safely if RPC not deployed.
+- Fix 4 (F6-M-001): Daily challenge uses dealership timezone via getLocalDateString() + getLocalDayOfWeek().
+- Fix 5 (F7-M-001): Peer challenge query scoped by dealership_id.
+- Fix 6 (F9-M-001): Coach GET endpoint now rate-limited (reuses same DB-backed checkRateLimit).
+- Fix 7 (F10-M-001): Morning script micro-insight filters inactive users (status != 'active').
+- Fix 8 (F13-M-001): Schedule awareness uses dealership-local day via getLocalDayOfWeek(timezone).
+- Fix 9 (F15-M-001): Ask IQ stub confidence set to 1.0 — prevents false knowledge gap pollution.
+- Fix 10 (F11-M-001): Stripe trial reads trial_end from subscription object, falls back to 30-day default.
+- Fix 11 (F5-M-002): chain_templates serviceClient usage documented as justified (global data, cron context).
+
 ## What's Next
-1. **Audit 3/4 Remediation** — 2 CRITICAL, 3 HIGH from AUDIT-3-ADVANCED.md (signup + dunning broken)
-2. **Audit 3 Remediation (remaining)** — Dashboard/Coach items from AUDIT-3-DASHBOARD-COACH.md
-3. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
-4. **APP_TOKEN_SECRET in Vercel** — Must verify this env var exists in production (renamed from APP_AUTH_SECRET in commit 0acec24)
-5. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
-6. **Ken manual steps for Phase 5:** Stripe product/price, env vars
-7. Sentry/Axiom observability (NR-002)
-8. Sinch production upgrade (trial expires 03/24/2026)
-9. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
-10. Integration tests (zero exist)
-11. L-013 coaching modal accessibility, L-014 dashboard pagination
+1. **Audit 4/4** — Final audit pass (if planned)
+2. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
+3. **APP_TOKEN_SECRET in Vercel** — Must verify this env var exists in production (renamed from APP_AUTH_SECRET in commit 0acec24)
+4. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
+5. **Ken manual steps for Phase 5:** Stripe product/price, env vars
+6. Sentry/Axiom observability (NR-002)
+7. Sinch production upgrade (trial expires 03/24/2026)
+8. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
+9. Integration tests (zero exist)
+10. L-013 coaching modal accessibility, L-014 dashboard pagination
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.

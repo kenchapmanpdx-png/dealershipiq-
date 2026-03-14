@@ -97,8 +97,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: null, error: 'Coach Mode not available' }, { status: 403 });
     }
 
-    // Close stale sessions lazily
-    await closeStaleSessionsForUser(userId);
+    // F9-M-001: Rate limit GET requests (120/hr — 2x POST rate, since reads are lighter)
+    const rateLimited = await checkRateLimit(userId);
+    if (rateLimited) {
+      return NextResponse.json(
+        { data: null, error: 'Too many requests. Try again in a few minutes.' },
+        { status: 429 }
+      );
+    }
+
+    // Close stale sessions lazily (F9-H-001: scoped by dealership)
+    await closeStaleSessionsForUser(userId, dealershipId);
 
     // Fetch recent sessions (last 10)
     const { data: sessions } = await serviceClient
@@ -263,8 +272,8 @@ async function continueSession(
     const lastTime = new Date(lastMsg.timestamp).getTime();
     const hoursAgo = (Date.now() - lastTime) / (1000 * 60 * 60);
     if (hoursAgo > SESSION_STALE_HOURS) {
-      // Auto-close
-      await closeSession(sessionId, messages);
+      // Auto-close (F9-H-001: scoped by dealership)
+      await closeSession(sessionId, messages, dealershipId);
       return NextResponse.json({
         data: {
           session_id: sessionId,
@@ -286,7 +295,7 @@ async function continueSession(
       timestamp: new Date().toISOString(),
     };
     messages.push(closingMsg);
-    await closeSession(sessionId, messages);
+    await closeSession(sessionId, messages, dealershipId);
     return NextResponse.json({
       data: {
         session_id: sessionId,
@@ -480,7 +489,8 @@ async function generateCoachResponse(
 
 async function closeSession(
   sessionId: string,
-  messages: CoachMessage[]
+  messages: CoachMessage[],
+  dealershipId?: string
 ): Promise<void> {
   // Classify topic via GPT-4o-mini if not already classified
   let topic: string | null = null;
@@ -496,10 +506,17 @@ async function closeSession(
   };
   if (topic) updateData.session_topic = topic;
 
-  await serviceClient
+  // F9-H-001: Scope by dealership_id to prevent cross-tenant session close
+  let query = serviceClient
     .from('coach_sessions')
     .update(updateData)
     .eq('id', sessionId);
+
+  if (dealershipId) {
+    query = query.eq('dealership_id', dealershipId);
+  }
+
+  await query;
 }
 
 async function classifySessionTopic(
@@ -552,23 +569,29 @@ async function classifySessionTopic(
   }
 }
 
-async function closeStaleSessionsForUser(userId: string): Promise<void> {
+async function closeStaleSessionsForUser(userId: string, dealershipId?: string): Promise<void> {
   try {
     const staleThreshold = new Date();
     staleThreshold.setHours(staleThreshold.getHours() - SESSION_STALE_HOURS);
 
-    // Find open sessions with no recent activity
-    const { data: staleSessions } = await serviceClient
+    // F9-H-001: Scope by dealership_id to prevent cross-tenant session access
+    let query = serviceClient
       .from('coach_sessions')
       .select('id, messages')
       .eq('user_id', userId)
       .is('ended_at', null);
 
+    if (dealershipId) {
+      query = query.eq('dealership_id', dealershipId);
+    }
+
+    const { data: staleSessions } = await query;
+
     for (const session of staleSessions ?? []) {
       const msgs = (session.messages as CoachMessage[]) ?? [];
       const lastMsg = msgs[msgs.length - 1];
       if (lastMsg && new Date(lastMsg.timestamp) < staleThreshold) {
-        await closeSession(session.id as string, msgs);
+        await closeSession(session.id as string, msgs, dealershipId);
       }
     }
   } catch (err) {

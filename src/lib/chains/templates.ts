@@ -1,4 +1,7 @@
 // Phase 6C: Chain template loading + variable substitution
+// F5-M-002: serviceClient justified — chain_templates is global reference data (no dealership_id).
+// All callers are in cron/webhook context (SMS inbound, daily-training) where no Supabase JWT exists.
+// RLS policy: USING(true) for authenticated SELECT (added in C-001 migration).
 
 import { serviceClient } from '@/lib/supabase/service';
 import type { ChainTemplate, StepPrompt, ChainContext } from '@/types/chains';

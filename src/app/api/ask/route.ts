@@ -85,10 +85,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Call AI service to generate response (Phase 2 infrastructure)
-    // For now, return placeholder response with high confidence
+    // TODO: Replace stub with actual Ask IQ AI implementation (Phase 2 infrastructure).
+    // F15-M-001: Set confidence=1.0 so stub responses don't pollute the knowledge_gaps
+    // table and morning script. The gaps dashboard filters at confidence < 0.7.
     const aiResponse = `Thank you for your question: "${questionText}". The AI engine is being trained with your dealership's knowledge base. Check back soon for a fully personalized response!`;
-    const confidence = 0.0; // Low confidence for placeholder
+    const confidence = 1.0; // Stub — high confidence prevents false knowledge gap entries
 
     // C-003: RLS-backed — askiq_insert_authenticated policy enforces dealership_id from JWT.
     const { data: queryRecord, error: insertError } = await supabase

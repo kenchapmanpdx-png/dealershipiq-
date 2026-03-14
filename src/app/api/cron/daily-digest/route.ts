@@ -183,15 +183,16 @@ export async function GET(request: NextRequest) {
           const insight = await findPositiveInsight(userId, dealership.id);
           if (!insight) continue;
 
+          // F10-M-001: Filter out inactive/deactivated users
           const { data: user } = await serviceClient
             .from('users')
-            .select('phone')
+            .select('phone, status')
             .eq('id', userId)
             .single();
 
-          if (!user?.phone) continue;
+          if (!user?.phone || user.status !== 'active') continue;
 
-          await closeStaleCoachSessions(userId);
+          await closeStaleCoachSessions(userId, dealership.id);
 
           const msg = `Quick note from your Coach: ${insight}. Reply COACH anytime.`;
           await sendSms(user.phone as string, msg);
@@ -486,19 +487,32 @@ async function findPositiveInsight(
   }
 }
 
-async function closeStaleCoachSessions(userId: string): Promise<void> {
+async function closeStaleCoachSessions(userId: string, dealershipId?: string): Promise<void> {
   try {
-    const { data: staleSessions } = await serviceClient
+    // F9-H-001: Scope by dealership_id to prevent cross-tenant session access
+    let query = serviceClient
       .from('coach_sessions')
       .select('id')
       .eq('user_id', userId)
       .is('ended_at', null);
 
+    if (dealershipId) {
+      query = query.eq('dealership_id', dealershipId);
+    }
+
+    const { data: staleSessions } = await query;
+
     for (const session of staleSessions ?? []) {
-      await serviceClient
+      let updateQuery = serviceClient
         .from('coach_sessions')
         .update({ ended_at: new Date().toISOString() })
         .eq('id', session.id as string);
+
+      if (dealershipId) {
+        updateQuery = updateQuery.eq('dealership_id', dealershipId);
+      }
+
+      await updateQuery;
     }
   } catch {
     // Non-critical

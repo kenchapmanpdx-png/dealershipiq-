@@ -205,16 +205,27 @@ export async function processDunning(): Promise<{
 
     if (existing) continue; // Already sent
 
-    // Get manager email
-    const { data: managers } = await serviceClient
-      .from('users')
-      .select('email, full_name')
+    // F11-C-001b: Query dealership_memberships (not users) for manager role + name.
+    // Email comes from auth.users via admin API.
+    const { data: managerMemberships } = await serviceClient
+      .from('dealership_memberships')
+      .select('user_id, role, users ( full_name )')
       .eq('dealership_id', dealership.id as string)
       .in('role', ['manager', 'owner'])
       .limit(1);
 
-    const manager = managers?.[0];
-    if (!manager?.email) continue;
+    const membership = managerMemberships?.[0];
+    if (!membership?.user_id) continue;
+
+    // Get email from auth.users
+    const { data: { user: authUser } } = await serviceClient.auth.admin.getUserById(
+      membership.user_id as string
+    );
+    const managerEmail = authUser?.email;
+    if (!managerEmail) continue;
+
+    const usersData = membership.users as unknown as { full_name: string } | { full_name: string }[] | null;
+    const managerName = (Array.isArray(usersData) ? usersData[0]?.full_name : usersData?.full_name) || 'Manager';
 
     // Build portal URL
     const appUrl = getAppUrl();
@@ -222,8 +233,8 @@ export async function processDunning(): Promise<{
 
     try {
       const sent = await sendDunningEmail({
-        to: manager.email as string,
-        managerName: (manager.full_name as string) || 'Manager',
+        to: managerEmail,
+        managerName,
         dealershipName: dealership.name as string,
         portalUrl,
         stage: targetStage,
@@ -236,7 +247,7 @@ export async function processDunning(): Promise<{
         stripe_event_id: `dunning_${targetStage}_${dealership.id}_${new Date().toISOString().split('T')[0]}`,
         event_type: `dunning_${targetStage}`,
         dealership_id: dealership.id as string,
-        payload: { days_past_due: days, manager_email: manager.email },
+        payload: { days_past_due: days, manager_email: managerEmail },
       });
 
       // Day 30: cancel the subscription

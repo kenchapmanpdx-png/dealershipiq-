@@ -89,20 +89,21 @@ export async function POST(request: NextRequest) {
     const dealershipId = dealership.id as string;
 
     try {
-      // 3. Create user row
+      // 3. Create user row — F12-C-001: users table has only: id, full_name, phone, status,
+      //    language, last_active_dealership_id, auth_id. No email/role/dealership_id columns.
+      //    Role + dealership association go in dealership_memberships. Email lives in auth.users.
       const { error: userError } = await serviceClient.from('users').insert({
         id: userId,
-        email,
+        auth_id: userId,
         full_name: managerName,
         phone: '',
-        role: 'owner',
         status: 'active',
-        dealership_id: dealershipId,
+        last_active_dealership_id: dealershipId,
       });
 
       if (userError) throw userError;
 
-      // 4. Create dealership_membership
+      // 4. Create dealership_membership (role lives here, not on users)
       const { error: membershipError } = await serviceClient.from('dealership_memberships').insert({
         user_id: userId,
         dealership_id: dealershipId,
@@ -160,8 +161,11 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({ checkoutUrl: url });
     } catch (operationError) {
-      // Rollback: delete orphaned Auth user and dealership
+      // F12-H-001: Rollback all created rows — memberships, feature_flags, user, dealership, auth
       console.error('Signup flow failed, rolling back:', (operationError as Error).message ?? operationError);
+      await serviceClient.from('feature_flags').delete().eq('dealership_id', dealershipId);
+      await serviceClient.from('dealership_memberships').delete().eq('dealership_id', dealershipId);
+      await serviceClient.from('users').delete().eq('id', userId);
       await serviceClient.auth.admin.deleteUser(userId);
       await serviceClient.from('dealerships').delete().eq('id', dealershipId);
       return NextResponse.json(

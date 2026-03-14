@@ -8,6 +8,7 @@
 
 import { serviceClient } from '@/lib/supabase/service';
 import { isFeatureEnabled, getFeatureFlagConfig } from '@/lib/service-db';
+import { getLocalDateString, getLocalDayOfWeek } from '@/lib/quiet-hours';
 import type { ChallengeFrequency } from '@/types/challenges';
 
 export interface ContentSelection {
@@ -36,22 +37,23 @@ export interface ContentSelection {
  */
 export async function selectContent(
   userId: string,
-  dealershipId: string
+  dealershipId: string,
+  timezone?: string
 ): Promise<ContentSelection> {
   // 1. Manager Quick-Create scenario
   const managerScenario = await checkManagerScenario(dealershipId);
   if (managerScenario) return managerScenario;
 
-  // 2. Active peer challenge
-  const peerChallenge = await checkPeerChallenge(userId);
+  // 2. Active peer challenge (F7-M-001: scoped by dealership)
+  const peerChallenge = await checkPeerChallenge(userId, dealershipId);
   if (peerChallenge) return peerChallenge;
 
   // 3. Active scenario chain
   const chainStep = await checkChainStep(userId, dealershipId);
   if (chainStep) return chainStep;
 
-  // 4. Daily challenge
-  const dailyChallenge = await checkDailyChallenge(dealershipId);
+  // 4. Daily challenge (F6-M-001: uses dealership timezone)
+  const dailyChallenge = await checkDailyChallenge(dealershipId, timezone);
   if (dailyChallenge) return dailyChallenge;
 
   // 5. Adaptive-weighted standalone (default)
@@ -86,13 +88,15 @@ async function checkManagerScenario(
 }
 
 async function checkPeerChallenge(
-  userId: string
+  userId: string,
+  dealershipId: string
 ): Promise<ContentSelection | null> {
-  // Check if this user is a participant in an active peer challenge
+  // F7-M-001: Scope by dealership_id to prevent cross-tenant challenge leakage
   const { data } = await serviceClient
     .from('peer_challenges')
     .select('id, scenario_text, grading_rubric, taxonomy_domain')
     .eq('status', 'active')
+    .eq('dealership_id', dealershipId)
     .or(`challenger_id.eq.${userId},challenged_id.eq.${userId}`)
     .gt('expires_at', new Date().toISOString())
     .limit(1)
@@ -135,17 +139,21 @@ async function checkChainStep(
 }
 
 async function checkDailyChallenge(
-  dealershipId: string
+  dealershipId: string,
+  timezone?: string
 ): Promise<ContentSelection | null> {
   const enabled = await isFeatureEnabled(dealershipId, 'daily_challenge_enabled');
   if (!enabled) return null;
 
+  const tz = timezone || 'America/New_York';
+
   // Check frequency config
   const config = await getFeatureFlagConfig(dealershipId, 'daily_challenge_enabled');
   const frequency: ChallengeFrequency = (config?.frequency as ChallengeFrequency) ?? 'mwf';
-  if (!isChallengeDay(frequency)) return null;
+  if (!isChallengeDayLocal(frequency, tz)) return null;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  // F6-M-001: Use dealership-local date, not UTC
+  const todayStr = getLocalDateString(tz);
   const { data } = await serviceClient
     .from('daily_challenges')
     .select('id, scenario_text, grading_rubric, taxonomy_domain, persona_mood')
@@ -166,8 +174,9 @@ async function checkDailyChallenge(
   };
 }
 
-function isChallengeDay(frequency: ChallengeFrequency): boolean {
-  const day = new Date().getDay(); // 0=Sun, 1=Mon, ...
+// F6-M-001: Use dealership-local day-of-week, not UTC
+function isChallengeDayLocal(frequency: ChallengeFrequency, timezone: string): boolean {
+  const day = getLocalDayOfWeek(timezone); // 0=Sun, 1=Mon, ...
   switch (frequency) {
     case 'daily': return day >= 1 && day <= 5;
     case 'mwf': return [1, 3, 5].includes(day);

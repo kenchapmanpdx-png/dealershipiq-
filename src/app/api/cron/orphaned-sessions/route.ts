@@ -47,11 +47,19 @@ export async function GET(request: NextRequest) {
     if (staleChains) {
       for (const chain of staleChains) {
         try {
-          // Check if user is scheduled off
+          // F13-M-001: Look up dealership timezone for schedule check
+          const { data: dealershipData } = await serviceClient
+            .from('dealerships')
+            .select('timezone')
+            .eq('id', chain.dealership_id as string)
+            .single();
+          const chainTz = (dealershipData?.timezone as string) || 'America/New_York';
+
           const scheduledOff = await isScheduledOff(
             chain.user_id as string,
             chain.dealership_id as string,
-            new Date()
+            new Date(),
+            chainTz
           );
 
           // If NOT scheduled off, increment missed day counter

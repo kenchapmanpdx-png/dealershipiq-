@@ -109,9 +109,26 @@ async function handleCheckoutCompleted(event: Stripe.Event) {
 
   const locations = parseInt(session.metadata?.locations ?? '1', 10);
 
-  // Calculate trial end (30 days from now)
-  const trialEndsAt = new Date();
-  trialEndsAt.setDate(trialEndsAt.getDate() + 30);
+  // F11-M-001: Read trial_end from Stripe subscription object instead of hardcoding 30 days.
+  // Stripe trial_end is a Unix timestamp (seconds) or null.
+  let trialEndsAt: string | null = null;
+  if (subscriptionId) {
+    try {
+      const subObj = session.subscription as unknown as Record<string, unknown>;
+      const trialEnd = subObj?.trial_end as number | null;
+      if (trialEnd) {
+        trialEndsAt = new Date(trialEnd * 1000).toISOString();
+      }
+    } catch {
+      // Fall back to 30-day default if subscription object not expanded
+    }
+  }
+  // Fallback: if Stripe didn't provide trial_end, default to 30 days
+  if (!trialEndsAt) {
+    const fallback = new Date();
+    fallback.setDate(fallback.getDate() + 30);
+    trialEndsAt = fallback.toISOString();
+  }
 
   await serviceClient
     .from('dealerships')
@@ -120,7 +137,7 @@ async function handleCheckoutCompleted(event: Stripe.Event) {
       subscription_id: subscriptionId,
       subscription_status: 'trialing',
       max_locations: locations,
-      trial_ends_at: trialEndsAt.toISOString(),
+      trial_ends_at: trialEndsAt,
     })
     .eq('id', dealershipId);
 }
@@ -279,30 +296,41 @@ async function handlePaymentFailed(event: Stripe.Event) {
 
   // Day 1 dunning email (immediate from webhook)
   // If send fails, dunning-check cron will retry at day 3+
+  // F11-C-001: Query dealership_memberships (not users) for manager role + name.
+  // Email comes from auth.users via admin API.
   try {
-    const { data: managers } = await serviceClient
-      .from('users')
-      .select('email, full_name')
+    const { data: managerMemberships } = await serviceClient
+      .from('dealership_memberships')
+      .select('user_id, role, users ( full_name )')
       .eq('dealership_id', dealership.id)
       .in('role', ['manager', 'owner'])
       .limit(1);
 
-    const manager = managers?.[0];
-    if (manager?.email) {
-      const appUrl = getAppUrl();
-      const sent = await sendDunningEmail({
-        to: manager.email as string,
-        managerName: (manager.full_name as string) || 'Manager',
-        dealershipName: dealership.name,
-        portalUrl: `${appUrl}/dashboard/billing`,
-        stage: 'day1',
-      });
+    const membership = managerMemberships?.[0];
+    if (membership?.user_id) {
+      // Get email from auth.users (only place email lives)
+      const { data: { user: authUser } } = await serviceClient.auth.admin.getUserById(
+        membership.user_id as string
+      );
+      const managerEmail = authUser?.email;
+      const usersData = membership.users as unknown as { full_name: string } | { full_name: string }[] | null;
+      const managerName = (Array.isArray(usersData) ? usersData[0]?.full_name : usersData?.full_name) || 'Manager';
 
-      // Log result for observability
-      if (!sent) {
-        console.warn(`Dunning day1 email failed for ${dealership.id}, will retry via cron`);
-      } else {
-        console.log(`Dunning day1 email sent for ${dealership.id}`);
+      if (managerEmail) {
+        const appUrl = getAppUrl();
+        const sent = await sendDunningEmail({
+          to: managerEmail,
+          managerName,
+          dealershipName: dealership.name,
+          portalUrl: `${appUrl}/dashboard/billing`,
+          stage: 'day1',
+        });
+
+        if (!sent) {
+          console.warn(`Dunning day1 email failed for ${dealership.id}, will retry via cron`);
+        } else {
+          console.log(`Dunning day1 email sent for ${dealership.id}`);
+        }
       }
     }
   } catch (emailError) {
