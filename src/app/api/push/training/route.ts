@@ -4,11 +4,11 @@
 // Auth: manager+ role required
 // Creates session + sends SMS to specified users
 // Phase 5: subscription gating
+// C-003: Users SELECT migrated to RLS. Service-db functions stay on serviceClient (no INSERT policies).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
-import { serviceClient } from '@/lib/supabase/service';
 import { sendSms } from '@/lib/sms';
 import {
   createConversationSession,
@@ -104,15 +104,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get target users and verify ownership
-    const { data: targetUsers, error: usersError } = await serviceClient
+    // C-003: RLS-backed — users + memberships SELECT policies auto-filter by dealership from JWT.
+    // Using !inner ensures only users with membership in THIS dealership are returned.
+    const { data: targetUsers, error: usersError } = await supabase
       .from('users')
       .select(`
         id,
         phone,
         full_name,
         status,
-        dealership_memberships (
+        dealership_memberships!inner (
           dealership_id
         )
       `)
@@ -129,17 +130,6 @@ export async function POST(request: NextRequest) {
     const result: PushResult = { sent: 0, failed: 0, users: [] };
 
     for (const targetUser of targetUsers ?? []) {
-      // Verify user belongs to this dealership
-      const memberships = (targetUser.dealership_memberships ?? []) as Array<Record<string, unknown>>;
-      if (!memberships.some((m: Record<string, unknown>) => m.dealership_id === dealershipId)) {
-        result.failed++;
-        result.users.push({
-          user_id: targetUser.id,
-          status: 'failed',
-          error: 'User not in your dealership',
-        });
-        continue;
-      }
 
       try {
         // Create session

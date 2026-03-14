@@ -1,34 +1,19 @@
 // GET /api/dashboard/meeting-script
 // Returns today's morning meeting script for the manager's dealership.
 // Falls back to yesterday's script if today's hasn't generated yet.
-// Auth: Manager role via Supabase JWT.
+// Auth: Manager role via Supabase JWT (cookie-based).
 // Phase 4.5B
+// C-003: Migrated from serviceClient to RLS-backed authenticated client.
 
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { serviceClient } from '@/lib/supabase/service';
+import { NextResponse } from 'next/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import type { MeetingScriptResponse, MeetingScriptFullScript } from '@/types/meeting-script';
 
-export async function GET(request: NextRequest) {
-  // Authenticate via Supabase JWT
-  const authHeader = request.headers.get('authorization');
-  const token = authHeader?.replace('Bearer ', '');
-
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
+export async function GET() {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { global: { headers: { Authorization: `Bearer ${token}` } } }
-    );
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const supabase = await createServerSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -49,11 +34,10 @@ export async function GET(request: NextRequest) {
 
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // Try today's script
-    const { data: todayScript } = await serviceClient
+    // C-003: RLS policy on meeting_scripts auto-filters by dealership_id from JWT
+    const { data: todayScript } = await supabase
       .from('meeting_scripts')
       .select('full_script, script_date')
-      .eq('dealership_id', dealershipId)
       .eq('script_date', todayStr)
       .maybeSingle();
 
@@ -71,10 +55,9 @@ export async function GET(request: NextRequest) {
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-    const { data: yesterdayScript } = await serviceClient
+    const { data: yesterdayScript } = await supabase
       .from('meeting_scripts')
       .select('full_script, script_date')
-      .eq('dealership_id', dealershipId)
       .eq('script_date', yesterdayStr)
       .maybeSingle();
 

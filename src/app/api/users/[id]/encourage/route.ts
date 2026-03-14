@@ -2,10 +2,10 @@
 // PUT /api/users/[id]/encourage
 // Auth: manager+ role required
 // Sends encouragement SMS via Sinch, logs to sms_transcript_log
+// C-003: User SELECT migrated to RLS client. insertTranscriptLog stays on serviceClient (no INSERT policy).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { serviceClient } from '@/lib/supabase/service';
 import { sendSms } from '@/lib/sms';
 import { insertTranscriptLog } from '@/lib/service-db';
 
@@ -39,14 +39,15 @@ export async function PUT(
 
     const body = await request.json() as EncourageRequest;
 
-    // Get user and verify ownership
-    const { data: targetUser, error: userError } = await serviceClient
+    // C-003: RLS-backed — users SELECT + memberships SELECT auto-filter by dealership from JWT.
+    // RLS ensures only users in the manager's dealership are returned.
+    const { data: targetUser, error: userError } = await supabase
       .from('users')
       .select(`
         id,
         phone,
         full_name,
-        dealership_memberships (
+        dealership_memberships!inner (
           dealership_id
         )
       `)
@@ -57,15 +58,6 @@ export async function PUT(
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
-      );
-    }
-
-    // Verify user belongs to this dealership
-    const memberships = (targetUser.dealership_memberships ?? []) as Array<Record<string, unknown>>;
-    if (!memberships.some((m: Record<string, unknown>) => m.dealership_id === dealershipId)) {
-      return NextResponse.json(
-        { error: 'User not in your dealership' },
-        { status: 403 }
       );
     }
 

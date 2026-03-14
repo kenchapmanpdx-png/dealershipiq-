@@ -1,9 +1,9 @@
 // POST /api/onboarding/brands
 // Phase 5: Save selected brands for a dealership during onboarding
+// C-003: Migrated to RLS client. dealership_brands has FOR ALL policy.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { serviceClient } from '@/lib/supabase/service';
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
       brand_name: brand,
     }));
 
-    const { error } = await serviceClient
+    // C-003: RLS-backed — dealership_brands FOR ALL policy
+    const { error } = await supabase
       .from('dealership_brands')
       .upsert(brandRows, { onConflict: 'dealership_id,brand_name' });
 

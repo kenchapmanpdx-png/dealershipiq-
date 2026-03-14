@@ -728,48 +728,44 @@ Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
 
 **tsc --noEmit:** PASSING
 
-### Batch 3 — Red Team Findings (03/13/2026, branch fix/batch3-red-team-findings)
+### Audit Batch 1 — C-003 serviceClient → RLS Migration (03/13/2026, commit c99fa0d)
+Branch: `fix/batch1-serviceclient-rls`
 
-**9 Red Team findings verified/fixed:**
-- RT-001: Sinch HMAC timing-safe — already fixed (timingSafeEqual in sinch-auth.ts)
-- RT-002: Stripe raw body signature — already fixed (constructEvent in stripe.ts)
-- RT-003: PII in logs — phone masking changed to `***${phone.slice(-4)}`
-- RT-004: "sales training" removed from SMS text, AI prompts, UI
-- RT-005: SMS length validation — warns >160 chars, errors >320 chars
-- RT-006: Feature flag gates added to Ask IQ and Push Training routes
-- RT-007: Opt-out fail-closed — already fixed (isOptedOut in sms.ts)
-- RT-008: Persona moods progressive — already fixed (ALL_MOODS all tiers)
-- RT-009: Stripe checkout idempotency key added
+**10 route files migrated from serviceClient to RLS-backed authenticated client:**
+- `users/route.ts` — opt-out check, user INSERT, membership INSERT → RLS. Cross-tenant phone check + rollback DELETE stay serviceClient.
+- `users/[id]/route.ts` — membership SELECT, user UPDATE → RLS. serviceClient import removed entirely.
+- `users/[id]/encourage/route.ts` — user+membership SELECT → RLS with `!inner` join. serviceClient import removed.
+- `users/import/route.ts` — membership+optout SELECT, user+membership INSERT → RLS. serviceClient import removed.
+- `onboarding/brands/route.ts` — dealership_brands UPSERT → RLS (FOR ALL policy). serviceClient import removed.
+- `onboarding/employees/route.ts` — user+membership INSERT → RLS. serviceClient import removed.
+- `push/training/route.ts` — user+membership SELECT → RLS with `!inner` join. serviceClient import removed.
+- `dashboard/meeting-script/route.ts` — meeting_scripts SELECT → RLS. Fully migrated, no serviceClient.
+- `dashboard/coach-themes/route.ts` — auth migrated to RLS. coach_sessions stays serviceClient (deny-all RLS).
 
-**tsc --noEmit:** PASSING
+**Justified serviceClient retained (14 files):** webhooks (sms/sinch, stripe), crons (4), billing/checkout, admin/costs, app/auth (PWA HMAC), coach/session (deny-all RLS), leaderboard (public endpoint), ask (no INSERT policy on askiq_queries), users/route.ts (cross-tenant phone check).
 
-### Batch 2 — Deferred Items (03/13/2026, branch fix/batch2-deferred-items, commit d617e32)
+**Also fixed:** daily-digest unused import, layout.tsx hooks-order violation.
 
-**4 deferred items + lint fixes:**
-- M-001: Advisory lock moved before all state-modifying operations in webhook. HELP stays outside lock (read-only).
-- M-003: Coach rate limit replaced in-memory Map with DB-backed query (coach_sessions table). Survives cold starts, shared across instances.
-- M-010: Coaching modal accessibility — role="dialog", aria-modal, focus trap, Escape close, backdrop click, return focus.
-- C-005: Rate limit bypass logging — throttled per-request ERROR log when Redis not configured.
-- Lint: removed unused import (daily-digest), moved useEffect before conditional returns (PWA layout).
+**Quality gates:** tsc ✅, eslint ✅, next build ✅
 
-**Quality gates:** tsc --noEmit, next lint, next build — all pass.
+### Audit Batch 2 — Deferred Items (03/13/2026, branch `fix/batch2-deferred-items`)
+See prior session for details. M-001 advisory lock, M-003 DB-backed rate limit, M-010 modal accessibility, C-005 bypass logging.
 
-**L-001 through L-012:** Original audit descriptions not in session docs. Need original audit file to identify and address individually. L-013 done (M-010), L-014 (pagination) deferred.
+### Audit Batch 3 — Red Team Findings (03/12/2026, branch `fix/batch3-red-team-findings`)
+See prior session for details. RT-001 through RT-009.
 
 ## What's Next
-1. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
-2. **Batch 1: C-003 — Migrate 10 user-facing routes from serviceClient → RLS** (~12 hours)
-3. **Merge Batch 3 PR** (fix/batch3-red-team-findings)
-4. **Merge Batch 2 PR** (fix/batch2-deferred-items)
-5. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
-6. **Ken manual steps for Phase 5:** Stripe product/price, env vars
-7. Sentry/Axiom observability (NR-002)
-8. Sinch production upgrade (trial expires 03/24/2026)
-9. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
-10. Integration tests (zero exist)
-11. L-014 dashboard pagination
+1. **Merge 3 audit PRs** — batch3 → batch2 → batch1 (or all into main)
+2. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
+3. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
+4. **Ken manual steps for Phase 5:** Stripe product/price, env vars
+5. Sentry/Axiom observability (NR-002)
+6. Sinch production upgrade (trial expires 03/24/2026)
+7. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
+8. Integration tests (zero exist)
+9. L-013 coaching modal accessibility, L-014 dashboard pagination
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
 - **Sinch Conversation API dashboard** — Platform pages broken. Use REST API.
-- **Audit findings status:** 5 CRITICAL fixed, 9 HIGH fixed, 11 MEDIUM fixed (1 deferred: M-021 Upstash), 7 LOW fixed (2 deferred: L-014 pagination, L-001–L-012 need original audit). C-003 deferred (~12 hours). 9 Red Team findings verified/fixed.
+- **Audit findings status:** 5 CRITICAL fixed, 9 HIGH fixed, 8 MEDIUM fixed (3 deferred), 5 LOW fixed (2 deferred). C-003 COMPLETE (Batch 1).

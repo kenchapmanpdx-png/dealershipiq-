@@ -3,10 +3,10 @@
 // Body: CSV text with columns: full_name, phone
 // Auth: manager+ role required
 // Validates, deduplicates, returns summary of imported/skipped/errors
+// C-003: Migrated to RLS client. insertTranscriptLog stays on serviceClient (no INSERT policy on sms_transcript_log).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { serviceClient } from '@/lib/supabase/service';
 import { sendSms } from '@/lib/sms';
 import { getDealershipName, insertTranscriptLog } from '@/lib/service-db';
 
@@ -160,16 +160,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // C-008: Scope phone lookup to THIS dealership only (was global — cross-tenant leak)
-    const { data: existingUsers } = await serviceClient
+    // C-003 + C-008: RLS-backed — memberships + opt_outs SELECT policies auto-filter by dealership from JWT
+    const { data: existingUsers } = await supabase
       .from('dealership_memberships')
-      .select('users!inner(phone)')
-      .eq('dealership_id', dealershipId);
+      .select('users!inner(phone)');
 
-    const { data: optOuts } = await serviceClient
+    const { data: optOuts } = await supabase
       .from('sms_opt_outs')
-      .select('phone')
-      .eq('dealership_id', dealershipId);
+      .select('phone');
 
     const existingPhones = new Set(
       (existingUsers ?? []).map((u: Record<string, unknown>) => {
@@ -272,8 +270,8 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        // Create user
-        const { data: newUser, error: createError } = await serviceClient
+        // C-003: RLS-backed — users_insert_manager + memberships_insert_manager policies
+        const { data: newUser, error: createError } = await supabase
           .from('users')
           .insert({
             full_name: row.full_name.trim(),
@@ -286,8 +284,8 @@ export async function POST(request: NextRequest) {
 
         if (createError) throw createError;
 
-        // Add to dealership_memberships
-        const { error: memberError } = await serviceClient
+        // C-003: RLS-backed
+        const { error: memberError } = await supabase
           .from('dealership_memberships')
           .insert({
             user_id: newUser.id,

@@ -2,6 +2,7 @@
 // GET /api/leaderboard/[slug]
 // No auth required — public endpoint
 // Returns leaderboard for dealership identified by slug
+// C-003: serviceClient justified — public endpoint, no JWT available.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { serviceClient } from '@/lib/supabase/service';

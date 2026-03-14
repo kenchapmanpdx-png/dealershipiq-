@@ -3,6 +3,7 @@
 // Body: { question: string }
 // Auth: required (any authenticated user)
 // Logs query, returns AI response (placeholder for now)
+// C-003: serviceClient kept for askiq_queries INSERT (no authenticated INSERT policy). Auth via RLS client.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
