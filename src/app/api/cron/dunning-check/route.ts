@@ -1,3 +1,4 @@
+// C-003: Cron endpoint — service role required (via service-db), no user JWT in cron context
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { getPastDueDealerships, updateDealershipBilling } from '@/lib/service-db';

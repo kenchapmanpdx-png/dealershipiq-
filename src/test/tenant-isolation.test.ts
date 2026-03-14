@@ -197,7 +197,7 @@ describe('C-003 Tenant Isolation', () => {
     it('INSERT to wrong tenant blocked by WITH CHECK', () => {
       // Simulate cross-tenant INSERT attempts
       const tables = ['users', 'dealership_memberships', 'askiq_queries', 'coach_sessions'];
-      for (const table of tables) {
+      for (const _table of tables) {
         const attackRow = { dealership_id: DEALERSHIP_B, user_id: USER_A };
         expect(rlsCheckInsert(attackRow, DEALERSHIP_A)).toBe(false);
       }

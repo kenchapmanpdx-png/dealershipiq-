@@ -188,6 +188,9 @@ export async function updateSessionStatus(sessionId: string, status: string) {
   if (error) throw error;
 }
 
+// H-004: Accepts optional `client` param for RLS-backed inserts.
+// Routes with authenticated context pass their supabase client; crons/webhooks omit it (uses serviceClient).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function insertTranscriptLog(entry: {
   userId: string;
   dealershipId: string;
@@ -197,8 +200,9 @@ export async function insertTranscriptLog(entry: {
   sinchMessageId?: string;
   sessionId?: string;
   metadata?: Record<string, unknown>;
-}) {
-  const { error } = await serviceClient
+}, client?: { from: (table: string) => ReturnType<typeof serviceClient.from> }) {
+  const db = client ?? serviceClient;
+  const { error } = await db
     .from('sms_transcript_log')
     .insert({
       user_id: entry.userId,

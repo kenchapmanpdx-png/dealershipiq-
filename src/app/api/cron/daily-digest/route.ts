@@ -2,6 +2,7 @@
 // Fires where local_hour = 7 (brief arrives before 8am meeting).
 // Phase 4.5B: morning_script_enabled → morning meeting script format.
 //             morning_script_enabled = false → old-style daily digest (backward compatible).
+// C-003: Cron endpoint — service role required, no user JWT in cron context
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';

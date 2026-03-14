@@ -38,7 +38,12 @@
 | STRIPE_PRICE_ID | Vercel | Yes | Secret — price_ from Stripe product |
 | RESEND_API_KEY | Vercel | Yes | Secret — for dunning emails |
 
-### Phase 6+ (New - Auth & Sinch)
+### Phase 4.5A (Coach Mode)
+| Variable | Where | Required | Notes |
+|---|---|---|---|
+| APP_TOKEN_SECRET | Vercel | Yes | Secret — signs PWA session tokens for Coach Mode phone auth |
+
+### Phase 6+ (Auth & Sinch)
 | Variable | Where | Required | Notes |
 |---|---|---|---|
 | SUPABASE_JWT_SECRET | Vercel | Yes | Secret — used for JWT verification in auth hooks |
@@ -47,6 +52,19 @@
 | SINCH_PROJECT_ID | Vercel | Yes | Secret — Sinch project ID for API calls |
 | SINCH_APP_ID | Vercel | Yes | Secret — Sinch Conversation API app ID |
 | ADMIN_API_KEY | Vercel | Yes | Secret — admin API key for internal endpoints (costs, coach context) |
+
+### SMS Control
+| Variable | Where | Required | Notes |
+|---|---|---|---|
+| ENABLE_SMS_SEND | Vercel | No | Default: true. Set false to disable all outbound SMS (testing mode) |
+
+### URL Configuration
+| Variable | Where | Notes |
+|---|---|---|
+| NEXT_PUBLIC_APP_URL | Vercel | Canonical app URL. Used by Stripe, billing, dunning. |
+| NEXT_PUBLIC_BASE_URL | Vercel | Used by SMS webhook for consent link generation. Falls back to VERCEL_URL. |
+
+Both URL vars should be set to the same value in production (`https://dealershipiq-wua7.vercel.app`). `NEXT_PUBLIC_APP_URL` is the canonical name for billing/Stripe flows. `NEXT_PUBLIC_BASE_URL` is used in the SMS webhook for consent links.
 
 ## Ken Manual Steps (Phase 5)
 

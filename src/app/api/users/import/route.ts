@@ -3,7 +3,7 @@
 // Body: CSV text with columns: full_name, phone
 // Auth: manager+ role required
 // Validates, deduplicates, returns summary of imported/skipped/errors
-// C-003: Migrated to RLS client. insertTranscriptLog stays on serviceClient (no INSERT policy on sms_transcript_log).
+// C-003: Migrated — RLS client for all operations. insertTranscriptLog via RLS client (H-004 INSERT policy added 03/14).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -352,7 +352,7 @@ export async function POST(request: NextRequest) {
               messageBody: consentMsg,
               sinchMessageId: smsResponse.message_id,
               metadata: { type: 'consent_request' },
-            });
+            }, supabase);
           } catch (smsErr) {
             console.error(
               `Consent SMS failed for ${user.phone.slice(0, 6)}****:`,

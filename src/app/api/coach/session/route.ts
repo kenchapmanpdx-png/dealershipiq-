@@ -2,8 +2,8 @@
 // Phase 4.5A: Coach Mode MVP + Phase 5 (subscription gating)
 // Auth: phone-based session token → user_id
 // Uses GPT-4o for emotional nuance and multi-turn coaching
-// C-003: serviceClient justified — coach_sessions table has deny-all RLS (USING(false)).
-//        No authenticated SELECT/INSERT/UPDATE policy exists. Add policy in future migration.
+// C-003: serviceClient justified — coach_sessions has RLS with manager SELECT policy (03/13 migration).
+//        Service role needed for INSERT (employee has no Supabase Auth — uses phone token via /api/app/auth).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { serviceClient } from '@/lib/supabase/service';

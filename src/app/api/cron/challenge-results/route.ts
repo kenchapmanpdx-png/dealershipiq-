@@ -1,6 +1,7 @@
 // Daily challenge EOD results cron — hourly, fires at 5pm local
 // Ranks all challenge responses, texts results to participants
 // Phase 6B
+// C-003: Cron endpoint — service role required, no user JWT in cron context
 //
 // H-007 TIMEZONE LIMITATION: Vercel Hobby plan (free) only allows one cron job per interval.
 // This cron fires once hourly and checks if local_hour === 17 (5pm) for each dealership.

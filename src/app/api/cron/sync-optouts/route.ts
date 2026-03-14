@@ -1,6 +1,7 @@
 // Opt-out sync cron — polls Sinch Consents API every 5 min
 // Build Master: Phase 2A, 2E
 // Sinch is authoritative for opt-out state. Local table is cache.
+// C-003: Cron endpoint — service role required, no user JWT in cron context
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';

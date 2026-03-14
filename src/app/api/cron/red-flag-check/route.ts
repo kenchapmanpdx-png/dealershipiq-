@@ -2,6 +2,7 @@
 // Runs every 6 hours
 // Build Master: Phase 3, Phase 4.5B (persists to red_flag_events for morning script), Phase 5 (dunning)
 // Detects: no response >3 days, completion rate <30%, score decline >40%, gone dark
+// C-003: Cron endpoint — service role required, no user JWT in cron context
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';

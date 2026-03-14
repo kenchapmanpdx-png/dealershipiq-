@@ -2,7 +2,7 @@
 // PUT /api/users/[id]/encourage
 // Auth: manager+ role required
 // Sends encouragement SMS via Sinch, logs to sms_transcript_log
-// C-003: User SELECT migrated to RLS client. insertTranscriptLog stays on serviceClient (no INSERT policy).
+// C-003: Migrated — All operations via RLS client. insertTranscriptLog via RLS client (H-004 INSERT policy added 03/14).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -95,7 +95,7 @@ export async function PUT(
           sinchMessageId: 'failed',
           phone: targetUser.phone,
           metadata: { type: 'encouragement', status: 'failed', error: String(smsErr) },
-        });
+        }, supabase);
       } catch { /* best-effort logging */ }
       return NextResponse.json(
         { error: 'SMS delivery failed. The message was not sent.' },
@@ -112,7 +112,7 @@ export async function PUT(
       sinchMessageId: smsResponse.message_id,
       phone: targetUser.phone,
       metadata: { type: 'encouragement' },
-    });
+    }, supabase);
 
     return NextResponse.json({
       success: true,

@@ -1,0 +1,9 @@
+-- AUDIT-1 H-001: Add 8 missing FK indexes
+CREATE INDEX IF NOT EXISTS idx_conversation_sessions_prompt_version_id ON conversation_sessions(prompt_version_id);
+CREATE INDEX IF NOT EXISTS idx_training_results_prompt_version_id ON training_results(prompt_version_id);
+CREATE INDEX IF NOT EXISTS idx_consent_records_added_by ON consent_records(added_by);
+CREATE INDEX IF NOT EXISTS idx_scenario_chains_chain_template_id ON scenario_chains(chain_template_id);
+CREATE INDEX IF NOT EXISTS idx_daily_challenges_winner_user_id ON daily_challenges(winner_user_id);
+CREATE INDEX IF NOT EXISTS idx_peer_challenges_winner_id ON peer_challenges(winner_id);
+CREATE INDEX IF NOT EXISTS idx_peer_challenges_challenger_session_id ON peer_challenges(challenger_session_id);
+CREATE INDEX IF NOT EXISTS idx_peer_challenges_challenged_session_id ON peer_challenges(challenged_session_id);

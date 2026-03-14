@@ -4,7 +4,7 @@
 // Auth: manager+ role required
 // Creates session + sends SMS to specified users
 // Phase 5: subscription gating
-// C-003: Users SELECT migrated to RLS. Service-db functions stay on serviceClient (no INSERT policies).
+// C-003: Migrated — Users SELECT via RLS. insertTranscriptLog via RLS client (H-004 INSERT policy added 03/14).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
           sinchMessageId: smsResponse.message_id,
           phone: targetUser.phone,
           sessionId: session.id,
-        });
+        }, supabase);
 
         // Log delivery
         await insertDeliveryLog({

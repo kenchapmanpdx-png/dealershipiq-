@@ -76,6 +76,17 @@
 - **Impact:** Cannot modify webhook config through dashboard if changes needed. Webhook was configured 03/10/2026 and SMS pipeline was verified working at that time.
 - **Recommendation:** Monitor. If webhook issues arise, use Sinch REST API (requires OAuth with SINCH_KEY_ID + SINCH_KEY_SECRET) or contact Sinch support.
 
+## NR-020: Ghost tables — keep for future features
+- **Status:** Informational
+- **Context:** 7 tables exist in schema but are not queried by application code: prompt_versions, leaderboard_entries, usage_tracking, system_messages, employee_schedules, employee_priority_vectors, sms_delivery_log (write-only — delivery tracking without read path yet).
+- **Recommendation:** Keep. All planned for future features (adaptive weighting, schedule awareness, prompt management, delivery analytics). Remove only if feature is permanently canceled.
+
+## NR-021: Durable webhook processing queue deferred
+- **Status:** Deferred by design
+- **Context:** COWORK-INSTRUCTIONS specifies operational tables (processed_webhooks, sms_inbound_jobs, sms_webhook_quarantine) for durable webhook processing. Current implementation: in-memory Set + UNIQUE sinch_message_id constraint on sms_transcript_log. No retry backoff. No quarantine table.
+- **Impact:** Acceptable for pilot (<5,000 webhooks/day). No retry if Vercel function crashes mid-processing. Orphaned session detector (cron every 2h) mitigates.
+- **Recommendation:** Revisit at 10+ dealerships or if orphaned session rate exceeds 1%.
+
 ## NR-016: Duplicate Vercel project cleanup
 - **Status:** Open — requires Ken's action
 - **Context:** Two Vercel projects exist for DealershipIQ: `dealershipiq` (dealershipiq.vercel.app) and `dealershipiq-wua7` (dealershipiq-wua7.vercel.app). Both deploy from the same GitHub repo (kenchapmanpdx-png/dealershipiq-). The `dealershipiq` project has only 7 basic env vars (no SINCH_* vars) — it's incomplete/stale.

@@ -945,7 +945,89 @@ return_type: boolean
 security_type: DEFINER
 ```
 
+---
+
+## Audit 1: Infrastructure (2026-03-13)
+
+**Report:** `docs/AUDIT-1-INFRASTRUCTURE.md`
+
+**Findings:** 4 Critical, 5 High, 12 Medium, 4 Low, 7 Info
+
+### Remediation (2026-03-14) — COMPLETE
+
+All findings remediated in code. Migrations written but not yet applied to Supabase. Build gates passing (tsc, lint, vitest, next build).
+
+**Batch 1 (Criticals):**
+- C-001 + C-002: Migration `20260314000001_c001_c002_enable_rls.sql` — enables RLS on `chain_templates` (dealership-scoped SELECT) and `model_years` (public SELECT)
+- C-003: `billing_events` documented as service-role-only by design (COMMENT ON TABLE in migration)
+- C-004: Migration `20260314000002_c004_meeting_scripts_policy.sql` — adds manager SELECT policy
+
+**Batch 2 (Highs):**
+- H-001: Migration `20260314000003_h001_missing_fk_indexes.sql` — 8 indexes
+- H-002: Migration `20260314000004_h002_standardize_phase6_rls.sql` — 13 policies refactored from `auth.jwt()` to `get_dealership_id()`/`get_user_role()`
+- H-003: C-003 comments added to 7 routes (challenge-results, daily-digest, dunning-check, red-flag-check, sync-optouts, app/auth)
+- H-004: Migration `20260314000005_h004_transcript_insert_policy.sql` — INSERT policy on `sms_transcript_log`. `insertTranscriptLog()` in service-db.ts updated to accept optional RLS client. 3 routes (push/training, users/import, users/[id]/encourage) now pass authenticated client.
+- H-005: Coach session C-003 comment updated to reflect 03/13 manager SELECT policy
+
+**Batch 3 (Mediums):**
+- M-001: Ghost tables logged to NEEDS-REVIEW.md (NR-020) — keep for future features
+- M-002 + M-003: `ENABLE_SMS_SEND` and `APP_TOKEN_SECRET` added to `.env.example` and `docs/ENVIRONMENTS.md`
+- M-004: URL vars documented — `NEXT_PUBLIC_APP_URL` (billing/Stripe), `NEXT_PUBLIC_BASE_URL` (webhook consent links)
+- M-007: Durable queue deferral logged to NEEDS-REVIEW.md (NR-021)
+- M-009: service-db functions verified — all include dealership_id filters
+
+**Pre-existing lint fixes:** `supabase-mock.ts` (let→const), `tenant-isolation.test.ts` (unused var prefix)
+
+**Pending:** Apply 5 migrations to Supabase SQL Editor. Commit and push.
+
+---
+
+## API Routes (32 total)
+
+### Phase 3 — Dashboard
+`GET /api/dashboard/team`, `GET /api/dashboard/sessions`, `GET /api/dashboard/coaching-queue`, `GET /api/dashboard/gaps`, `GET /api/users`, `POST /api/users`, `GET /api/users/[id]`, `PUT /api/users/[id]`, `POST /api/users/import`, `PUT /api/users/[id]/encourage`, `POST /api/push/training`, `POST /api/ask`, `GET /api/leaderboard/[slug]`
+
+### Phase 4.5A — Coach Mode
+`POST /api/coach/session`, `GET /api/coach/context`, `POST /api/app/auth`
+
+### Phase 4.5B — Meeting Script
+`GET /api/dashboard/meeting-script`, `GET /api/dashboard/coach-themes`
+
+### Phase 5 — Billing
+`POST /api/billing/checkout`, `GET /api/billing/status`, `POST /api/billing/portal`, `POST /api/webhooks/stripe`, `GET /api/admin/costs`, `POST /api/onboarding/brands`, `POST /api/onboarding/employees`
+
+### Crons (7)
+`GET /api/cron/daily-training` (hourly), `GET /api/cron/daily-digest` (hourly), `GET /api/cron/orphaned-sessions` (2h), `GET /api/cron/sync-optouts` (hourly), `GET /api/cron/red-flag-check` (6h), `GET /api/cron/dunning-check` (6h), `GET /api/cron/challenge-results` (hourly)
+
+### Webhooks
+`POST /api/webhooks/sms/sinch`, `POST /api/webhooks/stripe`
+
+### Auth
+`GET /api/auth/callback`
+
+---
+
+## Feature Flags
+
+| Flag | Default | Enabled For | Used In |
+|------|---------|-------------|---------|
+| manager_quick_create_enabled | false | Demo Honda, Test Dealership | users/route POST |
+| daily_challenge_enabled | false | Demo Honda, Test Dealership | daily-training cron |
+| scenario_chains_enabled | false | Demo Honda, Test Dealership | daily-training cron |
+| peer_challenge_enabled | false | Demo Honda, Test Dealership | daily-training cron |
+| coach_mode_enabled | false | — | sms webhook (COACH keyword) |
+| morning_script_enabled | true | — | daily-digest cron |
+| cross_dealership_benchmark | false | — | meeting script |
+| vehicle_data_enabled | true | — | training content generation |
+| persona_moods_enabled | true | — | AI grading |
+| behavioral_scoring_urgency | true | — | AI grading |
+| behavioral_scoring_competitive | true | — | AI grading |
+| department_content_enabled | true | — | AI prompt generation |
+
+---
+
 ### What's Next
-- Push `fix/remaining-remediation` branch
-- Merge to main
-- Deploy and verify in production
+- Apply 5 migrations to Supabase SQL Editor
+- Commit and push remediation branch
+- Run Audit 2 (Core Flows) against main repo
+- Verify in production

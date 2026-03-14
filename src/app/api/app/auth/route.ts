@@ -1,6 +1,7 @@
 // POST /api/app/auth — Phone-based authentication for employee PWA
 // Verifies phone + last 4 digits, returns session token
 // Phase 4.5A
+// C-003: Phone token auth — no JWT, creates session token for PWA
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';

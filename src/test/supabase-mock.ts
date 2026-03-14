@@ -22,7 +22,7 @@ export function createMockQueryBuilder(
   mockError: unknown = null
 ) {
   const builder: Record<string, unknown> = {};
-  let currentEntry: Partial<MockQueryLog> = {};
+  const currentEntry: Partial<MockQueryLog> = {};
 
   const chainable = new Proxy(builder, {
     get(_target, prop: string) {
