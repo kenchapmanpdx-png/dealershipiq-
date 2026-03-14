@@ -135,6 +135,12 @@ export async function POST(request: NextRequest) {
 
     // Read CSV from request body
     const csvText = await request.text();
+
+    // V4-M-003: Post-read body size check (Content-Length can be spoofed)
+    if (csvText.length > MAX_CSV_SIZE) {
+      return NextResponse.json({ error: 'CSV too large (max 5MB)' }, { status: 413 });
+    }
+
     if (!csvText || csvText.trim().length === 0) {
       return NextResponse.json(
         { error: 'Request body must contain CSV data' },
@@ -311,7 +317,9 @@ export async function POST(request: NextRequest) {
           phone: normalizedPhone,
           fullName: row.full_name.trim(),
         });
-      } catch {
+      } catch (rowErr) {
+        // V4-M-004: Log error instead of silently swallowing
+        console.error(`Import row ${rowNumber} DB error:`, (rowErr as Error).message ?? rowErr);
         result.errors++;
         result.rows.push({
           row_number: rowNumber,

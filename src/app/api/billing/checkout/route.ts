@@ -1,5 +1,8 @@
 // POST /api/billing/checkout
 // Phase 5: Self-service signup flow.
+// C-003: serviceClient justified — signup creates new auth user + dealership before JWT exists.
+//        admin.createUser, admin.updateUserById, admin.deleteUser, and initial row inserts
+//        all require service_role because there is no authenticated session yet.
 // 1. Create Supabase Auth user (email + password)
 // 2. Create dealership row
 // 3. Create dealership_membership

@@ -246,7 +246,8 @@ export async function getCoachingFocus(
     let lowestDomain = '';
     let lowestAvg = Infinity;
     for (const [domain, stats] of Object.entries(domainAvgs)) {
-      const avg = stats.sum / stats.count;
+      // V4-H-003: Guard division by zero
+      const avg = stats.count > 0 ? stats.sum / stats.count : 0;
       if (avg < lowestAvg) {
         lowestAvg = avg;
         lowestDomain = domain;
@@ -303,7 +304,8 @@ async function getWeakestDomain(
     let weakestDomain = '';
     let highestWeight = 0;
     for (const [domain, stats] of Object.entries(domainTotals)) {
-      const avg = stats.sum / stats.count;
+      // V4-H-003: Guard division by zero
+      const avg = stats.count > 0 ? stats.sum / stats.count : 0;
       if (avg > highestWeight) {
         highestWeight = avg;
         weakestDomain = domain;
@@ -358,7 +360,8 @@ async function getVehicleNamesForDealership(
         name: string;
         model_years: { models: { name: string; makes: { name: string } } };
       } | null;
-      if (trim) {
+      // V4-M-002: Optional chaining on deeply nested competitive data
+      if (trim?.model_years?.models?.makes?.name && trim?.model_years?.models?.name) {
         competitorModel = `${trim.model_years.models.makes.name} ${trim.model_years.models.name}`;
       }
     }

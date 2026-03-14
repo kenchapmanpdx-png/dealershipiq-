@@ -96,6 +96,7 @@ export async function GET(
             ) / results.length
           : 0;
 
+        // V4-H-004: Math.max() safe — guarded by results.length > 0
         const lastTraining = results.length > 0
           ? new Date(Math.max(...results.map((r: Record<string, unknown>) => new Date(r.created_at as string).getTime())))
               .toISOString()

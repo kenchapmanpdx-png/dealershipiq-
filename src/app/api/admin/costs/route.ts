@@ -1,6 +1,7 @@
 // GET /api/admin/costs
 // Phase 5: Ken-only cost tracking endpoint
 // Returns per-dealership SMS count and estimated OpenAI token usage
+// C-003: serviceClient justified — cross-tenant admin query. Auth gated by email allowlist.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';

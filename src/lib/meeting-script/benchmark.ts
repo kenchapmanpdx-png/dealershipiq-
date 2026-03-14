@@ -81,7 +81,8 @@ export async function getBenchmark(
       .filter((id) => dealershipScores[id])
       .map((id) => ({
         id,
-        avg: dealershipScores[id].sum / dealershipScores[id].count,
+        // V4-H-002: Guard division by zero
+        avg: dealershipScores[id].count > 0 ? dealershipScores[id].sum / dealershipScores[id].count : 0,
       }))
       .sort((a, b) => b.avg - a.avg);
 

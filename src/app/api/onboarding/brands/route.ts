@@ -29,6 +29,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Brands required' }, { status: 400 });
   }
 
+  // V4-M-005: Validate brand string length/content
+  const MAX_BRANDS = 50;
+  const MAX_BRAND_LENGTH = 100;
+  if (brands.length > MAX_BRANDS) {
+    return NextResponse.json({ error: `Too many brands (max ${MAX_BRANDS})` }, { status: 400 });
+  }
+  for (const b of brands) {
+    if (typeof b !== 'string' || b.trim().length === 0 || b.length > MAX_BRAND_LENGTH) {
+      return NextResponse.json({ error: 'Invalid brand name' }, { status: 400 });
+    }
+  }
+
   // M-017: Single source of truth — dealership_brands table only (no settings fallback)
   try {
     const brandRows = brands.map((brand: string) => ({

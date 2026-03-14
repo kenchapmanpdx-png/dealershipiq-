@@ -82,7 +82,8 @@ export async function GET() {
       .map(([topic, count]) => ({
         topic,
         count,
-        percentage: Math.round((count / allSessions.length) * 100),
+        // V4-H-001: Guard division by zero when no sessions
+        percentage: allSessions.length > 0 ? Math.round((count / allSessions.length) * 100) : 0,
       }))
       .sort((a, b) => b.count - a.count);
 
