@@ -3,6 +3,7 @@
 // Body: { full_name: string; phone: string }
 // Auth: manager+ role required
 // Validates E.164 phone, checks for duplicates and opt-outs
+// C-003: Tenant-scoped queries use RLS client. Cross-tenant phone check uses serviceClient.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -94,12 +95,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if phone is opted out in this dealership
-    const { data: optOut, error: optOutError } = await serviceClient
+    // C-003: RLS-backed — sms_opt_outs SELECT policy filters by dealership_id from JWT
+    const { data: optOut, error: optOutError } = await supabase
       .from('sms_opt_outs')
       .select('id')
       .eq('phone', normalizedPhone)
-      .eq('dealership_id', dealershipId)
       .maybeSingle();
 
     if (optOutError && optOutError.code !== 'PGRST116') {
@@ -113,8 +113,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create user
-    const { data: newUser, error: createError } = await serviceClient
+    // C-003: RLS-backed — users_insert_manager policy allows manager INSERT
+    const { data: newUser, error: createError } = await supabase
       .from('users')
       .insert({
         full_name: body.full_name.trim(),
@@ -133,8 +133,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Add to dealership_memberships as salesperson
-    const { error: memberError } = await serviceClient
+    // C-003: RLS-backed — memberships_insert_manager policy allows manager INSERT
+    const { error: memberError } = await supabase
       .from('dealership_memberships')
       .insert({
         user_id: newUser.id,

@@ -2,10 +2,10 @@
 // DELETE /api/users/[id]
 // Sets status to 'inactive'
 // Auth: manager+ role required
+// C-003: Fully migrated to RLS-backed authenticated client.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { serviceClient } from '@/lib/supabase/service';
 
 export async function DELETE(
   request: NextRequest,
@@ -31,12 +31,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Verify user belongs to this dealership
-    const { data: membership, error: memberError } = await serviceClient
+    // C-003: RLS-backed — memberships SELECT policy auto-filters by dealership_id from JWT
+    const { data: membership, error: memberError } = await supabase
       .from('dealership_memberships')
       .select('id')
       .eq('user_id', id)
-      .eq('dealership_id', dealershipId)
       .maybeSingle();
 
     if (memberError && memberError.code !== 'PGRST116') {
@@ -50,8 +49,8 @@ export async function DELETE(
       );
     }
 
-    // Soft-delete: set status to inactive
-    const { error: updateError } = await serviceClient
+    // C-003: RLS-backed — users UPDATE policy allows managers to update users in their dealership
+    const { error: updateError } = await supabase
       .from('users')
       .update({ status: 'deactivated', updated_at: new Date().toISOString() })
       .eq('id', id);

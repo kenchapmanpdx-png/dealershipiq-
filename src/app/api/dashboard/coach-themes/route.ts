@@ -1,61 +1,44 @@
 // GET /api/dashboard/coach-themes — Aggregated anonymous coaching themes
 // Phase 4.5A: Coach Mode MVP
-// Auth: Manager role via JWT middleware
+// Auth: Manager role via Supabase JWT (cookie-based)
 // PRIVACY: NEVER returns individual session content, user IDs, or message text
+// C-003: Auth migrated to createServerSupabaseClient.
+//        coach_sessions query stays on serviceClient — table has deny-all RLS
+//        (no authenticated SELECT policy). Add policy in future migration.
 
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { serviceClient } from '@/lib/supabase/service';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 
-export async function GET(request: NextRequest) {
-  // Manager auth via Supabase JWT
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const token = authHeader.slice(7);
-  let dealershipId: string;
-
+export async function GET() {
   try {
-    // Verify JWT and extract dealership_id
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !supabaseAnonKey) {
-      return NextResponse.json({ data: null, error: 'Server config error' }, { status: 500 });
-    }
+    const supabase = await createServerSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
+    if (!user) {
       return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
     }
 
-    dealershipId = user.app_metadata?.dealership_id;
-    const role = user.app_metadata?.user_role;
+    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
+    const role = user.app_metadata?.user_role as string | undefined;
 
-    if (!dealershipId || !['manager', 'owner'].includes(role)) {
+    if (!dealershipId || !role || !['manager', 'owner'].includes(role)) {
       return NextResponse.json({ data: null, error: 'Manager access required' }, { status: 403 });
     }
-  } catch {
-    return NextResponse.json({ data: null, error: 'Auth failed' }, { status: 401 });
-  }
 
-  // H-010: Subscription gating
-  const subCheck = await checkSubscriptionAccess(dealershipId);
-  if (!subCheck.allowed) {
-    return NextResponse.json({ data: null, error: 'Subscription required' }, { status: 403 });
-  }
+    // H-010: Subscription gating
+    const subCheck = await checkSubscriptionAccess(dealershipId);
+    if (!subCheck.allowed) {
+      return NextResponse.json({ data: null, error: 'Subscription required' }, { status: 403 });
+    }
 
-  try {
     // Calculate date range (last 7 days)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    // Fetch sessions for this dealership in the period
-    // PRIVACY: Only select aggregation fields, never expose user_id in response
+    // C-003 NOTE: coach_sessions has deny-all RLS — must use serviceClient.
+    // TODO: Add authenticated SELECT policy on coach_sessions in future migration.
     const { data: sessions, error: fetchError } = await serviceClient
       .from('coach_sessions')
       .select('session_topic, sentiment_trend, user_id')

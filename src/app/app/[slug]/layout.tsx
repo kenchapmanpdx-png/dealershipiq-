@@ -95,6 +95,15 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
     }
   }, [phone, lastFour, slug]);
 
+  // M-018: If user changes URL slug after auth, clear session and force re-auth
+  // NOTE: Must be before conditional returns to satisfy React hooks rules-of-hooks
+  useEffect(() => {
+    if (session?.authenticatedSlug && session.authenticatedSlug !== slug) {
+      document.cookie = 'diq_session=; path=/; max-age=0';
+      setSession(null);
+    }
+  }, [slug, session]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -144,14 +153,6 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  // M-018: If user changes URL slug after auth, clear session and force re-auth
-  useEffect(() => {
-    if (session?.authenticatedSlug && session.authenticatedSlug !== slug) {
-      document.cookie = 'diq_session=; path=/; max-age=0';
-      setSession(null);
-    }
-  }, [slug, session]);
 
   // Check if Coach tab should be hidden (Spanish language)
   const showCoach = session.language !== 'es';

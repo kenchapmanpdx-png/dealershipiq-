@@ -1,9 +1,9 @@
 // POST /api/onboarding/employees
 // Phase 5: Import employees during onboarding
+// C-003: Migrated to RLS client. users INSERT + memberships INSERT policies exist for managers.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { serviceClient } from '@/lib/supabase/service';
 
 interface EmployeeInput {
   full_name: string;
@@ -54,8 +54,8 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      // Insert user row
-      const { data: newUser, error: insertError } = await serviceClient
+      // C-003: RLS-backed — users_insert_manager policy
+      const { data: newUser, error: insertError } = await supabase
         .from('users')
         .insert({
           full_name: emp.full_name.trim(),
@@ -73,8 +73,8 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Create membership
-      await serviceClient.from('dealership_memberships').insert({
+      // C-003: RLS-backed — memberships_insert_manager policy
+      await supabase.from('dealership_memberships').insert({
         user_id: newUser.id as string,
         dealership_id: dealershipId,
         role: emp.role === 'manager' ? 'manager' : 'employee',

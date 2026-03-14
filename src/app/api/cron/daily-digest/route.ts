@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { sendSms } from '@/lib/sms';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
-import { getLocalYesterdayString, getLocalDateString, isLocalMonday } from '@/lib/quiet-hours';
+import { getLocalYesterdayString, isLocalMonday } from '@/lib/quiet-hours';
 import {
   getDealershipsByTimezoneHour,
   getManagersForDealership,
