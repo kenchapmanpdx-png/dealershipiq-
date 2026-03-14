@@ -3,11 +3,11 @@
 // Body: { question: string }
 // Auth: required (any authenticated user)
 // Logs query, returns AI response (placeholder for now)
-// C-003: serviceClient kept for askiq_queries INSERT (no authenticated INSERT policy). Auth via RLS client.
+// C-003: Fully migrated to RLS client. askiq_insert_authenticated policy
+//        added in migration 20260313100000_c003_rls_policies.sql.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { serviceClient } from '@/lib/supabase/service';
 import { isFeatureEnabled } from '@/lib/service-db';
 
 interface AskRequest {
@@ -90,8 +90,8 @@ export async function POST(request: NextRequest) {
     const aiResponse = `Thank you for your question: "${questionText}". The AI engine is being trained with your dealership's knowledge base. Check back soon for a fully personalized response!`;
     const confidence = 0.0; // Low confidence for placeholder
 
-    // Log query to askiq_queries
-    const { data: queryRecord, error: insertError } = await serviceClient
+    // C-003: RLS-backed — askiq_insert_authenticated policy enforces dealership_id from JWT.
+    const { data: queryRecord, error: insertError } = await supabase
       .from('askiq_queries')
       .insert({
         user_id: user.id,

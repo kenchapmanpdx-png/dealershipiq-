@@ -801,3 +801,35 @@ Ran 6-agent parallel audit after all prior fixes merged. Found 14 new issues.
 - Batch 3: https://github.com/kenchapmanpdx-png/dealershipiq-/pull/new/fix/audit-v4-batch3
 - Batch 2: https://github.com/kenchapmanpdx-png/dealershipiq-/pull/new/fix/audit-v4-batch2
 - Batch 1: https://github.com/kenchapmanpdx-png/dealershipiq-/pull/new/fix/audit-v4-batch1
+
+## C-003 serviceClient Inventory (v5 — 2026-03-13)
+
+### Migrated to RLS (Batch 1, prior session)
+| Route | Tables | Status |
+|-------|--------|--------|
+| users/[id]/route.ts | users, dealership_memberships | MIGRATED — serviceClient import removed |
+| users/[id]/encourage/route.ts | users, dealership_memberships | MIGRATED — serviceClient import removed |
+| users/import/route.ts | users, dealership_memberships, sms_opt_outs | MIGRATED — serviceClient import removed |
+| onboarding/brands/route.ts | dealership_brands | MIGRATED — serviceClient import removed |
+| onboarding/employees/route.ts | users, dealership_memberships | MIGRATED — serviceClient import removed |
+| push/training/route.ts | users, dealership_memberships | MIGRATED — serviceClient import removed |
+| dashboard/meeting-script/route.ts | meeting_scripts | MIGRATED — serviceClient import removed |
+
+### Migrating Now (v5)
+| Route | Table | Operation | Fix |
+|-------|-------|-----------|-----|
+| dashboard/coach-themes | coach_sessions | SELECT | Add manager SELECT RLS policy → migrate to RLS client |
+| ask/route | askiq_queries | INSERT | Add authenticated INSERT RLS policy → migrate to RLS client |
+
+### Justified serviceClient (Stays)
+| Route | Reason |
+|-------|--------|
+| admin/costs | Cross-tenant admin query. No single-tenant JWT can see all dealerships. Auth by email allowlist. |
+| app/auth | PWA phone auth. No JWT exists. Creates HMAC session token. |
+| billing/checkout | Signup bootstrap. Creates Auth user + dealership before JWT exists. admin.createUser requires service_role. |
+| coach/session | PWA phone auth (HMAC token, not JWT). coach_sessions has deny-all RLS. Even with SELECT policy, no JWT to scope it. |
+| leaderboard/[slug] | Public endpoint. No auth, no JWT. |
+| users/route (2 calls) | Cross-tenant phone duplicate check (line 81). Rollback DELETE (line 149, no DELETE policy). All tenant-scoped queries already on RLS. |
+
+### Cron + Webhook Routes (All Justified)
+cron/daily-training, cron/daily-digest, cron/challenge-results, cron/red-flag-check, cron/sync-optouts, cron/orphaned-sessions, webhooks/sms/sinch, webhooks/stripe — No user context. serviceClient required.

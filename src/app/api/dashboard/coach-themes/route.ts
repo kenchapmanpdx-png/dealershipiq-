@@ -2,13 +2,11 @@
 // Phase 4.5A: Coach Mode MVP
 // Auth: Manager role via Supabase JWT (cookie-based)
 // PRIVACY: NEVER returns individual session content, user IDs, or message text
-// C-003: Auth migrated to createServerSupabaseClient.
-//        coach_sessions query stays on serviceClient — table has deny-all RLS
-//        (no authenticated SELECT policy). Add policy in future migration.
+// C-003: Fully migrated to RLS client. coach_sessions_select_manager policy
+//        added in migration 20260313100000_c003_rls_policies.sql.
 
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { serviceClient } from '@/lib/supabase/service';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 
 export async function GET() {
@@ -37,12 +35,11 @@ export async function GET() {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    // C-003 NOTE: coach_sessions has deny-all RLS — must use serviceClient.
-    // TODO: Add authenticated SELECT policy on coach_sessions in future migration.
-    const { data: sessions, error: fetchError } = await serviceClient
+    // C-003: RLS-backed — coach_sessions_select_manager policy filters by dealership_id from JWT.
+    // Manual .eq('dealership_id') removed — RLS handles tenant scoping.
+    const { data: sessions, error: fetchError } = await supabase
       .from('coach_sessions')
       .select('session_topic, sentiment_trend, user_id')
-      .eq('dealership_id', dealershipId)
       .gte('created_at', sevenDaysAgo.toISOString());
 
     if (fetchError) {
