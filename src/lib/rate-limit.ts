@@ -14,6 +14,17 @@ interface RateLimitResult {
 
 const PASS_THROUGH: RateLimitResult = { success: true, remaining: 999, reset: 0 };
 
+// C-005: Throttled per-request logging when rate limiting is bypassed.
+// Logs once per minute per limiter to avoid spam while ensuring observability.
+const _lastBypassLog: Record<string, number> = {};
+function logBypass(limiter: string): void {
+  const now = Date.now();
+  if (!_lastBypassLog[limiter] || now - _lastBypassLog[limiter] > 60_000) {
+    console.error(`[RATE-LIMIT] ${limiter} check BYPASSED — Redis not configured. Request allowed without limit.`);
+    _lastBypassLog[limiter] = now;
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _redis: any = null;
 let _initialized = false;
@@ -56,7 +67,10 @@ async function getRatelimit(): Promise<any> {
 export async function checkAiGradingLimit(dealershipId: string): Promise<RateLimitResult> {
   const redis = await getRedis();
   const mod = await getRatelimit();
-  if (!redis || !mod) return PASS_THROUGH;
+  if (!redis || !mod) {
+    logBypass('ai-grading');
+    return PASS_THROUGH;
+  }
 
   try {
     const limiter = new mod.Ratelimit({
@@ -76,7 +90,10 @@ export async function checkAiGradingLimit(dealershipId: string): Promise<RateLim
 export async function checkSmsSendLimit(): Promise<RateLimitResult> {
   const redis = await getRedis();
   const mod = await getRatelimit();
-  if (!redis || !mod) return PASS_THROUGH;
+  if (!redis || !mod) {
+    logBypass('sms-send');
+    return PASS_THROUGH;
+  }
 
   try {
     const limiter = new mod.Ratelimit({

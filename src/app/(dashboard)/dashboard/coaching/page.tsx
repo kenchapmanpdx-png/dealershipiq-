@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface CoachingSession {
   id: string;
@@ -160,47 +160,129 @@ export default function CoachingPage() {
         </div>
       )}
 
-      {/* Encouragement modal */}
+      {/* M-010: Encouragement modal — accessible dialog */}
       {selectedSessionId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Send Encouragement
-            </h3>
-            <textarea
-              value={encouragementMessage}
-              onChange={(e) => setEncouragementMessage(e.target.value)}
-              placeholder="Type a message (optional — we'll use a default if blank)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-4"
-              rows={4}
-              maxLength={160}
-            />
-            <div className="text-xs text-gray-500 mb-4">
-              {encouragementMessage.length}/160 characters
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setSelectedSessionId(null)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const session = data.queue.find((s) => s.id === selectedSessionId);
-                  if (session) {
-                    sendEncouragement(session.user_id);
-                  }
-                }}
-                disabled={sendingEncouragement !== null}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                {sendingEncouragement ? 'Sending...' : 'Send'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <EncouragementModal
+          encouragementMessage={encouragementMessage}
+          setEncouragementMessage={setEncouragementMessage}
+          onClose={() => setSelectedSessionId(null)}
+          onSend={() => {
+            const session = data.queue.find((s) => s.id === selectedSessionId);
+            if (session) sendEncouragement(session.user_id);
+          }}
+          sending={sendingEncouragement !== null}
+        />
       )}
+    </div>
+  );
+}
+
+// M-010: Accessible modal with focus trap, Escape close, aria attributes
+function EncouragementModal({
+  encouragementMessage,
+  setEncouragementMessage,
+  onClose,
+  onSend,
+  sending,
+}: {
+  encouragementMessage: string;
+  setEncouragementMessage: (v: string) => void;
+  onClose: () => void;
+  onSend: () => void;
+  sending: boolean;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<Element | null>(null);
+
+  useEffect(() => {
+    // Store previously focused element for return focus
+    previousFocusRef.current = document.activeElement;
+
+    // Focus the dialog on mount
+    dialogRef.current?.focus();
+
+    // Escape key handler
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      // Focus trap: Tab and Shift+Tab cycle within dialog
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      // Return focus to previously focused element
+      if (previousFocusRef.current instanceof HTMLElement) {
+        previousFocusRef.current.focus();
+      }
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="encouragement-modal-title"
+      ref={dialogRef}
+      tabIndex={-1}
+      onClick={(e) => {
+        // Close on backdrop click
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+        <h3
+          id="encouragement-modal-title"
+          className="text-lg font-semibold text-gray-900 mb-4"
+        >
+          Send Encouragement
+        </h3>
+        <textarea
+          value={encouragementMessage}
+          onChange={(e) => setEncouragementMessage(e.target.value)}
+          placeholder="Type a message (optional - default used if blank)"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-4"
+          rows={4}
+          maxLength={160}
+          aria-label="Encouragement message"
+        />
+        <div className="text-xs text-gray-500 mb-4" aria-live="polite">
+          {encouragementMessage.length}/160 characters
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSend}
+            disabled={sending}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {sending ? 'Sending...' : 'Send'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

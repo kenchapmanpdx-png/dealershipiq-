@@ -728,32 +728,48 @@ Full report: `docs/FULL-CODE-AUDIT-3-2026-03-13.md`
 
 **tsc --noEmit:** PASSING
 
-### Red Team Findings — Batch 3 (03/13/2026, branch fix/batch3-red-team-findings)
+### Batch 3 — Red Team Findings (03/13/2026, branch fix/batch3-red-team-findings)
 
-**Verified already fixed:** RT-001 (Sinch HMAC timingSafeEqual), RT-002 (Stripe constructEvent raw body), RT-007 (opt-out fail-closed), RT-008 (ALL_MOODS all tiers)
+**9 Red Team findings verified/fixed:**
+- RT-001: Sinch HMAC timing-safe — already fixed (timingSafeEqual in sinch-auth.ts)
+- RT-002: Stripe raw body signature — already fixed (constructEvent in stripe.ts)
+- RT-003: PII in logs — phone masking changed to `***${phone.slice(-4)}`
+- RT-004: "sales training" removed from SMS text, AI prompts, UI
+- RT-005: SMS length validation — warns >160 chars, errors >320 chars
+- RT-006: Feature flag gates added to Ask IQ and Push Training routes
+- RT-007: Opt-out fail-closed — already fixed (isOptedOut in sms.ts)
+- RT-008: Persona moods progressive — already fixed (ALL_MOODS all tiers)
+- RT-009: Stripe checkout idempotency key added
 
-**New fixes (9 findings, 13 files):**
-- RT-003: PII scrub — webhook log masked to last 4 digits
-- RT-004: "sales training" → "training" in consent SMS, leaderboard, AI prompts
-- RT-005: SMS length validation — warn >160 chars, error >320 chars on send
-- RT-006: Feature flags added to Ask IQ + Push Training; full 13-flag set on signup
-- RT-009: Stripe checkout idempotency key (dealershipId_email)
+**tsc --noEmit:** PASSING
 
-**Lint fixes:** rules-of-hooks (M-018 useEffect), unused import (daily-digest)
+### Batch 2 — Deferred Items (03/13/2026, branch fix/batch2-deferred-items, commit d617e32)
 
-**tsc --noEmit:** PASSING | **next lint:** PASSING
+**4 deferred items + lint fixes:**
+- M-001: Advisory lock moved before all state-modifying operations in webhook. HELP stays outside lock (read-only).
+- M-003: Coach rate limit replaced in-memory Map with DB-backed query (coach_sessions table). Survives cold starts, shared across instances.
+- M-010: Coaching modal accessibility — role="dialog", aria-modal, focus trap, Escape close, backdrop click, return focus.
+- C-005: Rate limit bypass logging — throttled per-request ERROR log when Redis not configured.
+- Lint: removed unused import (daily-digest), moved useEffect before conditional returns (PWA layout).
+
+**Quality gates:** tsc --noEmit, next lint, next build — all pass.
+
+**L-001 through L-012:** Original audit descriptions not in session docs. Need original audit file to identify and address individually. L-013 done (M-010), L-014 (pagination) deferred.
 
 ## What's Next
-1. **Batch 2 (in progress):** M-001 webhook lock, M-003 coach rate limit to DB, M-010 modal accessibility, C-005 rate limit logging, remaining LOW items
-2. **Batch 1:** C-003 serviceClient → RLS migration (10+ routes, ~12 hours)
-3. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011
-4. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
-5. Sentry/Axiom observability (NR-002)
-6. Sinch production upgrade (trial expires 03/24/2026)
-7. Upstash Redis for production rate limiting
-8. Integration tests + vitest setup
+1. **Create record_chain_step RPC in Supabase** — Ken manual step for H-011 atomic fix
+2. **Batch 1: C-003 — Migrate 10 user-facing routes from serviceClient → RLS** (~12 hours)
+3. **Merge Batch 3 PR** (fix/batch3-red-team-findings)
+4. **Merge Batch 2 PR** (fix/batch2-deferred-items)
+5. **Phase 1A codebase rename** — `salesperson` → `employee` (~30 files)
+6. **Ken manual steps for Phase 5:** Stripe product/price, env vars
+7. Sentry/Axiom observability (NR-002)
+8. Sinch production upgrade (trial expires 03/24/2026)
+9. Upstash Redis for production rate limiting (M-021, L-015 upgrade)
+10. Integration tests (zero exist)
+11. L-014 dashboard pagination
 
 ## Blocked Items
 - **Sinch trial account** — Test number expires 03/24/2026. $18.00 credit available.
 - **Sinch Conversation API dashboard** — Platform pages broken. Use REST API.
-- **PR pending review:** `fix/batch3-red-team-findings` — Ken must create PR at https://github.com/kenchapmanpdx-png/dealershipiq-/pull/new/fix/batch3-red-team-findings
+- **Audit findings status:** 5 CRITICAL fixed, 9 HIGH fixed, 11 MEDIUM fixed (1 deferred: M-021 Upstash), 7 LOW fixed (2 deferred: L-014 pagination, L-001–L-012 need original audit). C-003 deferred (~12 hours). 9 Red Team findings verified/fixed.
