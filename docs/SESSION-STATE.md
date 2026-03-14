@@ -833,3 +833,45 @@ Ran 6-agent parallel audit after all prior fixes merged. Found 14 new issues.
 
 ### Cron + Webhook Routes (All Justified)
 cron/daily-training, cron/daily-digest, cron/challenge-results, cron/red-flag-check, cron/sync-optouts, cron/orphaned-sessions, webhooks/sms/sinch, webhooks/stripe — No user context. serviceClient required.
+
+---
+
+## Audit Remediation — Completion (2026-03-13)
+
+### Step 1: Webhook Signatures (RT-001, RT-002) — VERIFIED
+- RT-001: `src/lib/sinch-auth.ts` — HMAC-SHA256 + `crypto.timingSafeEqual` + 5min replay window
+- RT-002: `src/app/api/webhooks/stripe/route.ts` — `request.text()` raw body + `stripe.webhooks.constructEvent`
+
+### Step 2: Vitest Infrastructure — DONE
+- vitest + @vitest/coverage-v8 in devDependencies
+- `vitest.config.ts`, `src/test/setup.ts`, `src/test/supabase-mock.ts`
+- 2 test files, 17 tests, all passing
+
+### Step 3: C-003 Service Role Migration — DONE
+- SQL migration: `20260313100000_c003_rls_policies.sql` (coach_sessions SELECT, askiq_queries INSERT)
+- `dashboard/coach-themes/route.ts` migrated from serviceClient to RLS
+- `ask/route.ts` migrated from serviceClient to RLS
+- 17 tenant isolation tests passing
+- 6 justified serviceClient uses remain (inventory above)
+
+### Step 4: Remaining Remediation — DONE
+| Item | Status | Evidence |
+|------|--------|----------|
+| RT-003 PII in logs | FIXED | 5 files sanitized: raw err→.message, fullName removed, res.text() removed |
+| RT-004 No "sales training" in SMS | PASS | `grep -rni "sales training" src/` returns 0 results |
+| RT-006 Feature flags | PASS | `isFeatureEnabled` enforced in 10+ route/lib files |
+| RT-007 Opt-out fail-closed | PASS | `src/lib/sms.ts` returns true on all error paths (lines 52, 68, 74) |
+| RT-008 ALL_MOODS complete | PASS | `persona-moods.ts:122` — spreads all 3 tiers |
+| RT-009 Stripe idempotency | PASS | `stripe.ts:41,69` — key = `checkout_${dealershipId}_${email}` |
+| M-001 Advisory lock | PASS | SQL uses `pg_try_advisory_xact_lock` (transaction-scoped) |
+| M-003 Coach rate limit | PASS | DB-backed `checkRateLimit()` at `coach/session/route.ts:613` |
+| C-005 Rate limit disabled | PASS | `rate-limit.ts:23,40` — logs at `console.error` level |
+
+### Quality Gates
+- `npx tsc --noEmit` — PASS
+- `npx vitest run` — 2 files, 17 tests, all PASS
+
+### What's Next
+- Push `fix/remaining-remediation` branch
+- Merge to main
+- Deploy and verify in production
