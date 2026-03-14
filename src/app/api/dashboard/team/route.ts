@@ -41,7 +41,9 @@ export async function GET() {
       return NextResponse.json({ error: 'Subscription required', reason: subCheck.reason }, { status: 403 });
     }
 
-    // Get all users in dealership with training stats
+    // D1-H-001: Bound training_results to 90 days to prevent unbounded growth
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
     const { data: users, error: usersError } = await supabase
       .from('users')
       .select(`
@@ -61,7 +63,8 @@ export async function GET() {
           created_at
         )
       `)
-      .eq('dealership_memberships.dealership_id', dealershipId);
+      .eq('dealership_memberships.dealership_id', dealershipId)
+      .gte('training_results.created_at', ninetyDaysAgo);
 
     if (usersError) {
       console.error('Failed to fetch team members:', (usersError as Error).message ?? usersError);

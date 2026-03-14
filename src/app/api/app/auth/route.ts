@@ -7,11 +7,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
 import { serviceClient } from '@/lib/supabase/service';
 
-// S-001: Fail-closed — reject all auth if no signing secret configured
+// D2-M-002: Dedicated secret for coach tokens. No CRON_SECRET fallback.
 function getAuthSecret(): string {
-  const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET;
+  const secret = process.env.APP_TOKEN_SECRET;
   if (!secret) {
-    throw new Error('APP_AUTH_SECRET or CRON_SECRET must be set');
+    throw new Error('APP_TOKEN_SECRET must be set');
   }
   return secret;
 }
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     // Look up user by phone
     const { data: user, error: userError } = await serviceClient
       .from('users')
-      .select('id, full_name, language, dealership_id, status')
+      .select('id, full_name, language, status')
       .eq('phone', normalized)
       .single();
 
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       const alt = normalized.replace(/^\+/, '');
       const { data: user2 } = await serviceClient
         .from('users')
-        .select('id, full_name, language, dealership_id, status')
+        .select('id, full_name, language, status')
         .eq('phone', alt)
         .single();
 

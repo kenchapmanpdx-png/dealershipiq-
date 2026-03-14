@@ -133,8 +133,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Read CSV from request body
-    const csvText = await request.text();
+    // D4-M-001: Handle both FormData (dashboard UI) and raw text (programmatic callers)
+    let csvText: string;
+    const contentType = request.headers.get('content-type') ?? '';
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData();
+      const file = formData.get('file') as File | null;
+      if (!file) {
+        return NextResponse.json({ error: 'No file in form data' }, { status: 400 });
+      }
+      csvText = await file.text();
+    } else {
+      csvText = await request.text();
+    }
 
     // V4-M-003: Post-read body size check (Content-Length can be spoofed)
     if (csvText.length > MAX_CSV_SIZE) {

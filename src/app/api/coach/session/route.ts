@@ -226,12 +226,13 @@ async function continueSession(
   sessionId: string,
   userMessage?: string
 ) {
-  // Load session (verify ownership)
+  // D2-H-001: Load session (verify ownership + dealership scope)
   const { data: session, error: fetchError } = await serviceClient
     .from('coach_sessions')
     .select('*')
     .eq('id', sessionId)
     .eq('user_id', userId)
+    .eq('dealership_id', dealershipId)
     .single();
 
   if (fetchError || !session) {
@@ -342,10 +343,12 @@ async function continueSession(
       }
     }
 
+    // D2-H-001: Scope update by dealership_id
     await serviceClient
       .from('coach_sessions')
       .update(updateData)
-      .eq('id', sessionId);
+      .eq('id', sessionId)
+      .eq('dealership_id', dealershipId);
 
     return NextResponse.json({
       data: {
@@ -359,10 +362,12 @@ async function continueSession(
   }
 
   // GPT failed — save user message anyway
+  // D2-H-001: Scope update by dealership_id
   await serviceClient
     .from('coach_sessions')
     .update({ messages })
-    .eq('id', sessionId);
+    .eq('id', sessionId)
+    .eq('dealership_id', dealershipId);
 
   return NextResponse.json({
     data: {
@@ -590,16 +595,17 @@ async function authenticateRep(
 
   const { userId, dealershipId } = verified;
 
-  // Verify user still exists in database
+  // D2-M-001: Verify user still exists and belongs to dealership via memberships.
+  // users table has no dealership_id column — memberships table is the join.
   try {
-    const { data: user } = await serviceClient
-      .from('users')
-      .select('id')
-      .eq('id', userId)
+    const { data: membership } = await serviceClient
+      .from('dealership_memberships')
+      .select('user_id')
+      .eq('user_id', userId)
       .eq('dealership_id', dealershipId)
       .single();
 
-    if (!user) return null;
+    if (!membership) return null;
     return { userId, dealershipId };
   } catch {
     return null;

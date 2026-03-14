@@ -23,18 +23,20 @@ export default async function LeaderboardPage({
 }: LeaderboardPageProps) {
   const { slug } = await params;
 
-  // Find dealership by slug (or name if slug not directly stored)
+  // D3-H-001: Query by slug column, not name. Matches API route behavior.
   const { data: dealership, error: dealershipError } = await serviceClient
     .from('dealerships')
     .select('id, name, timezone')
-    .eq('name', decodeURIComponent(slug))
+    .eq('slug', slug)
     .maybeSingle();
 
   if (dealershipError || !dealership) {
     notFound();
   }
 
-  // Get top performers
+  // D3-M-001: Bound to 90 days + limit 1000 as safety valve. Public page.
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
   const { data: results, error: resultsError } = await serviceClient
     .from('training_results')
     .select(`
@@ -46,7 +48,9 @@ export default async function LeaderboardPage({
       close_attempt
     `)
     .eq('dealership_id', dealership.id)
-    .order('created_at', { ascending: false });
+    .gte('created_at', ninetyDaysAgo)
+    .order('created_at', { ascending: false })
+    .limit(1000);
 
   if (resultsError) {
     console.error('Failed to fetch leaderboard:', (resultsError as Error).message ?? resultsError);

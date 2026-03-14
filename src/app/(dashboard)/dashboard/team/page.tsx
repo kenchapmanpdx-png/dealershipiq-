@@ -246,7 +246,7 @@ export default function TeamPage() {
                     {member.total_sessions}
                   </td>
                   <td className="px-6 py-4 text-sm font-semibold text-gray-900">
-                    {(member.average_score * 100).toFixed(0)}%
+                    {member.average_score.toFixed(1)}/5
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
                     {member.last_training_at

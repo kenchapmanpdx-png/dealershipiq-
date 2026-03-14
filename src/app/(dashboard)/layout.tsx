@@ -1,10 +1,12 @@
-// Dashboard layout wrapper
-// Server component — checks auth and renders sidebar
+// Dashboard layout wrapper — Server component
+// Auth gate: checks JWT, role, dealership. Redirects if invalid.
+// CF-H-001: Nav extracted to client component (DashboardNav).
 // Build Master: Phase 3, Phase 5 (billing nav + banner)
 
 import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import BillingBanner from '@/components/dashboard/BillingBanner';
+import DashboardNav from '@/components/dashboard/DashboardNav';
 
 export default async function DashboardLayout({
   children,
@@ -28,92 +30,28 @@ export default async function DashboardLayout({
     redirect('/');
   }
 
-  // Get user's dealership memberships for switcher
-  const { data: memberships } = await supabase
-    .from('dealership_memberships')
-    .select(`
-      dealership_id,
-      dealerships ( id, name )
-    `)
-    .eq('user_id', user.id);
+  // Get current dealership name for nav display
+  const { data: dealership } = await supabase
+    .from('dealerships')
+    .select('name')
+    .eq('id', dealershipId)
+    .single();
 
-  const dealershipList = (memberships ?? [])
-    .filter((m: Record<string, unknown>) => m.dealerships)
-    .map((m: Record<string, unknown>) => ({
-      id: m.dealership_id as string,
-      name: (m.dealerships as Record<string, unknown>).name as string,
-    }));
+  const dealershipName = (dealership?.name as string) ?? 'My Dealership';
+  const userName = (user.user_metadata?.full_name as string) || user.email || '';
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-8">
-              <h1 className="text-2xl font-bold text-gray-900">DealershipIQ</h1>
-              {/* Navigation links */}
-              <div className="hidden md:flex gap-6">
-                <NavLink href="/dashboard" label="Overview" />
-                <NavLink href="/dashboard/team" label="Team" />
-                <NavLink href="/dashboard/sessions" label="Sessions" />
-                <NavLink href="/dashboard/coaching" label="Coaching" />
-                <NavLink href="/dashboard/gaps" label="Knowledge Gaps" />
-                {(userRole === 'owner') && (
-                  <NavLink href="/dashboard/billing" label="Billing" />
-                )}
-              </div>
-            </div>
-
-            {/* Dealership switcher */}
-            {dealershipList.length > 1 && (
-              <select
-                defaultValue={dealershipId}
-                onChange={(e) => {
-                  // This would typically redirect or update context
-                  // For now, just show intent
-                  window.location.href = `/dashboard?dealership=${e.target.value}`;
-                }}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                {dealershipList.map((d: Record<string, unknown>) => (
-                  <option key={d.id as string} value={d.id as string}>
-                    {d.name as string}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {/* User menu */}
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">
-                {user.user_metadata?.full_name || user.email}
-              </span>
-              <a
-                href="/api/auth/logout"
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
-                Logout
-              </a>
-            </div>
-          </div>
-        </div>
-      </nav>
+      <DashboardNav
+        dealershipName={dealershipName}
+        userRole={userRole}
+        userName={userName}
+      />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <BillingBanner />
         {children}
       </main>
     </div>
-  );
-}
-
-function NavLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
-    >
-      {label}
-    </a>
   );
 }

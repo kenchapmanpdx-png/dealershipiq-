@@ -56,7 +56,9 @@ export async function GET(
       );
     }
 
-    // Get all users in dealership with training stats (no phone — public endpoint)
+    // D3-M-001: Bound training_results to 90 days. Public endpoint — prevents unbounded scans.
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
     const { data: users, error: usersError } = await serviceClient
       .from('users')
       .select(`
@@ -75,7 +77,8 @@ export async function GET(
         )
       `)
       .eq('dealership_memberships.dealership_id', dealership.id)
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .gte('training_results.created_at', ninetyDaysAgo);
 
     if (usersError) {
       console.error('Failed to fetch users:', (usersError as Error).message ?? usersError);

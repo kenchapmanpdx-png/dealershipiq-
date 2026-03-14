@@ -17,8 +17,8 @@ export function verifyAppToken(token: string): {
     const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
     const { sig, ...payload } = decoded;
 
-    // Verify signature (timing-safe comparison)
-    const secret = process.env.APP_AUTH_SECRET || process.env.CRON_SECRET;
+    // D2-M-002: Dedicated secret for coach tokens. No CRON_SECRET fallback.
+    const secret = process.env.APP_TOKEN_SECRET;
     if (!secret) return null; // No secret configured = reject all tokens
 
     const expected = createHmac('sha256', secret)
