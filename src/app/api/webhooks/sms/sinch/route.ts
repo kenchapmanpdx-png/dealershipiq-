@@ -134,13 +134,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' });
   }
 
-  // --- REST API delivery report format ---
+ // --- REST API delivery report format ---
   if (parsed.type === 'recipient_delivery_report_sms' || parsed.type === 'delivery_report_sms') {
     console.log('[webhook] REST API delivery report - skipping');
     return NextResponse.json({ status: 'ok' });
   }
 
-  // --- Conversation API format (with HMAC verification) ---
+  // --- Conversation API inbound message format ---
+  // Detected by presence of message.contact_message (inbound from user)
+  const convMessage = (parsed as Record<string, unknown>).message as Record<string, unknown> | undefined;
+  if (convMessage?.contact_message) {
+    console.log('[webhook] Conversation API inbound detected');
+    try {
+      await handleInboundMessage(payload as unknown as SinchInboundMessage);
+    } catch (err) {
+      console.error('ConvAPI webhook processing error:', (err as Error).message ?? err);
+    }
+    return NextResponse.json({ status: 'ok' });
+  }
+
+  // --- Conversation API delivery report format ---
+  if ((parsed as Record<string, unknown>).message_delivery_report) {
+    console.log('[webhook] Conversation API delivery report');
+    try {
+      await handleDeliveryReport(payload as unknown as SinchDeliveryReport);
+    } catch (err) {
+      console.error('ConvAPI delivery report error:', (err as Error).message ?? err);
+    }
+    return NextResponse.json({ status: 'ok' });
+  }
+
+  // --- Fallback: HMAC-verified Conversation API format ---
   const signature = request.headers.get('x-sinch-webhook-signature');
   const nonce = request.headers.get('x-sinch-webhook-signature-nonce');
   const timestamp = request.headers.get('x-sinch-webhook-signature-timestamp');
