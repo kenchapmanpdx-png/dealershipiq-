@@ -1,4 +1,8 @@
-// Sinch Conversation API webhook handler
+// Sinch SMS webhook handler
+// Supports BOTH:
+//   1. Sinch REST API (XMS) inbound format  (type: "mo_text")
+//   2. Sinch Conversation API inbound format (message.contact_message)
+//
 // Build Master: Phase 2A-2E + Phase 6 (Manager Quick-Create, Peer Challenge, Chain hooks)
 // CRITICAL: Always return 200 OK. Never return 4xx — Sinch permanently
 // kills callbacks on non-429 4xx responses.
@@ -78,16 +82,65 @@ const processedMessages = new Set<string>();
 const MAX_PROCESSED_CACHE = 10_000;
 
 export async function POST(request: NextRequest) {
-const rawBody = await request.text();
+  const rawBody = await request.text();
 
   // TEMP DEBUG - remove after testing
-  console.log('[DEBUG] Headers:', JSON.stringify({
-    sig: request.headers.get('x-sinch-webhook-signature')?.slice(0, 20),
-    nonce: request.headers.get('x-sinch-webhook-signature-nonce')?.slice(0, 20),
-    ts: request.headers.get('x-sinch-webhook-signature-timestamp'),
-  }));
-  console.log('[DEBUG] Body preview:', rawBody.slice(0, 300));
+  console.log('[DEBUG] Body preview:', rawBody.slice(0, 500));
 
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    console.error('[webhook] JSON parse failed');
+    return NextResponse.json({ status: 'ok' });
+  }
+
+  const parsed = payload as Record<string, unknown>;
+
+  // --- REST API (XMS) inbound format ---
+  // Sinch REST API sends { type: "mo_text", id, from, to, body, ... }
+  if (parsed.type === 'mo_text' || parsed.type === 'mo_binary') {
+    console.log('[webhook] REST API inbound detected');
+    const fromPhone = parsed.from as string;
+    const phone = fromPhone.startsWith('+') ? fromPhone : `+${fromPhone}`;
+    const messageId = parsed.id as string;
+    const body = (parsed.body as string) ?? '';
+
+    // Wrap in Conversation API shape so existing handler works unchanged
+    const normalized: SinchInboundMessage = {
+      app_id: process.env.SINCH_APP_ID ?? '',
+      accepted_time: new Date().toISOString(),
+      event_time: new Date().toISOString(),
+      project_id: process.env.SINCH_PROJECT_ID ?? '',
+      message: {
+        id: messageId,
+        direction: 'TO_APP',
+        channel_identity: {
+          channel: 'SMS',
+          identity: phone,
+          app_id: process.env.SINCH_APP_ID ?? '',
+        },
+        contact_message: {
+          text_message: { text: body },
+        },
+      },
+    } as SinchInboundMessage;
+
+    try {
+      await handleInboundMessage(normalized);
+    } catch (err) {
+      console.error('REST API webhook processing error:', (err as Error).message ?? err);
+    }
+    return NextResponse.json({ status: 'ok' });
+  }
+
+  // --- REST API delivery report format ---
+  if (parsed.type === 'recipient_delivery_report_sms' || parsed.type === 'delivery_report_sms') {
+    console.log('[webhook] REST API delivery report - skipping');
+    return NextResponse.json({ status: 'ok' });
+  }
+
+  // --- Conversation API format (with HMAC verification) ---
   const signature = request.headers.get('x-sinch-webhook-signature');
   const nonce = request.headers.get('x-sinch-webhook-signature-nonce');
   const timestamp = request.headers.get('x-sinch-webhook-signature-timestamp');
@@ -97,18 +150,11 @@ const rawBody = await request.text();
     return NextResponse.json({ status: 'ok' });
   }
 
-  let payload: SinchInboundMessage | SinchDeliveryReport;
   try {
-    payload = JSON.parse(rawBody);
-  } catch {
-    return NextResponse.json({ status: 'ok' });
-  }
-
-  try {
-    if ('message_delivery_report' in payload) {
-      await handleDeliveryReport(payload as SinchDeliveryReport);
-    } else if ('message' in payload) {
-      await handleInboundMessage(payload as SinchInboundMessage);
+    if ('message_delivery_report' in parsed) {
+      await handleDeliveryReport(parsed as unknown as SinchDeliveryReport);
+    } else if ('message' in parsed) {
+      await handleInboundMessage(parsed as unknown as SinchInboundMessage);
     }
   } catch (err) {
     console.error('Webhook processing error:', (err as Error).message ?? err);
@@ -1218,7 +1264,7 @@ async function handlePendingConsent(
       consentSource: 'keyword_consent',
     });
 
-    // V4-C-001: Truncate dealership name to keep ≤160 chars. Template = ~130 chars without name.
+    // V4-C-001: Truncate dealership name to keep <=160 chars. Template = ~130 chars without name.
     const dName = (user.dealershipName ?? '').slice(0, 30);
     const welcomeMsg = `Welcome to DealershipIQ at ${dName}! Daily practice questions via text. Reply STOP anytime to opt out. Msg&data rates apply.`;
     await sendSms(phone, welcomeMsg);
@@ -1384,7 +1430,7 @@ async function handleResubscribe(
     consentSource: 'keyword_start',
   });
 
-  // V4-C-002: Truncate dealership name to keep ≤160 chars.
+  // V4-C-002: Truncate dealership name to keep <=160 chars.
   const reName = (user.dealershipName ?? '').slice(0, 30);
   const welcomeMsg = `Welcome back to DealershipIQ at ${reName}! Daily training questions via text. Reply STOP to opt out.`;
   await sendSms(phone, welcomeMsg);
