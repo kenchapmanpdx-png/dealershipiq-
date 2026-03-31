@@ -78,7 +78,15 @@ const processedMessages = new Set<string>();
 const MAX_PROCESSED_CACHE = 10_000;
 
 export async function POST(request: NextRequest) {
-  const rawBody = await request.text();
+const rawBody = await request.text();
+
+  // TEMP DEBUG - remove after testing
+  console.log('[DEBUG] Headers:', JSON.stringify({
+    sig: request.headers.get('x-sinch-webhook-signature')?.slice(0, 20),
+    nonce: request.headers.get('x-sinch-webhook-signature-nonce')?.slice(0, 20),
+    ts: request.headers.get('x-sinch-webhook-signature-timestamp'),
+  }));
+  console.log('[DEBUG] Body preview:', rawBody.slice(0, 300));
 
   const signature = request.headers.get('x-sinch-webhook-signature');
   const nonce = request.headers.get('x-sinch-webhook-signature-nonce');
