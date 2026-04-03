@@ -140,11 +140,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' });
   }
 
-  // --- Conversation API inbound message format ---
+ // --- Conversation API inbound message format ---
   // Detected by presence of message.contact_message (inbound from user)
   const convMessage = (parsed as Record<string, unknown>).message as Record<string, unknown> | undefined;
   if (convMessage?.contact_message) {
     console.log('[webhook] Conversation API inbound detected');
+    // Normalize phone number: ConvAPI sends without +, DB stores with +
+    const chanId = (convMessage.channel_identity as Record<string, unknown> | undefined);
+    if (chanId?.identity) {
+      const rawPhone = chanId.identity as string;
+      chanId.identity = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
+    }
     try {
       await handleInboundMessage(payload as unknown as SinchInboundMessage);
     } catch (err) {
