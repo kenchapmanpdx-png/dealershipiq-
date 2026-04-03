@@ -432,6 +432,13 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       if (handled) return;
     }
 
+// 14. GO keyword — trigger a new training session on demand (testing + power users)
+    if (trimmedUpper === 'GO') {
+      await handleGoKeyword(user, phone);
+      return;
+    }
+
+
     // Natural language keyword detection (only for non-training contexts)
     // This must happen AFTER all phase 6 keywords to avoid interference
     const keyword = detectKeyword(text, hasActiveSession);
@@ -977,6 +984,43 @@ async function handlePassKeyword(
 }
 
 // =============================================================================
+
+
+// =============================================================================
+// GO keyword: trigger a new training session on demand
+// =============================================================================
+async function handleGoKeyword(
+  user: { id: string; dealershipId: string; dealershipName: string; fullName: string },
+  phone: string
+) {
+  try {
+    const existingSession = await getActiveSession(user.id, user.dealershipId);
+    if (existingSession) {
+      const msg = 'You already have a session in progress. Finish it first!';
+      await sendSms(phone, msg);
+      await insertTranscriptLog({ userId: user.id, dealershipId: user.dealershipId, phone, direction: 'outbound', messageBody: msg });
+      return;
+    }
+    const modes = ['roleplay', 'quiz', 'objection'] as const;
+    const mode = modes[Math.floor(Math.random() * modes.length)];
+    const questions: Record<string, string> = {
+      roleplay: "I found this exact car listed for $2,000 less across town. Can you match that price or should I just go there?",
+      quiz: "Quick -- what are the top 3 safety features on our best-selling SUV? Name them like you're talking to a customer.",
+      objection: "I really like it, but I need to think about it and talk to my spouse first. Can you hold it for me?",
+    };
+    const question = questions[mode];
+    const firstName = user.fullName ? user.fullName.trim().split(/\s+/)[0] : '';
+    const greeting = firstName ? `Hey ${firstName}, ` : '';
+    const fullQuestion = `${greeting}${question}`;
+    const session = await createConversationSession({ userId: user.id, dealershipId: user.dealershipId, mode, questionText: fullQuestion });
+    await updateSessionStatus(session.id, 'active');
+    const sinchResponse = await sendSms(phone, fullQuestion);
+    await insertTranscriptLog({ userId: user.id, dealershipId: user.dealershipId, phone, direction: 'outbound', messageBody: fullQuestion, sinchMessageId: sinchResponse.message_id, sessionId: session.id });
+  } catch (err) {
+    console.error('GO keyword handler error:', (err as Error).message ?? err);
+    await sendSms(phone, 'Something went wrong starting a session. Try again in a minute.');
+  }
+}
 // Final exchange: grade everything, send Never Naked feedback
 // Phase 6: post-grading hooks for chains + peer challenges
 // =============================================================================
