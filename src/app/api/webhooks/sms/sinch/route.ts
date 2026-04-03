@@ -84,8 +84,6 @@ const MAX_PROCESSED_CACHE = 10_000;
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
 
-  // TEMP DEBUG - remove after testing
-  console.log('[DEBUG] Body preview:', rawBody.slice(0, 500));
 
   let payload: unknown;
   try {
