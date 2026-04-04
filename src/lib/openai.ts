@@ -196,10 +196,10 @@ Grade the salesperson's overall performance across all exchanges.`;
     tone_rapport: { type: 'number' },
     addressed_concern: { type: 'number' },
     close_attempt: { type: 'number' },
-    feedback: { type: 'string' },
-    word_tracks: { type: 'string' },
-    example_response: { type: 'string' },
-    reasoning: { type: 'string' },
+    feedback: { type: 'string', maxLength: 200 },
+    word_tracks: { type: 'string', maxLength: 250 },
+    example_response: { type: 'string', maxLength: 350 },
+    reasoning: { type: 'string', maxLength: 500 },
   };
   const requiredFields = ['product_accuracy', 'tone_rapport', 'addressed_concern', 'close_attempt', 'feedback', 'word_tracks', 'example_response', 'reasoning'];
 
@@ -414,9 +414,9 @@ async function _callOpenAI<T>(
                 addressed_concern: { type: 'number' },
                 close_attempt: { type: 'number' },
                 feedback: { type: 'string' },
-                word_tracks: { type: 'string' },
-                example_response: { type: 'string' },
-                reasoning: { type: 'string' },
+                word_tracks: { type: 'string', maxLength: 250 },
+                example_response: { type: 'string', maxLength: 350 },
+                feedback: { type: 'string', maxLength: 200 },
               },
               required: ['product_accuracy', 'tone_rapport', 'addressed_concern', 'close_attempt', 'feedback', 'word_tracks', 'example_response', 'reasoning'],
               additionalProperties: false,
