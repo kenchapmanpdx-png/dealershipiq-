@@ -2,9 +2,9 @@
 // Build Master: Phase 2D
 // Fallback chain: GPT-5.4 → GPT-4o-mini → cached → template → human review
 // Invariant: XML delimiters for prompt injection defense
-// v3: Science-backed feedback (word tracks + example response), sharper coaching tone,
+// v4: Science-backed feedback (word tracks + example response), sharper coaching tone,
 //     improved customer follow-ups (new angles each exchange), no mid-exchange coaching,
-//     relaxed character limits for richer examples
+//     richer example responses showing full technique
 
 import { z } from 'zod';
 import type { TranscriptEntry } from '@/lib/service-db';
@@ -18,8 +18,8 @@ export const GradingResultSchema = z.object({
   urgency_creation: z.number().min(0).max(2).optional(),
   competitive_positioning: z.number().min(0).max(2).optional(),
   feedback: z.string().min(1).max(600),
-  word_tracks: z.string().min(1).max(200).optional(),
-  example_response: z.string().min(1).max(300).optional(),
+  word_tracks: z.string().min(1).max(250).optional(),
+  example_response: z.string().min(1).max(350).optional(),
   reasoning: z.string().min(1),
 });
 
@@ -112,6 +112,7 @@ Rules:
   * Ask a specific question they have not answered yet
 - Escalate realistically -- a real buyer does not ask the same question three times, they either walk or change the subject`;
 
+// Retained for potential future use in mid-exchange coaching
 const _OBJECTION_COACHING_PROMPT = `You are a brief, direct sales manager coaching your rep mid-conversation. Give exactly 1-2 sentences of specific, actionable coaching.
 
 Rules:
@@ -378,72 +379,6 @@ async function callOpenAIGrading(
   }
 }
 
-async function _callOpenAI<T>(
-  apiKey: string,
-  model: string,
-  systemPrompt: string,
-  userPrompt: string,
-  schema: z.ZodSchema<T>
-): Promise<T | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
-
-  try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'grading_result',
-            strict: true,
-            schema: {
-              type: 'object',
-              properties: {
-                product_accuracy: { type: 'number' },
-                tone_rapport: { type: 'number' },
-                addressed_concern: { type: 'number' },
-                close_attempt: { type: 'number' },
-                feedback: { type: 'string' },
-                word_tracks: { type: 'string', maxLength: 250 },
-                example_response: { type: 'string', maxLength: 350 },
-                feedback: { type: 'string', maxLength: 200 },
-              },
-              required: ['product_accuracy', 'tone_rapport', 'addressed_concern', 'close_attempt', 'feedback', 'word_tracks', 'example_response', 'reasoning'],
-              additionalProperties: false,
-            },
-          },
-        },
-        temperature: 0.3,
-        ...tokenLimitParam(model, 800),
-      }),
-      signal: controller.signal,
-    });
-
-    if (!res.ok) throw new Error(`OpenAI ${model}: ${res.status}`);
-
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) return null;
-
-    const parsed = schema.safeParse(JSON.parse(content));
-    if (!parsed.success) return null;
-
-    return parsed.data;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function callOpenAIText(
   apiKey: string,
   model: string,
@@ -490,7 +425,6 @@ function templateFallback(mode: string): GradingResult & { model: string } {
     tone_rapport: 3,
     addressed_concern: 3,
     close_attempt: 3,
-    // F1-L-002: Feedback text must match reality -- response IS recorded with placeholder scores
     feedback: "Thanks for your response! Our AI grader is temporarily unavailable. Your response has been recorded with a placeholder score.",
     word_tracks: "",
     example_response: "",
