@@ -2,6 +2,7 @@
 // Each invocation: find dealerships where current local hour = configured training hour
 // Training runs Monday-Friday ONLY. No weekends.
 // Phase 6 content priority: Manager Quick-Create > Peer Challenge > Chain Step > Daily Challenge > Adaptive
+// v7: Replaced 3-question hardcoded fallback with 30-scenario brand-agnostic pool
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
@@ -40,6 +41,55 @@ import { serviceClient } from '@/lib/supabase/service';
 import type { PersonaMood } from '@/lib/persona-moods';
 
 export const maxDuration = 60;
+
+// =============================================================================
+// SCENARIO FALLBACK POOL (v7)
+// 30 brand-agnostic scenarios — replaces the old 3-question hardcoded fallback.
+// When vehicle_data_enabled is on, the training-content pipeline injects real specs.
+// =============================================================================
+const SCENARIO_POOL: Record<string, string[]> = {
+  roleplay: [
+    "I found this same car listed for $2,000 less at the dealership across town. Why should I buy it here?",
+    "I'm interested, but I just started looking today. I'm not buying anything for at least a month.",
+    "My lease is up in 60 days. I want to know my options but I'm not in a rush.",
+    "I love the car but my credit isn't great. What kind of rate am I looking at realistically?",
+    "We drove this and the competitor last weekend. Honestly, the other one felt better. Change my mind.",
+    "I'm buying for my teenage daughter. Safety is everything. Walk me through what makes this safe.",
+    "My trade-in is worth $18K according to KBB. What are you going to give me?",
+    "I want to buy today but I need to be at $400/month max. Can you make that work?",
+    "I submitted a lead online three days ago and nobody called me back. Now I'm here. Impress me.",
+    "I'm a repeat customer — bought my last two cars here. What kind of loyalty pricing can I get?",
+  ],
+  quiz: [
+    "A customer asks: what's the difference between AWD and 4WD? Explain it so they actually understand.",
+    "Name three features on your lot's best-selling vehicle that most customers don't know about.",
+    "A customer says 'I heard EVs cost a fortune to maintain.' How do you respond with facts?",
+    "What's the difference between MSRP, invoice price, and out-the-door price? Explain like I'm a first-time buyer.",
+    "A customer asks about your CPO program. What's covered, what's not, and why should they care?",
+    "What does gap insurance actually protect against? When would you recommend it and when would you skip it?",
+    "Walk me through how a trade-in affects monthly payment. Use real numbers.",
+    "A customer asks: 'Why is this one $5K more than the base model?' Sell the upgrade without sounding pushy.",
+    "What's the towing capacity and payload matter for someone who hauls a boat on weekends?",
+    "A first-time buyer asks about financing. Explain APR, term length, and total cost in plain English.",
+  ],
+  objection: [
+    "I really like it, but I need to think about it and talk to my spouse first. Can you hold it for me?",
+    "Your online price said $32K but now you're telling me the out-the-door is $37K. What's going on?",
+    "I can get 1.9% APR at my credit union. Why would I finance through you?",
+    "I'm not trading in my car. I'll sell it private party and get more for it.",
+    "The reviews online say this model has transmission problems. Should I be worried?",
+    "I want to buy but I'm waiting for the year-end deals. Can you match those prices now?",
+    "My friend just bought the same car and says he got it for $3K less. Can you beat that?",
+    "I don't want any add-ons, no extended warranty, no paint protection, nothing. Just the car.",
+    "I like it but I'm upside down on my current loan by about $4,000. How do we handle that?",
+    "Honestly, I came in for the sedan but now I'm thinking the SUV makes more sense. Help me decide.",
+  ],
+};
+
+function getTrainingQuestion(mode: string): string {
+  const pool = SCENARIO_POOL[mode] ?? SCENARIO_POOL.roleplay;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
@@ -156,8 +206,8 @@ export async function GET(request: NextRequest) {
                 chainStep = activeChain.currentStep + 1;
               } else {
                 // Chain complete or error — fall through to adaptive
-                question = getTrainingQuestion(selectTrainingMode());
                 mode = selectTrainingMode();
+                question = getTrainingQuestion(mode);
                 try {
                   trainingDomain = await selectTrainingDomain(user.id, dealership.id);
                 } catch { /* fallback */ }
@@ -180,18 +230,18 @@ export async function GET(request: NextRequest) {
                   chainStep = 1;
                 } else {
                   // No templates available — fall through
-                  question = getTrainingQuestion(selectTrainingMode());
                   mode = selectTrainingMode();
+                  question = getTrainingQuestion(mode);
                 }
               } else {
-                question = getTrainingQuestion(selectTrainingMode());
                 mode = selectTrainingMode();
+                question = getTrainingQuestion(mode);
               }
             }
           } catch (chainErr) {
             console.error(`Chain error for ${user.id}:`, (chainErr as Error).message ?? chainErr);
-            question = getTrainingQuestion(selectTrainingMode());
             mode = selectTrainingMode();
+            question = getTrainingQuestion(mode);
           }
         } else if (content.type === 'daily_challenge' && content.scenarioText) {
           // Priority 4: Daily challenge
@@ -299,15 +349,6 @@ function selectTrainingMode(): string {
   );
   const weekdayCount = Math.floor(dayOfYear * 5 / 7);
   return MODES[weekdayCount % MODES.length];
-}
-
-function getTrainingQuestion(mode: string): string {
-  const questions: Record<string, string> = {
-    roleplay: `I found this exact car listed for $2,000 less across town. Can you match that price or should I just go there?`,
-    quiz: `Quick -- what are the top 3 safety features on our best-selling SUV? Name them like you're talking to a customer.`,
-    objection: `I really like it, but I need to think about it and talk to my spouse first. Can you hold it for me?`,
-  };
-  return questions[mode] ?? questions.roleplay;
 }
 
 function extractFirstName(fullName: string | null | undefined): string {

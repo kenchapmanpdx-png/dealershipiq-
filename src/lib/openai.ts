@@ -5,7 +5,8 @@
 // v7: SMS length enforcement — tightened maxLength values so assembled feedback string
 //     fits in 480-char SMS cap without truncation:
 //       feedback→115, word_tracks→150, example_response→200
-//     Assembled max: 115 + " Tracks: " (9) + 150 + ". Try: " (7) + 200 = 481 chars
+//     Assembled max: 115 + " Tracks: "(9) + 150 + ". Try: "(7) + 200 = 481 chars
+//     Hard truncation at 480 in assembly logic as safety net.
 //     Enforced pipe separator format in word_tracks via schema + prompt.
 //     Added coaching tone guardrail: explicit ban on insults/profanity at any score level.
 //     Coaching tone ladder 4-5/10 softened from punitive to constructive.
@@ -293,7 +294,7 @@ interface FollowUpOptions {
 
 // Hard limits enforced at the OpenAI JSON schema level.
 // Assembled SMS = feedback + " Tracks: " + word_tracks + ". Try: " + example_response
-// Max: 115 + 9 + 150 + 7 + 200 = 481 chars (1 char under 482 safety margin for 480 SMS)
+// Max: 115 + 9 + 150 + 7 + 200 = 481 chars. Truncation guard at 480 catches edge cases.
 const SMS_MAX = {
   feedback: 115,
   word_tracks: 150,
