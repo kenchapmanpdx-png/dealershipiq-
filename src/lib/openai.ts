@@ -274,6 +274,9 @@ interface FollowUpOptions {
   scenario: string;
   conversationHistory: TranscriptEntry[];
   personaMood?: string | null;
+  mode?: 'roleplay' | 'quiz' | 'objection';
+  currentResponse?: string;
+  stepIndex?: number;
 }
 
 // =============================================================================
@@ -355,7 +358,7 @@ async function callOpenAIGrading(
 // MAIN GRADING FUNCTION
 // =============================================================================
 
-export async function gradeResponse(opts: GradeOptions): Promise<GradingResult & { model: string }> {
+export async function gradeResponse(opts: GradeOptions): Promise<GradingResult & { model: string; promptVersionId?: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
 
@@ -441,7 +444,7 @@ Grade the salesperson's overall performance across all exchanges.`;
           gradingResult.feedback = `${gradingResult.feedback} Tracks: ${gradingResult.word_tracks}. Try: ${gradingResult.example_response}`;
         }
 
-        return { ...gradingResult, model };
+        return { ...gradingResult, model, promptVersionId: opts.promptVersionId };
       }
     } catch (error) {
       console.error(`Grading attempt failed (${model}):`, (error as Error).message ?? error);
@@ -539,7 +542,7 @@ Generate the customer's next message.`;
 // TEMPLATE FALLBACK (all AI models down)
 // =============================================================================
 
-function getTemplateFallback(mode: string): GradingResult & { model: string } {
+function getTemplateFallback(mode: string): GradingResult & { model: string; promptVersionId?: string } {
   return {
     product_accuracy: 3,
     tone_rapport: 3,
