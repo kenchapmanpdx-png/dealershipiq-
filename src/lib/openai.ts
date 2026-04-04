@@ -1,7 +1,8 @@
-// AI Grading — OpenAI GPT-5.4 with Structured Outputs
+// AI Grading – OpenAI GPT-5.4 with Structured Outputs
 // Build Master: Phase 2D
 // Fallback chain: GPT-5.4 → GPT-4o-mini → cached → template → human review
 // Invariant: XML delimiters for prompt injection defense
+// v2: Added word_tracks + example_response for science-backed feedback (worked example effect)
 
 import { z } from 'zod';
 import type { TranscriptEntry } from '@/lib/service-db';
@@ -14,7 +15,9 @@ export const GradingResultSchema = z.object({
   close_attempt: z.number().min(1).max(5),
   urgency_creation: z.number().min(0).max(2).optional(),
   competitive_positioning: z.number().min(0).max(2).optional(),
-  feedback: z.string().min(1).max(320),
+  feedback: z.string().min(1).max(500),
+  word_tracks: z.string().min(1).max(150).optional(),
+  example_response: z.string().min(1).max(150).optional(),
   reasoning: z.string().min(1),
 });
 
@@ -36,23 +39,26 @@ Score each dimension 1-5:
 - addressed_concern: Directly addressed what the customer actually said?
 - close_attempt: Included a natural next step to advance the sale?
 
-FEEDBACK FORMAT (STRICT RULES):
-Write the feedback field as a single SMS message. It MUST be under 155 characters total. No exceptions.
+OUTPUT FORMAT (three separate fields):
 
-Structure: [score]/10 [one strength]. [one specific thing to do differently next time].
+"feedback": Start with the score as X/10 (sum of four dimension scores divided by 2, rounded to nearest integer), then one sentence noting what the employee did well. Specific to what they actually said. The feedback field must be under 80 characters total.
 
-The score is the sum of the four dimension scores divided by 2, rounded to nearest integer.
+"word_tracks": 2-3 key word tracks the employee should hit next time, separated by commas. These are sales concepts and moves, not full sentences. Think of what a floor manager would whisper between customers. Under 130 characters.
 
-Example good feedback:
-"7/10 Good rapport with the customer. Next time ask for their budget before pitching payments."
-"4/10 You answered the question. Try asking what brought them in today before jumping to features."
+"example_response": One natural-sounding sentence showing how the word tracks sound when strung together. This must sound like something a real salesperson would actually say on the showroom floor or on the phone. Not a textbook. Under 130 characters.
 
-STRICT CHARACTER RULES:
-- MUST be under 155 characters. Count carefully.
+Example output:
+feedback: "7/10 Good rapport with the customer."
+word_tracks: "acknowledge price directly, give ballpark OTD range, pivot to trade-in"
+example_response: "That's a fair price - with your trade we can usually get in that range or better. What are you driving now?"
+
+CRITICAL RULES:
+- Evaluate the response as SALES TECHNIQUE regardless of communication channel. The employee may be practicing for in-person floor conversations, phone calls, OR text exchanges. Grade the quality of their selling approach -- objection handling, rapport building, closing technique, product knowledge -- NOT their text messaging style. A long, detailed response is good salesmanship if the content is strong.
 - Use ONLY plain ASCII: letters, numbers, periods, commas, hyphens, straight quotes, spaces.
 - NO emojis, NO curly quotes, NO em-dashes, NO special symbols, NO asterisks, NO >.
 - Do NOT quote the employee's own words back to them. They know what they said.
 - Do NOT use sales trainer jargon like "mirror the objection", "trade for the quote", "low-friction next step", "reframe", "value stack". Talk like a manager on the floor.
+- The example_response must sound like something a real person would actually say. No corporate language. No textbook phrases.
 - Focus on SALES TECHNIQUE, not product facts.
 - Do NOT cite vehicle specs unless they were in the scenario context.
 - Never say "elaborate more" or "be more specific" - say WHAT to do.
@@ -71,12 +77,12 @@ These are binary-ish (present/absent/excellent), not nuanced 1-5. High-pressure 
 const FOLLOW_UP_SYSTEM_PROMPT = `You are playing the role of a real car buyer in a training scenario. Your job is to generate the customer's next message in the conversation.
 
 Rules:
-- Sound like a real person texting — casual, natural, no corporate language
+- Sound like a real person texting -- casual, natural, no corporate language
 - Never break character or acknowledge this is training
 - Never append meta-instructions like "Reply with your best sales response"
 - The message ends where a real customer would stop talking
 - Keep it to 1-3 sentences max (SMS length)
-- Escalate realistically — don't repeat the same objection, push harder or raise a related concern`;
+- Escalate realistically -- don't repeat the same objection, push harder or raise a related concern`;
 
 const OBJECTION_COACHING_PROMPT = `You are a brief, direct sales manager coaching your rep mid-conversation. Give exactly 1-2 sentences of specific, actionable coaching.
 
@@ -162,10 +168,12 @@ Grade the salesperson's overall performance across all exchanges.`;
     tone_rapport: { type: 'number' },
     addressed_concern: { type: 'number' },
     close_attempt: { type: 'number' },
-    feedback: { type: 'string', maxLength: 155 },
+    feedback: { type: 'string', maxLength: 100 },
+    word_tracks: { type: 'string', maxLength: 150 },
+    example_response: { type: 'string', maxLength: 150 },
     reasoning: { type: 'string' },
   };
-  const requiredFields = ['product_accuracy', 'tone_rapport', 'addressed_concern', 'close_attempt', 'feedback', 'reasoning'];
+  const requiredFields = ['product_accuracy', 'tone_rapport', 'addressed_concern', 'close_attempt', 'feedback', 'word_tracks', 'example_response', 'reasoning'];
 
   if (opts.scoreBehavioralUrgency) {
     schemaProperties.urgency_creation = { type: 'integer', enum: [0, 1, 2] };
@@ -185,12 +193,23 @@ Grade the salesperson's overall performance across all exchanges.`;
 
         const gradingResult = parsed.data;
 
-        // Safety net: truncate feedback to 155 chars for single-segment SMS
-        if (gradingResult.feedback.length > 155) {
-          console.warn(`[AI-GRADING] Feedback exceeded 155 chars (${gradingResult.feedback.length}), truncating`);
-          // Cut at last space before 152 chars, add "..."
-          const cutPoint = gradingResult.feedback.lastIndexOf(' ', 152);
-          gradingResult.feedback = gradingResult.feedback.slice(0, cutPoint > 0 ? cutPoint : 152) + '...';
+        // Safety net: truncate individual fields before assembly
+        if (gradingResult.feedback.length > 100) {
+          const cutPoint = gradingResult.feedback.lastIndexOf(' ', 97);
+          gradingResult.feedback = gradingResult.feedback.slice(0, cutPoint > 0 ? cutPoint : 97) + '...';
+        }
+        if (gradingResult.word_tracks && gradingResult.word_tracks.length > 150) {
+          const cutPoint = gradingResult.word_tracks.lastIndexOf(',', 147);
+          gradingResult.word_tracks = gradingResult.word_tracks.slice(0, cutPoint > 0 ? cutPoint : 147) + '...';
+        }
+        if (gradingResult.example_response && gradingResult.example_response.length > 150) {
+          const cutPoint = gradingResult.example_response.lastIndexOf(' ', 147);
+          gradingResult.example_response = gradingResult.example_response.slice(0, cutPoint > 0 ? cutPoint : 147) + '...';
+        }
+
+        // Assemble the full SMS feedback from the three fields
+        if (gradingResult.word_tracks && gradingResult.example_response) {
+          gradingResult.feedback = `${gradingResult.feedback} Tracks: ${gradingResult.word_tracks}. Try: "${gradingResult.example_response}"`;
         }
 
         if (
@@ -199,7 +218,7 @@ Grade the salesperson's overall performance across all exchanges.`;
           gradingResult.addressed_concern === 5 &&
           gradingResult.close_attempt === 5
         ) {
-          gradingResult.reasoning = `[FLAGGED: Perfect score — review recommended] ${gradingResult.reasoning}`;
+          gradingResult.reasoning = `[FLAGGED: Perfect score -- review recommended] ${gradingResult.reasoning}`;
         }
         return { ...gradingResult, model, promptVersionId: opts.promptVersionId };
       }
@@ -210,7 +229,7 @@ Grade the salesperson's overall performance across all exchanges.`;
   }
 
   // H-005: Log at error level when falling back to template scores
-  console.error('[AI-GRADING] ALL MODELS FAILED — returning template fallback scores (3/3/3/3). AI grading is effectively DOWN.');
+  console.error('[AI-GRADING] ALL MODELS FAILED -- returning template fallback scores (3/3/3/3). AI grading is effectively DOWN.');
   return templateFallback(opts.mode);
 }
 
@@ -291,7 +310,7 @@ Generate the customer's next message. Sound like a real person texting. 1-3 sent
 Previous conversation:
 ${conversation}
 
-Generate question ${questionNum} of 3. The question should test a different area of sales knowledge than the previous questions. Keep it practical — something a salesperson would actually need to know on the floor. Write it as a direct question, casual tone. 1-2 sentences.`;
+Generate question ${questionNum} of 3. The question should test a different area of sales knowledge than the previous questions. Keep it practical -- something a salesperson would actually need to know on the floor. Write it as a direct question, casual tone. 1-2 sentences.`;
 
     const result = await callOpenAIText(apiKey, OPENAI_MODELS.primary, FOLLOW_UP_SYSTEM_PROMPT, prompt);
     return { customerMessage: result || 'What\'s the biggest advantage our financing has over the competition?' };
@@ -340,7 +359,7 @@ async function callOpenAIGrading(
           },
         },
         temperature: 0.3,
-        ...tokenLimitParam(model, 500),
+        ...tokenLimitParam(model, 600),
       }),
       signal: controller.signal,
     });
@@ -392,16 +411,18 @@ async function _callOpenAI<T>(
                 tone_rapport: { type: 'number' },
                 addressed_concern: { type: 'number' },
                 close_attempt: { type: 'number' },
-                feedback: { type: 'string', maxLength: 155 },
+                feedback: { type: 'string', maxLength: 100 },
+                word_tracks: { type: 'string', maxLength: 150 },
+                example_response: { type: 'string', maxLength: 150 },
                 reasoning: { type: 'string' },
               },
-              required: ['product_accuracy', 'tone_rapport', 'addressed_concern', 'close_attempt', 'feedback', 'reasoning'],
+              required: ['product_accuracy', 'tone_rapport', 'addressed_concern', 'close_attempt', 'feedback', 'word_tracks', 'example_response', 'reasoning'],
               additionalProperties: false,
             },
           },
         },
         temperature: 0.3,
-        ...tokenLimitParam(model, 500),
+        ...tokenLimitParam(model, 600),
       }),
       signal: controller.signal,
     });
@@ -488,14 +509,16 @@ function templateFallback(mode: string): GradingResult & { model: string } {
     tone_rapport: 3,
     addressed_concern: 3,
     close_attempt: 3,
-    // F1-L-002: Feedback text must match reality — response IS recorded with placeholder scores
+    // F1-L-002: Feedback text must match reality -- response IS recorded with placeholder scores
     feedback: "Thanks for your response! Our AI grader is temporarily unavailable. Your response has been recorded with a placeholder score.",
-    reasoning: `Template fallback — AI grading unavailable. Mode: ${mode}. TODO: Add is_fallback column to training_results to distinguish template grades.`,
+    word_tracks: "",
+    example_response: "",
+    reasoning: `Template fallback -- AI grading unavailable. Mode: ${mode}. TODO: Add is_fallback column to training_results to distinguish template grades.`,
     model: 'template-fallback',
   };
 }
 
-// --- Generic text completion helper ───
+// --- Generic text completion helper ---
 export async function getOpenAICompletion(
   prompt: string,
   model: 'gpt-5.4' | 'gpt-4o-mini' = 'gpt-5.4',
