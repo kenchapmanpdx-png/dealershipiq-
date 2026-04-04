@@ -7,10 +7,13 @@
 // Reason: Conversation API outbound fails with delivery code 61 because
 // the XMS adapter cannot resolve the sender number (channel_known_id empty
 // and not settable via API). The REST API sends successfully.
+//
+// v2: Raised SMS hard cap from 320 (2 segments) to 480 (3 segments) to
+//     accommodate richer grading feedback with word tracks + example responses.
 
 export interface SmsSendResult {
   id: string;
-  message_id: string; // alias for id — compatibility with callers expecting Conversation API format
+  message_id: string; // alias for id -- compatibility with callers expecting Conversation API format
   to: string[];
   from: string;
 }
@@ -20,19 +23,19 @@ export function sanitizeGsm7(text: string): string {
   let result = text;
 
   // Replace smart/curly quotes with straight quotes
-  result = result.replace(/[""]/g, '"');
-  result = result.replace(/['']/g, "'");
+  result = result.replace(/[\u201C\u201D]/g, '"');
+  result = result.replace(/[\u2018\u2019]/g, "'");
 
   // Replace dashes with hyphen
-  result = result.replace(/[–—]/g, '-');
+  result = result.replace(/[\u2013\u2014]/g, '-');
 
   // Replace ellipsis character with three dots
-  result = result.replace(/…/g, '...');
+  result = result.replace(/\u2026/g, '...');
 
   // Strip any remaining non-GSM-7 characters (emoji, etc.)
   const gsm7Chars = new Set(
-    '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ ÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
-    'ÄÖÑÜabcdefghijklmnopqrstuvwxyzäöñüà'
+    '@\u00A3$\u00A5\u00E8\u00E9\u00F9\u00EC\u00F2\u00C7\n\u00D8\u00F8\r\u00C5\u00E5\u0394_\u03A6\u0393\u039B\u03A9\u03A0\u03A8\u03A3\u0398\u039E \u00C6\u00E6\u00DF\u00C9 !"#\u00A4%&\'()*+,-./0123456789:;<=>?\u00A1ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+    '\u00C4\u00D6\u00D1\u00DC\u00A7abcdefghijklmnopqrstuvwxyz\u00E4\u00F6\u00F1\u00FC\u00E0'
   );
 
   result = result.split('').filter(char => gsm7Chars.has(char)).join('');
@@ -57,13 +60,13 @@ async function isOptedOut(phone: string): Promise<boolean> {
       .maybeSingle();
 
     if (error) {
-      console.error('[TCPA] isOptedOut: DB query error — blocking SMS send:', error.message);
+      console.error('[TCPA] isOptedOut: DB query error -- blocking SMS send:', error.message);
       return true; // Fail-closed on query error
     }
 
     return !!data;
   } catch (err) {
-    console.error('[TCPA] isOptedOut: unexpected error — blocking SMS send:', err);
+    console.error('[TCPA] isOptedOut: unexpected error -- blocking SMS send:', err);
     return true; // Fail-closed on any exception
   }
 }
@@ -96,13 +99,13 @@ export async function sendSms(
   // Sanitize for GSM-7 before sending
   let sanitized = sanitizeGsm7(text);
 
-  // V4-C-001/RT-005: Hard enforcement — truncate if >320 chars (2-segment max).
-  // Log warning for multi-segment (>160 chars).
-  if (sanitized.length > 320) {
-    console.error(`[SMS] Truncating message from ${sanitized.length} to 317 chars for ***${phone.slice(-4)}`);
-    sanitized = sanitized.slice(0, 317) + '...';
+  // v2: Hard cap raised to 480 chars (3 segments) to accommodate richer grading feedback.
+  // Grading responses with word tracks + example responses typically run 300-450 chars.
+  if (sanitized.length > 480) {
+    console.error(`[SMS] Truncating message from ${sanitized.length} to 477 chars for ***${phone.slice(-4)}`);
+    sanitized = sanitized.slice(0, 477) + '...';
   } else if (sanitized.length > 160) {
-    console.warn(`[SMS] Multi-segment message (${sanitized.length} chars) to ***${phone.slice(-4)}`);
+    console.warn(`[SMS] Multi-segment message (${sanitized.length} chars, ${smsSegmentCount(sanitized)} segments) to ***${phone.slice(-4)}`);
   }
 
   // Strip leading + from phone numbers for XMS API
@@ -133,8 +136,8 @@ export async function sendSms(
 // --- GSM-7 validation ---
 // Standard GSM-7 charset. Messages outside this charset use UCS-2 (70 char limit vs 160).
 const GSM7_CHARS = new Set(
-  '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ ÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
-  'ÄÖÑÜabcdefghijklmnopqrstuvwxyzäöñüà'
+  '@\u00A3$\u00A5\u00E8\u00E9\u00F9\u00EC\u00F2\u00C7\n\u00D8\u00F8\r\u00C5\u00E5\u0394_\u03A6\u0393\u039B\u03A9\u03A0\u03A8\u03A3\u0398\u039E \u00C6\u00E6\u00DF\u00C9 !"#\u00A4%&\'()*+,-./0123456789:;<=>?\u00A1ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+  '\u00C4\u00D6\u00D1\u00DC\u00A7abcdefghijklmnopqrstuvwxyz\u00E4\u00F6\u00F1\u00FC\u00E0'
 );
 
 export function isGsm7(text: string): boolean {
@@ -163,7 +166,7 @@ const NATURAL_OPT_OUT_PATTERNS = [
   /\bopt me out\b/i,
   /\bunsubscribe\b/i,
   /\bdejar de enviar\b/i,
-  /\bno m[aá]s mensajes\b/i,
+  /\bno m[a\u00E1]s mensajes\b/i,
 ];
 
 const SPANISH_OPT_OUT_EXACT = new Set(['parar', 'cancelar']);
