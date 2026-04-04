@@ -288,8 +288,8 @@ function formatConversationForAI(
   latestResponse: string
 ): string {
   const lines = history.map((entry) => {
-    const role = entry.role === 'customer' ? 'Customer' : 'Salesperson';
-    return `${role}: ${entry.content}`;
+    const role = entry.direction === 'inbound' ? 'Salesperson' : 'Customer';
+    return `${role}: ${entry.messageBody}`;
   });
   lines.push(`Salesperson: ${latestResponse}`);
   return lines.join('\n');
@@ -466,8 +466,8 @@ export async function generateFollowUp(opts: FollowUpOptions): Promise<FollowUpR
 
   const conversationText = opts.conversationHistory
     .map((entry) => {
-      const role = entry.role === 'customer' ? 'Customer' : 'Salesperson';
-      return `${role}: ${entry.content}`;
+      const role = entry.direction === 'inbound' ? 'Salesperson' : 'Customer';
+      return `${role}: ${entry.messageBody}`;
     })
     .join('\n');
 
