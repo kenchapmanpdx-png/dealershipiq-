@@ -112,7 +112,7 @@ Rules:
   * Ask a specific question they have not answered yet
 - Escalate realistically -- a real buyer does not ask the same question three times, they either walk or change the subject`;
 
-const OBJECTION_COACHING_PROMPT = `You are a brief, direct sales manager coaching your rep mid-conversation. Give exactly 1-2 sentences of specific, actionable coaching.
+const _OBJECTION_COACHING_PROMPT = `You are a brief, direct sales manager coaching your rep mid-conversation. Give exactly 1-2 sentences of specific, actionable coaching.
 
 Rules:
 - Name what was missing or what technique to try
