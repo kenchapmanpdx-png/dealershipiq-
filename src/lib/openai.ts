@@ -32,7 +32,7 @@ export type GradingResult = z.infer<typeof GradingResultSchema>;
 
 // --- Follow-up schema (for multi-exchange) ---
 export const FollowUpSchema = z.object({
-  customer_message: z.string().min(1),
+  customerMessage: z.string().min(1),
   coaching: z.string().optional(),
 });
 
@@ -504,9 +504,9 @@ Generate the customer's next message.`;
               schema: {
                 type: 'object',
                 properties: {
-                  customer_message: { type: 'string' },
+                  customerMessage: { type: 'string' },
                 },
-                required: ['customer_message'],
+                required: ['customerMessage'],
                 additionalProperties: false,
               },
             },
@@ -533,7 +533,7 @@ Generate the customer's next message.`;
 
   // Fallback: generic customer response
   return {
-    customer_message: "I appreciate that, but I'm still not sure. What else can you tell me?",
+    customerMessage: "I appreciate that, but I'm still not sure. What else can you tell me?",
     model: 'template-fallback',
   };
 }
