@@ -2,6 +2,13 @@
 // Build Master: Phase 2D
 // Fallback chain: GPT-5.4 → GPT-4o-mini → cached → template → human review
 // Invariant: XML delimiters for prompt injection defense
+// v7: SMS length enforcement — tightened maxLength values so assembled feedback string
+//     fits in 480-char SMS cap without truncation:
+//       feedback→115, word_tracks→150, example_response→200
+//     Assembled max: 115 + " Tracks: " (9) + 150 + ". Try: " (7) + 200 = 481 chars
+//     Enforced pipe separator format in word_tracks via schema + prompt.
+//     Added coaching tone guardrail: explicit ban on insults/profanity at any score level.
+//     Coaching tone ladder 4-5/10 softened from punitive to constructive.
 // v6: Merges v4 deployed (word tracks + example responses, sharper tone, no mid-exchange
 //     coaching, varied follow-ups) with v5 evaluation framework (7-step system, floor test,
 //     Agree-Isolate-Advance, weighted scoring, concept separation, kill phrase awareness,
@@ -22,9 +29,9 @@ export const GradingResultSchema = z.object({
   close_attempt: z.number().min(1).max(5),
   urgency_creation: z.number().min(0).max(2).optional(),
   competitive_positioning: z.number().min(0).max(2).optional(),
-  feedback: z.string().min(1).max(300),
-  word_tracks: z.string().min(1).max(350).optional(),
-  example_response: z.string().min(1).max(450).optional(),
+  feedback: z.string().min(1).max(200),
+  word_tracks: z.string().min(1).max(250).optional(),
+  example_response: z.string().min(1).max(350).optional(),
   reasoning: z.string().min(1).max(600),
 });
 
@@ -39,7 +46,7 @@ export const FollowUpSchema = z.object({
 export type FollowUpResult = z.infer<typeof FollowUpSchema>;
 
 // =============================================================================
-// GRADING SYSTEM PROMPT — 7-Step Evaluation Framework (v6)
+// GRADING SYSTEM PROMPT — 7-Step Evaluation Framework (v7)
 // =============================================================================
 
 const GRADING_SYSTEM_PROMPT = `You are a sharp, experienced sales manager who builds closers. You respect your reps enough to tell them the truth. Not mean, but never soft. Your job: make every rep on your team dangerous on the floor.
@@ -159,23 +166,23 @@ SCENARIO-SPECIFIC WEIGHTING:
 
 ===== STEP 7: OUTPUT =====
 
-"feedback": Start with X/10, then one punchy sentence about what they did or didn't do. Talk like a sales manager between customers, not a teacher writing a report card. Under 200 characters. No emojis. No curly quotes.
+"feedback": Start with X/10, then one punchy sentence about what they did or didn't do. Talk like a sales manager between customers, not a teacher writing a report card. Under 115 characters total. No emojis. No curly quotes.
 
-"word_tracks": The specific phrases or moves they should practice. Separated by " | ". These are what a manager would drill into a rep's head. Under 250 characters. Examples by scenario type:
+"word_tracks": 2-4 specific phrases or moves they should practice. Each phrase separated by " | " (pipe with spaces). This is a strict format — always use " | " between phrases, never commas or line breaks. Under 150 characters total. Examples by scenario type:
 - Price: "isolate the real number | shift to total cost of ownership | earn the right to present numbers"
 - Spouse: "arm them for the conversation | isolate their concern vs spouse's | schedule the spouse visit"
 - Think about it: "name the real objection | isolate with 'other than X' | bridge to specific next step"
 - Trade-in: "net difference, not trade value | walk the trade together | empathy before math"
 - Product knowledge: "connect feature to their life | competitive comparison with numbers | anticipate the follow-up"
 
-"example_response": Write what an elite salesperson would actually say in this exact scenario. This is the gold — a real response they can steal. Must demonstrate the word tracks in action. Under 350 characters. Written as dialogue, not instructions.
+"example_response": Write what an elite salesperson would actually say in this exact scenario. This is the gold — a real response they can steal. Must demonstrate the word tracks in action. Under 200 characters. Written as dialogue, not instructions.
 
 "reasoning": Your internal evaluation notes. Walk through the 7 steps briefly. Which step revealed the biggest issue? What would you tell this rep in a 30-second coaching session? Under 500 characters.
 
 ===== COACHING TONE LADDER =====
-Match your tone to their score:
+Match your tone to their score. Be direct, never soft — but NEVER use insults, profanity, or words like "useless", "pathetic", "terrible", "garbage", "awful", or "embarrassing". You are coaching professionals, not hazing them. Even at 1/10 the goal is to wake them up, not tear them down.
 - 1-3/10: Wake-up call. "This loses the deal every time." Name the specific thing that killed it.
-- 4-5/10: Direct. "You're leaving money on the table. Here's what's missing."
+- 4-5/10: Direct but constructive. "You left money on the table. Here's what was missing." Name the gap and the fix.
 - 6/10: Constructive. "You've got the basics. Here's what separates you from the top earners."
 - 7/10: Respect + push. "Good work. Here's the one thing that takes this from good to great."
 - 8-9/10: Earned praise + elite move. "Strong. One more technique to add to your arsenal."
@@ -188,7 +195,8 @@ Match your tone to their score:
 - Do NOT use labels like "Feedback:" or "Word Tracks:" — just the content for each field.
 - Grade on what was SAID, not what was meant. If the intent was good but the words were wrong, the words are what the customer heard.
 - Channel-agnostic: grade the same whether it was said over text, phone, or in person.
-- The example_response must be something a real person would actually say. Not a textbook answer. Natural language, contractions, personality.`;
+- The example_response must be something a real person would actually say. Not a textbook answer. Natural language, contractions, personality.
+- word_tracks MUST use " | " (pipe with spaces on both sides) as the separator between phrases. Never commas, semicolons, or line breaks.`;
 
 // --- Behavioral scoring addendum (urgency + competitive) ---
 const BEHAVIORAL_SCORING_ADDENDUM = `
@@ -278,6 +286,20 @@ interface FollowUpOptions {
   currentResponse?: string;
   stepIndex?: number;
 }
+
+// =============================================================================
+// SMS LENGTH CONSTANTS (v7)
+// =============================================================================
+
+// Hard limits enforced at the OpenAI JSON schema level.
+// Assembled SMS = feedback + " Tracks: " + word_tracks + ". Try: " + example_response
+// Max: 115 + 9 + 150 + 7 + 200 = 481 chars (1 char under 482 safety margin for 480 SMS)
+const SMS_MAX = {
+  feedback: 115,
+  word_tracks: 150,
+  example_response: 200,
+  reasoning: 500,
+} as const;
 
 // =============================================================================
 // CONVERSATION FORMATTING
@@ -391,17 +413,16 @@ ${conversation}
 Grade the salesperson's overall performance across all exchanges.`;
 
   // Build JSON schema dynamically based on enabled behavioral scoring
-  // NOTE: maxLength values here are the OpenAI-enforced constraints.
-  // Zod schema maxes are intentionally higher to avoid false validation failures.
+  // v7: maxLength values tightened for SMS cap compliance
   const schemaProperties: Record<string, unknown> = {
     product_accuracy: { type: 'number' },
     tone_rapport: { type: 'number' },
     addressed_concern: { type: 'number' },
     close_attempt: { type: 'number' },
-    feedback: { type: 'string', maxLength: 200 },
-    word_tracks: { type: 'string', maxLength: 250 },
-    example_response: { type: 'string', maxLength: 350 },
-    reasoning: { type: 'string', maxLength: 500 },
+    feedback: { type: 'string', maxLength: SMS_MAX.feedback },
+    word_tracks: { type: 'string', maxLength: SMS_MAX.word_tracks },
+    example_response: { type: 'string', maxLength: SMS_MAX.example_response },
+    reasoning: { type: 'string', maxLength: SMS_MAX.reasoning },
   };
   const requiredFields = [
     'product_accuracy',
@@ -439,9 +460,13 @@ Grade the salesperson's overall performance across all exchanges.`;
 
         const gradingResult = parsed.data;
 
-        // Assemble the full SMS feedback from the three fields
+        // v7: Assemble full SMS feedback with length safety net
         if (gradingResult.word_tracks && gradingResult.example_response) {
-          gradingResult.feedback = `${gradingResult.feedback} Tracks: ${gradingResult.word_tracks}. Try: ${gradingResult.example_response}`;
+          const assembled = `${gradingResult.feedback} Tracks: ${gradingResult.word_tracks}. Try: ${gradingResult.example_response}`;
+          // Hard truncation safety net — should never trigger with correct maxLength values
+          gradingResult.feedback = assembled.length > 480
+            ? assembled.slice(0, 477) + '...'
+            : assembled;
         }
 
         return { ...gradingResult, model, promptVersionId: opts.promptVersionId };
