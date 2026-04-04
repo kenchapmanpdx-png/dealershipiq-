@@ -1080,7 +1080,7 @@ async function handleFinalExchange(
       closeAttempt: result.close_attempt,
       feedback: result.feedback,
       model: result.model,
-      promptVersionId: result.promptVersionId,
+      promptVersionId: promptVersionId ?? null,
       urgencyCreation: result.urgency_creation ?? null,
       competitivePositioning: result.competitive_positioning ?? null,
       trainingDomain: session.trainingDomain ?? undefined,
