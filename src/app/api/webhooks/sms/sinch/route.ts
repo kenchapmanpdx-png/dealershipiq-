@@ -76,7 +76,7 @@ import {
   recordChainStepResult,
   buildChainCompletionSMS,
 } from '@/lib/chains/lifecycle';
-import { selectTrainingContent, formatTrainingQuestion } from '@/lib/training-content';
+import { selectTrainingContent } from '@/lib/training-content';
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
 import type { StepResult } from '@/types/chains';
 
@@ -1038,7 +1038,10 @@ async function handlePassKeyword(
 }
 
 // =============================================================================
-// GO keyword: trigger a new training session on demand (v7: full content pipeline)
+// GO keyword: trigger a new training session on demand (v7.1)
+// Uses content pipeline for domain/mode/mood SELECTION, but sends a scenario
+// from the 30-question pool as the SMS. formatTrainingQuestion() output is the
+// AI system prompt — never send that to the rep.
 // =============================================================================
 async function handleGoKeyword(
   user: { id: string; dealershipId: string; dealershipName: string; fullName: string },
@@ -1053,26 +1056,25 @@ async function handleGoKeyword(
       return;
     }
 
-    // v7: Try full training content pipeline (adaptive weighting, vehicle data, persona moods)
-    let question: string;
+    // v7.1: Use content pipeline for domain/mode/mood selection only.
+    // The actual SMS text comes from the scenario pool (customer-facing language).
     let mode: string;
     let trainingDomain: string | undefined;
     let personaMoodValue: string | null = null;
 
     try {
       const content = await selectTrainingContent(user.id, user.dealershipId);
-      const formatted = formatTrainingQuestion(content);
-      question = formatted.question;
       mode = content.mode;
       trainingDomain = content.domain;
       personaMoodValue = content.mood?.name ?? null;
     } catch (contentErr) {
-      // Fallback: pick from 30-scenario pool
-      console.error('GO: training content pipeline failed, using fallback pool:', (contentErr as Error).message ?? contentErr);
+      console.error('GO: training content pipeline failed, using random mode:', (contentErr as Error).message ?? contentErr);
       const modes = ['roleplay', 'quiz', 'objection'] as const;
       mode = modes[Math.floor(Math.random() * modes.length)];
-      question = getRandomScenario(mode);
     }
+
+    // Always pick from the scenario pool — these are written as customer dialogue
+    const question = getRandomScenario(mode);
 
     const firstName = user.fullName ? user.fullName.trim().split(/\s+/)[0] : '';
     const greeting = firstName ? `Hey ${firstName}, ` : '';
