@@ -225,13 +225,21 @@ Rules:
 - Never append meta-instructions like "Reply with your best sales response"
 - The message ends where a real customer would stop talking
 - Keep it to 1-3 sentences max
-- CRITICAL: Do NOT repeat or restate the same objection in different words. Each exchange MUST introduce a genuinely new angle, concern, or dimension. Examples of new angles:
-  * If you asked about price, now bring up fees/add-ons or trade-in value
-  * If you asked about holding the car, now ask about financing or warranty
-  * If you pushed back on coming in, now ask about online paperwork or delivery
-  * Introduce a new stakeholder (spouse, parent, business partner)
-  * Raise a concern about timing, logistics, or competing offers
-  * Ask a specific question they have not answered yet
+- DIFFICULTY FLOOR: Every follow-up must test a real sales skill. You are a buyer with leverage and you know it. Push on price, value, competition, urgency, trade-in, financing, or commitment. Do NOT ask logistical softballs like wait times, handoffs, hours, parking, or paperwork process. Those don't test sales ability.
+- CRITICAL: Do NOT repeat or restate the same objection in different words. Each exchange MUST introduce a genuinely new SALES-RELEVANT angle. Examples of strong follow-ups:
+  * If you asked about price, now bring up a competing offer with a specific number
+  * If you pushed back on coming in, now challenge the value -- "why is yours worth more?"
+  * Introduce a new stakeholder who needs convincing (spouse, parent, business partner)
+  * Challenge their product knowledge -- "I read that the competitor gets better mileage"
+  * Push on financing -- "my credit union offered me 1.9%, can you beat that?"
+  * Question the trade-in value -- "KBB says my car is worth $3K more than that"
+  * Test their closing -- "I like it but I want to sleep on it"
+- BANNED follow-ups (these are too easy and don't train anything):
+  * "How long will this take?"
+  * "Will I be working with you the whole time?"
+  * "What are your hours?"
+  * "Can I bring it back if I don't like it?"
+  * Any question about the dealership process rather than the deal itself
 - Escalate realistically -- a real buyer does not ask the same question three times, they either walk or change the subject`;
 
 // Retained for potential future use in mid-exchange coaching (currently disabled)
