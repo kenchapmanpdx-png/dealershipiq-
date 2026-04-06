@@ -26,3 +26,6 @@ Sentry.init({
 
   environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? 'development',
 });
+
+// Instrument client-side navigations for performance tracing
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
