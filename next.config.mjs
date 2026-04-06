@@ -14,8 +14,12 @@ export default withSentryConfig(nextConfig, {
   org: 'dealershipiq',
   project: 'dealershipiq-nextjs',
 
-  // Automatically tree-shake Sentry logger in production
-  disableLogger: true,
+  // Tree-shake Sentry debug logging in production
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
 
   // Hide source maps from the client bundle
   hideSourceMaps: true,
