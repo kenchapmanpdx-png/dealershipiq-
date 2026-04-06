@@ -1620,6 +1620,55 @@ export async function updateUserStatus(userId: string, status: string) {
     .update({ status })
     .eq('id', userId);
 
-  if (error) throw error;
+ if (error) throw error;
+}
+// ─── Scenario Bank Lookup (v7 grader) ────────────────────────────────────────
+export async function getScenarioBankEntry(customerLine: string): Promise<{
+  scenarioId: string;
+  techniqueTag: string;
+  eliteDialogue: string;
+  failSignals: string;
+  mode: string;
+  domain: string;
+} | null> {
+  // Strip greeting prefix (e.g., "Hey John, ") to match raw customer_line
+  const stripped = customerLine.replace(/^Hey\s+\S+,\s*/i, '').trim();
+
+  const { data, error } = await serviceClient
+    .from('scenario_bank')
+    .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain')
+    .eq('customer_line', stripped)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) {
+    // Try fuzzy match: the question_text might have been truncated or slightly modified
+    const { data: fuzzyData } = await serviceClient
+      .from('scenario_bank')
+      .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain')
+      .ilike('customer_line', `%${stripped.slice(0, 60)}%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (!fuzzyData) return null;
+
+    return {
+      scenarioId: fuzzyData.scenario_id as string,
+      techniqueTag: fuzzyData.technique_tag as string,
+      eliteDialogue: fuzzyData.elite_dialogue as string,
+      failSignals: fuzzyData.fail_signals as string,
+      mode: fuzzyData.mode as string,
+      domain: fuzzyData.domain as string,
+    };
+  }
+
+  return {
+    scenarioId: data.scenario_id as string,
+    techniqueTag: data.technique_tag as string,
+    eliteDialogue: data.elite_dialogue as string,
+    failSignals: data.fail_signals as string,
+    mode: data.mode as string,
+    domain: data.domain as string,
+  };
 }
 
