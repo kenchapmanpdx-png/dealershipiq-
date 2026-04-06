@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
 
     const personaMoodsEnabled = await isFeatureEnabled(dealership.id, 'persona_moods_enabled');
 
-    const eligible = await getEligibleUsers(dealership.id);
+    const eligible = await getEligibleUsers(dealership.id, dealership.timezone);
     let sent = 0;
     let skipped = 0;
     let errors = 0;

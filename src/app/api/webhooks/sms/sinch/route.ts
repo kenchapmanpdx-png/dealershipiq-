@@ -669,11 +669,11 @@ async function handleNowKeyword(
 
     // Push scenario to all eligible reps now
     const { getEligibleUsers, getOutboundCountToday } = await import('@/lib/service-db');
-    const eligible = await getEligibleUsers(user.dealershipId);
-    // Look up dealership timezone for cap check
+    // Look up dealership timezone for cap check + eligible user filtering
     const { serviceClient: scTz } = await import('@/lib/supabase/service');
     const { data: dlrData } = await scTz.from('dealerships').select('timezone').eq('id', user.dealershipId).single();
     const dlrTimezone = (dlrData?.timezone as string) || 'America/New_York';
+    const eligible = await getEligibleUsers(user.dealershipId, dlrTimezone);
     let pushed = 0;
 
     for (const rep of eligible) {

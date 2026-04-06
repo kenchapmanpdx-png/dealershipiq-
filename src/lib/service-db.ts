@@ -212,6 +212,8 @@ export async function insertTranscriptLog(entry: {
       message_body: entry.messageBody,
       sinch_message_id: entry.sinchMessageId ?? null,
       session_id: entry.sessionId ?? null,
+      // H4-FIX: Include metadata if provided (requires metadata jsonb column on table)
+      ...(entry.metadata ? { metadata: entry.metadata } : {}),
     });
 
   if (error) throw error;
@@ -413,9 +415,21 @@ export async function createConversationSession(entry: {
 
 // ─── Eligible users for daily training ───────────────────────────────
 
-export async function getEligibleUsers(dealershipId: string) {
+export async function getEligibleUsers(dealershipId: string, timezone?: string) {
   // Users who: have active status, are not opted out, don't have an active session today
-  const today = new Date().toISOString().split('T')[0];
+  const { getLocalDateString } = await import('@/lib/quiet-hours');
+  const tz = timezone ?? 'America/New_York';
+  const localDate = getLocalDateString(tz);
+  // Compute UTC equivalent of local midnight
+  const refDate = new Date(localDate + 'T12:00:00Z');
+  const localHourAtRef = parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false })
+      .formatToParts(refDate)
+      .find((p) => p.type === 'hour')?.value ?? '12'
+  );
+  const offsetHours = localHourAtRef - 12;
+  const localMidnightUtc = new Date(new Date(localDate + 'T00:00:00Z').getTime() - offsetHours * 3600000);
+  const todayStart = localMidnightUtc.toISOString();
 
   const { data, error } = await serviceClient
     .from('users')
@@ -442,7 +456,7 @@ export async function getEligibleUsers(dealershipId: string) {
     .from('conversation_sessions')
     .select('user_id')
     .eq('dealership_id', dealershipId)
-    .gte('created_at', `${today}T00:00:00Z`);
+    .gte('created_at', todayStart);
 
   const todayUserIds = new Set((todaySessions ?? []).map((s) => s.user_id));
 
@@ -454,10 +468,25 @@ export async function getEligibleUsers(dealershipId: string) {
 // ─── Message cap check ───────────────────────────────────────────────
 // X-009: Shared utility for 3/day outbound message cap.
 // Uses dealership-local date to count outbound messages.
+// FIX: Compute UTC equivalent of local midnight (not UTC midnight of local date).
 export async function getOutboundCountToday(userId: string, timezone?: string): Promise<number> {
   const { getLocalDateString } = await import('@/lib/quiet-hours');
   const tz = timezone ?? 'America/New_York';
-  const todayStart = getLocalDateString(tz) + 'T00:00:00Z';
+  const localDate = getLocalDateString(tz); // e.g. "2026-04-06"
+
+  // Compute the UTC timestamp of local midnight by finding the offset
+  // Create a date at UTC midnight of the local date, then ask what hour
+  // that is in the target timezone — the difference is the offset.
+  const refDate = new Date(localDate + 'T12:00:00Z'); // noon UTC avoids DST edge
+  const localHourAtRef = parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false })
+      .formatToParts(refDate)
+      .find((p) => p.type === 'hour')?.value ?? '12'
+  );
+  const offsetHours = localHourAtRef - 12; // positive = ahead of UTC
+  const localMidnightUtc = new Date(new Date(localDate + 'T00:00:00Z').getTime() - offsetHours * 3600000);
+  const todayStart = localMidnightUtc.toISOString();
+
   const { count } = await serviceClient
     .from('sms_transcript_log')
     .select('id', { count: 'exact', head: true })
@@ -1641,12 +1670,17 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
     .limit(1)
     .maybeSingle();
 
+  if (error) {
+    console.error('Scenario bank exact match query error:', error.message);
+  }
   if (error || !data) {
     // Try fuzzy match: the question_text might have been truncated or slightly modified
+    // M1-FIX: Escape SQL wildcard chars to prevent pattern injection
+    const escaped = stripped.slice(0, 60).replace(/%/g, '\\%').replace(/_/g, '\\_');
     const { data: fuzzyData } = await serviceClient
       .from('scenario_bank')
       .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain')
-      .ilike('customer_line', `%${stripped.slice(0, 60)}%`)
+      .ilike('customer_line', `%${escaped}%`)
       .limit(1)
       .maybeSingle();
 
