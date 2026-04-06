@@ -43,6 +43,7 @@ import {
   updateUserStatus,
   isFeatureEnabled,
   createConversationSession,
+  getScenarioBankEntry,
 } from '@/lib/service-db';
 import {
   parseScheduleKeyword,
@@ -1137,6 +1138,28 @@ async function handleFinalExchange(
     const scoreBehavioralUrgency = await isFeatureEnabled(user.dealershipId, 'behavioral_scoring_urgency');
     const scoreBehavioralCompetitive = await isFeatureEnabled(user.dealershipId, 'behavioral_scoring_competitive');
 
+    // v7: Look up scenario bank data if feature flag is ON
+    let techniqueTag: string | undefined;
+    let eliteDialogue: string | undefined;
+    let failSignals: string | undefined;
+    let scenarioDomain: string | undefined;
+
+    const v7Enabled = await isFeatureEnabled(user.dealershipId, 'grader_v7_enabled');
+    if (v7Enabled) {
+      try {
+        const scenarioData = await getScenarioBankEntry(session.questionText);
+        if (scenarioData) {
+          techniqueTag = scenarioData.techniqueTag;
+          eliteDialogue = scenarioData.eliteDialogue;
+          failSignals = scenarioData.failSignals;
+          scenarioDomain = scenarioData.domain;
+        }
+      } catch (lookupErr) {
+        console.error('Scenario bank lookup failed:', (lookupErr as Error).message ?? lookupErr);
+        // Fall through to v6 grading — techniqueTag stays undefined
+      }
+    }
+
     const result = await gradeResponse({
       scenario: session.questionText,
       employeeResponse: text,
@@ -1146,6 +1169,10 @@ async function handleFinalExchange(
       personaMood: session.personaMood,
       scoreBehavioralUrgency,
       scoreBehavioralCompetitive,
+      techniqueTag,
+      eliteDialogue,
+      failSignals,
+      scenarioDomain,
     });
 
     const averageScore = (
