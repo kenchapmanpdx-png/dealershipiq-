@@ -148,6 +148,14 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
+        // H2: Per-user/day dedup — skip if we already sent training to this user today
+        // (catches edge cases where dealership-level dedup passes but user already trained)
+        const outboundToday = await getOutboundCountToday(user.id, dealership.timezone);
+        if (outboundToday > 0) {
+          skipped++;
+          continue;
+        }
+
         // Phase 4C: Check if user is scheduled off
         const scheduledOff = await isScheduledOff(user.id, dealership.id, new Date(), dealership.timezone ?? 'America/New_York');
         if (scheduledOff) {
@@ -155,12 +163,8 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // H-002: Check message cap (3/day) — X-009: uses shared utility
-        const outboundCount = await getOutboundCountToday(user.id, dealership.timezone);
-        if (outboundCount >= 3) {
-          skipped++;
-          continue;
-        }
+        // H-002: Message cap (3/day) already covered by H2 dedup above (outboundToday > 0)
+        // The 3/day cap matters for trainee mode (push-training), not daily cron.
 
         // Phase 6: Content priority system
         const content = await selectContent(user.id, dealership.id, dealership.timezone ?? 'America/New_York');

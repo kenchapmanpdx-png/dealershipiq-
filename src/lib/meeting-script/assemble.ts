@@ -6,6 +6,7 @@ import type {
   MeetingScriptData,
   MeetingScriptFullScript,
 } from '@/types/meeting-script';
+import { sanitizeGsm7 } from '@/lib/sms';
 
 /** Build the SMS brief text. Max 320 chars (2 SMS segments). GSM-7 only, no emoji. */
 export function buildMeetingSMS(data: MeetingScriptData): string {
@@ -77,7 +78,8 @@ export function buildMeetingSMS(data: MeetingScriptData): string {
     sms = sms.slice(0, 317) + '...';
   }
 
-  return sms;
+  // M23: Sanitize to GSM-7 to prevent UCS-2 encoding from data with curly quotes, etc.
+  return sanitizeGsm7(sms);
 }
 
 /** Build the full_script JSONB for dashboard storage. */
@@ -140,6 +142,9 @@ export function formatDetailsResponse(
   }
 
   let text = lines.filter(Boolean).join(' ');
+
+  // M23: Sanitize to GSM-7 before length check
+  text = sanitizeGsm7(text);
 
   // Cap at 612 chars (4 SMS segments GSM-7)
   if (text.length > 612) {

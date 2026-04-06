@@ -66,11 +66,26 @@ export function getLocalDateString(timezone: string): string {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: timezone }).format(new Date());
 }
 
-/** C-004: Returns yesterday's local date string (YYYY-MM-DD) in the dealership's timezone. */
+/** C-004: Returns yesterday's local date string (YYYY-MM-DD) in the dealership's timezone.
+ *  M6-FIX: Subtract 1 from local date instead of subtracting 24h from UTC
+ *  (avoids DST off-by-one near midnight on spring-forward days). */
 export function getLocalYesterdayString(timezone: string): string {
-  const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: timezone }).format(yesterday);
+  // Get today's local date parts
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+
+  const year = parseInt(parts.find((p) => p.type === 'year')?.value ?? '0');
+  const month = parseInt(parts.find((p) => p.type === 'month')?.value ?? '1');
+  const day = parseInt(parts.find((p) => p.type === 'day')?.value ?? '1');
+
+  // Construct a date in UTC using local parts, then subtract 1 day
+  const localToday = new Date(Date.UTC(year, month - 1, day));
+  localToday.setUTCDate(localToday.getUTCDate() - 1);
+  return localToday.toISOString().slice(0, 10);
 }
 
 /** C-004: Returns true if today is Monday in the dealership's timezone. */

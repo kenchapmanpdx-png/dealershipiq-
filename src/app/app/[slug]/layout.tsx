@@ -21,37 +21,42 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
   const slug = params.slug as string;
 
   useEffect(() => {
-    // Check for existing session in cookie
+    // C5: Server-side token verification — don't trust client-side atob decode
     const existing = document.cookie
       .split('; ')
       .find((c) => c.startsWith('diq_session='));
-    if (existing) {
-      const token = existing.split('=')[1];
-      try {
-        // B-001 fix: Token is base64-encoded JSON (HMAC-signed), not colon-delimited
-        const decoded = JSON.parse(atob(token));
-        // L-020: Check token expiration client-side before using
-        if (decoded.expiresAt && decoded.expiresAt < Date.now()) {
-          // Token expired — clear cookie and force re-auth
+    if (!existing) {
+      setLoading(false);
+      return;
+    }
+    const token = existing.split('=')[1];
+    fetch('/api/app/verify')
+      .then((res) => {
+        if (!res.ok) {
+          // Server rejected token — clear cookie
           document.cookie = 'diq_session=; path=/; max-age=0';
-        } else if (decoded.userId && decoded.dealershipId) {
-          // B-002 fix: Verify token's dealershipId matches the URL slug
-          // We can't do slug→dealershipId lookup client-side, but we store the slug
-          // and the server-side routes validate via verifyAppToken
+          setLoading(false);
+          return;
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (data?.userId && data?.dealershipId) {
           setSession({
-            userId: decoded.userId,
-            dealershipId: decoded.dealershipId,
-            firstName: decoded.firstName ?? 'there',
-            language: decoded.language ?? 'en',
+            userId: data.userId,
+            dealershipId: data.dealershipId,
+            firstName: data.firstName ?? 'there',
+            language: data.language ?? 'en',
             token,
           });
         }
-      } catch {
-        // Invalid cookie — clear it
+        setLoading(false);
+      })
+      .catch(() => {
+        // Network error — clear cookie and force re-auth
         document.cookie = 'diq_session=; path=/; max-age=0';
-      }
-    }
-    setLoading(false);
+        setLoading(false);
+      });
   }, []);
 
   const handleAuth = useCallback(async () => {

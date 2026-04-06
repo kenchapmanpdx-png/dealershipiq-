@@ -77,9 +77,34 @@ function parseCSVLine(line: string): string[] {
   return fields;
 }
 
+// Rejoin lines that were split inside a quoted field (RFC 4180 §2.6)
+function rejoinQuotedLines(rawLines: string[]): string[] {
+  const joined: string[] = [];
+  let buffer = '';
+  let open = false;
+
+  for (const line of rawLines) {
+    if (open) {
+      buffer += '\n' + line;
+    } else {
+      buffer = line;
+    }
+    // Count unescaped quotes — odd means we're inside a quoted field
+    const quotes = (buffer.match(/"/g) ?? []).length;
+    open = quotes % 2 !== 0;
+    if (!open) {
+      joined.push(buffer);
+      buffer = '';
+    }
+  }
+  // If still open after all lines, push whatever we have (malformed CSV)
+  if (buffer) joined.push(buffer);
+  return joined;
+}
+
 // Parse CSV with header row
 function parseCSV(csvText: string): ImportRow[] {
-  const lines = csvText.trim().split('\n');
+  const lines = rejoinQuotedLines(csvText.trim().split('\n'));
   if (lines.length < 2) return [];
 
   const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase());
