@@ -112,7 +112,8 @@ function truncateAtWord(text: string, maxLen: number): string {
 }
 
 // Assemble final grading SMS: sanitize + truncate + concatenate
-function assembleGradingSms(feedback: string, wordTracks: string, exampleResponse: string): string {
+// Retained for v6 fallback path compatibility
+function _assembleGradingSms(feedback: string, wordTracks: string, exampleResponse: string): string {
   const f = truncateAtWord(sanitizeGsm7(feedback), SMS_MAX_V7.feedback);
   const w = truncateAtWord(sanitizeGsm7(wordTracks), SMS_MAX_V7.word_tracks);
   const e = truncateAtWord(sanitizeGsm7(exampleResponse), SMS_MAX_V7.example_response);
@@ -141,7 +142,8 @@ function applyQuizOverrides(
 }
 
 // Swap in stored elite_dialogue if AI-generated example_response is weak
-function getExampleResponse(
+// Retained for v6 fallback path compatibility
+function _getExampleResponse(
   aiGenerated: string,
   storedDialogue: string
 ): string {
@@ -187,13 +189,38 @@ EVALUATION RULES:
 5. Response length should NOT influence scores. A concise response that covers key elements scores as well as a longer one.
 6. Grade for intent-over-spelling. SMS is noisy -- prioritize phonetic similarity and contextual meaning over typos, abbreviations, or slang.
 7. Respond ONLY with the JSON schema defined in Structured Outputs.
-8. All generated text (feedback, word_tracks, example_response) must use only basic ASCII characters. Do NOT use em-dashes, curly quotes, or special Unicode characters. Use straight quotes, hyphens, and standard punctuation only.
+8. All generated text must use only basic ASCII characters. Do NOT use em-dashes, curly quotes, or special Unicode characters. Use " -- " for dashes. Straight quotes only.
 
 OUTPUT FIELD INSTRUCTIONS:
 - rationale: Your internal analysis. What the employee did well, what they missed, which technique elements were present or absent. 2-4 sentences.
-- feedback: Start with the total score as X/20 (sum of all four dimension scores) followed by a period. Then what they did or missed. Under 20 words total. Must name the specific technique element they executed or failed to execute. No generic praise.
-- word_tracks: 2-4 actionable phrases the employee should use next time, separated by " | ". Under 25 words total.
-- example_response: What an elite rep would say in this exact situation. Under 35 words. Must sound like a real salesperson texting, not a textbook. Adapt the exemplar_dialogue to address what the employee specifically missed -- do not copy it verbatim if a different angle would be more instructive.`;
+- feedback: This is the COMPLETE text message the employee receives. HARD LIMIT: 460 characters. Format rules:
+
+  ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
+
+  SINGLE-TURN (the employee gave ONE response -- no conversation_history tag, or conversation_history contains only one employee message):
+  After the score, state what they did well or missed in under 12 words. Then "Try:" followed by what an elite rep would actually say -- adapt from the exemplar_dialogue. Spoken closer language, not a textbook.
+
+  MULTI-TURN (conversation_history contains TWO OR MORE employee responses):
+  After the score, address EACH exchange the employee responded to:
+  "Q1: [what they did right or wrong in under 8 words]."
+  "Q2: [what they did right or wrong]. Try: [what closer would say]."
+  "Q3: [what they did right or wrong]. Try: [what closer would say]."
+  If an exchange was STRONG, acknowledge briefly ("Good isolation.") and skip the Try for that one.
+  Give Try examples ONLY for WEAK exchanges. This saves space for better coaching.
+  Prioritize the weakest exchange for the longest Try example.
+
+  ABSOLUTE RULES:
+  - NEVER use "Tracks:" label. It no longer exists in this format.
+  - NEVER exceed 460 characters. When in doubt, cut a word. A complete thought at 450 chars beats a truncated thought at 470.
+  - X/20 score MUST equal A+B+C+D. If the math doesn't add up, fix it before responding.
+  - No filler. No "Great job but..." No "You did well however..." No "Keep it up."
+  - Try examples sound like a real salesperson texting, not a training manual.
+  - Adapt Try from exemplar_dialogue -- use its energy and specific selling technique.
+  - Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special characters.
+  - Score denominator is ALWAYS /20. Never /10.
+
+- word_tracks: Write "n/a". This field is deprecated but required by the schema.
+- example_response: Write "n/a". This field is deprecated but required by the schema.`;
 
   const user = `<training_question>${customerLine}</training_question>
 
@@ -235,13 +262,26 @@ EVALUATION RULES:
 7. close_attempt: Default to 3. Not applicable for knowledge questions -- do not penalize or reward.
 8. Grade for intent-over-spelling. SMS is noisy.
 9. Respond ONLY with the JSON schema defined in Structured Outputs.
-10. All generated text must use only basic ASCII characters. No em-dashes, curly quotes, or special Unicode characters.
+10. All generated text must use only basic ASCII characters. Use " -- " for dashes. Straight quotes only. No em-dashes, curly quotes, or special Unicode characters.
 
 OUTPUT FIELD INSTRUCTIONS:
 - rationale: Your internal analysis of factual accuracy. What was correct, what was missing or wrong. 2-4 sentences.
-- feedback: Start with the total score as X/20 (sum of all four dimension scores) followed by a period. Then what key facts they got right or missed. Under 20 words total.
-- word_tracks: 2-4 key facts or phrases they should remember, separated by " | ". Under 25 words total.
-- example_response: The concise, correct answer. Under 35 words. Clear enough that a rep could text it to a customer.`;
+- feedback: This is the COMPLETE text message the employee receives. HARD LIMIT: 460 characters. Format rules:
+
+  ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
+
+  After the score, state what key facts they got right or missed in under 12 words. Then "Try:" followed by the concise, correct answer -- clear enough that a rep could text it to a customer. Adapt from exemplar_dialogue.
+
+  ABSOLUTE RULES:
+  - NEVER use "Tracks:" label. It no longer exists in this format.
+  - NEVER exceed 460 characters.
+  - X/20 score MUST equal A+B+C+D. If the math doesn't add up, fix it before responding.
+  - No filler. No "Great job but..." No "Keep it up."
+  - Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special characters.
+  - Score denominator is ALWAYS /20. Never /10.
+
+- word_tracks: Write "n/a". This field is deprecated but required by the schema.
+- example_response: Write "n/a". This field is deprecated but required by the schema.`;
 
   const user = `<training_question>${customerLine}</training_question>
 
@@ -680,18 +720,9 @@ async function gradeResponseV7(
       // Pipeline step 3: Q2 quiz override
       applyQuizOverrides(data as { close_attempt: number }, mode, techniqueTag);
 
-      // Pipeline step 4: Swap weak example_response if fallback model
-      let exampleResp = data.example_response as string;
-      if (isMini) {
-        exampleResp = getExampleResponse(exampleResp, eliteDialogue);
-      }
-
-      // Pipeline step 5: Assemble SMS (internally sanitizes + truncates)
-      const assembledSms = assembleGradingSms(
-        data.feedback as string,
-        data.word_tracks as string,
-        exampleResp
-      );
+      // Pipeline step 4: Sanitize + truncate feedback (GPT writes complete SMS into feedback)
+      // Prompt targets 460 chars. App truncation catches overflow at 480.
+      const finalSms = truncateAtWord(sanitizeGsm7(data.feedback as string), 480);
 
       // Build result compatible with existing GradingResult type
       const gradingResult: GradingResult & { model: string; promptVersionId?: string; assembledSms: string } = {
@@ -699,13 +730,13 @@ async function gradeResponseV7(
         tone_rapport: data.tone_rapport as number,
         addressed_concern: data.addressed_concern as number,
         close_attempt: data.close_attempt as number,
-        feedback: assembledSms,  // v7: feedback field carries the assembled SMS
-        word_tracks: data.word_tracks as string,
-        example_response: exampleResp,
+        feedback: finalSms,
+        word_tracks: undefined as unknown as string,
+        example_response: undefined as unknown as string,
         reasoning: truncateAtWord((data.rationale as string) ?? 'v7 mini fallback -- no rationale', SMS_MAX_V7.rationale),
         model,
         promptVersionId: opts.promptVersionId,
-        assembledSms,
+        assembledSms: finalSms,
       };
 
       return gradingResult;
