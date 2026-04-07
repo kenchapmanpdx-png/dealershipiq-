@@ -3,13 +3,11 @@
 // Fallback chain: GPT-5.4 -> GPT-4o-mini -> cached -> template -> human review
 // Invariant: XML delimiters for prompt injection defense
 //
-// v7.1: Scenario-specific grading via technique_tag + elite_dialogue + fail_signals
+// v7.2: Scenario-specific grading via technique_tag + elite_dialogue + fail_signals
 //       from scenario_bank table. Feature-flagged: grader_v7_enabled.
 //       When flag is OFF, falls back to v6 general-purpose grading prompt.
-//       Processing pipeline: parse -> validate -> Q2 override -> swap weak
-//       example_response -> assembleGradingSms (sanitize + truncate + concat) -> store -> send.
-//       SMS char math: feedback(115) + " Tracks: "(9) + word_tracks(150) + ". Try: "(7) + example_response(199) = 480.
-//       21 corrections applied across 5 audit passes.
+//       Processing pipeline: parse -> validate -> Q2 override -> sanitize + truncate feedback -> store -> send.
+//       feedback carries the complete SMS (max 480 chars). word_tracks/example_response removed from schema.
 //
 // v6: 7-step evaluation framework, floor test, Agree-Isolate-Advance, weighted scoring,
 //     concept separation, kill phrase awareness, hedging penalty, confidence reward,
@@ -34,8 +32,6 @@ export const GradingResultSchema = z.object({
   urgency_creation: z.number().min(0).max(2).optional(),
   competitive_positioning: z.number().min(0).max(2).optional(),
   feedback: z.string().min(1).max(500),
-  word_tracks: z.string().min(1).max(250).optional(),
-  example_response: z.string().min(1).max(350).optional(),
   reasoning: z.string().min(1).max(600),
 });
 
@@ -49,8 +45,6 @@ export const GradingResultSchemaV7 = z.object({
   addressed_concern: z.number().min(1).max(5),
   close_attempt: z.number().min(1).max(5),
   feedback: z.string().min(1).max(500),
-  word_tracks: z.string().min(1).max(300),
-  example_response: z.string().min(1).max(400),
 });
 
 export type GradingResultV7 = z.infer<typeof GradingResultSchemaV7>;
@@ -64,32 +58,17 @@ export const FollowUpSchema = z.object({
 export type FollowUpResult = z.infer<typeof FollowUpSchema>;
 
 // =============================================================================
-// v7 SMS LENGTH CONSTANTS
+// SMS LENGTH CONSTANTS
 // =============================================================================
 
-// M5-FIX: Separator strings as constants so safety-net math stays in sync
-const SMS_SEP_TRACKS = ' Tracks: ';   // 9 chars
-const SMS_SEP_TRY = '. Try: ';        // 7 chars
-const SMS_SEP_OVERHEAD = SMS_SEP_TRACKS.length + SMS_SEP_TRY.length; // 16 chars
-
-const SMS_MAX_V7 = {
-  rationale: 500,
-  feedback: 115,
-  word_tracks: 150,
-  example_response: 199,  // 115 + 9 + 150 + 7 + 199 = 480 exactly
-  assembled: 480,
-} as const;
-
-// v6 SMS constants (preserved for feature flag OFF path)
+// feedback carries the complete SMS now (both v7 and v6)
 const SMS_MAX = {
   feedback: 480,
-  word_tracks: 150,
-  example_response: 200,
   reasoning: 500,
 } as const;
 
 // =============================================================================
-// v7 UTILITY FUNCTIONS
+// UTILITY FUNCTIONS
 // =============================================================================
 
 // Replace non-GSM-7 characters that would force UCS-2 encoding (triples SMS cost)
@@ -111,25 +90,6 @@ function truncateAtWord(text: string, maxLen: number): string {
   return lastSpace > maxLen * 0.7 ? truncated.slice(0, lastSpace) : truncated;
 }
 
-// Assemble final grading SMS: sanitize + truncate + concatenate
-// Retained for v6 fallback path compatibility
-function _assembleGradingSms(feedback: string, wordTracks: string, exampleResponse: string): string {
-  const f = truncateAtWord(sanitizeGsm7(feedback), SMS_MAX_V7.feedback);
-  const w = truncateAtWord(sanitizeGsm7(wordTracks), SMS_MAX_V7.word_tracks);
-  const e = truncateAtWord(sanitizeGsm7(exampleResponse), SMS_MAX_V7.example_response);
-
-  const assembled = `${f}${SMS_SEP_TRACKS}${w}${SMS_SEP_TRY}${e}`;
-
-  // Safety net -- should not trigger with correct field limits
-  if (assembled.length > SMS_MAX_V7.assembled) {
-    const available = SMS_MAX_V7.assembled - f.length - w.length - SMS_SEP_OVERHEAD;
-    const eTrimmed = truncateAtWord(e, Math.max(available, 50));
-    return `${f}${SMS_SEP_TRACKS}${w}${SMS_SEP_TRY}${eTrimmed}`;
-  }
-
-  return assembled;
-}
-
 // Q2 quiz override: force close_attempt to 3 for pure knowledge questions
 function applyQuizOverrides(
   scores: { close_attempt: number },
@@ -139,27 +99,6 @@ function applyQuizOverrides(
   if (mode === 'quiz' && techniqueTag.startsWith('KNOWLEDGE_CHECK')) {
     scores.close_attempt = 3;
   }
-}
-
-// Swap in stored elite_dialogue if AI-generated example_response is weak
-// Retained for v6 fallback path compatibility
-function _getExampleResponse(
-  aiGenerated: string,
-  storedDialogue: string
-): string {
-  const trimmedDialogue = truncateAtWord(
-    storedDialogue.replace(/^"|"$/g, ''),
-    SMS_MAX_V7.example_response
-  );
-
-  const hasNextStep = aiGenerated.includes('?') ||
-    /\b(let me|let's|want to|can I|I'll|how about|shall we)\b/i.test(aiGenerated);
-
-  if (aiGenerated.length >= 50 && aiGenerated.length <= SMS_MAX_V7.example_response && hasNextStep) {
-    return aiGenerated;
-  }
-
-  return trimmedDialogue;
 }
 
 // =============================================================================
@@ -198,29 +137,27 @@ OUTPUT FIELD INSTRUCTIONS:
   ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
   SINGLE-TURN (the employee gave ONE response -- no conversation_history tag, or conversation_history contains only one employee message):
-  After the score, state what they did well or missed in under 12 words. Then show what an elite rep would actually say -- adapt from the exemplar_dialogue. Spoken closer language, not a textbook.
+  After the score, state what they did well or missed in under 12 words. Then "Try:" followed by what an elite rep would actually say -- adapt from the exemplar_dialogue. Spoken closer language, not a textbook.
 
   MULTI-TURN (conversation_history contains TWO OR MORE employee responses):
   After the score, address EACH exchange the employee responded to:
-  "Q1: [what they did right or wrong in under 8 words]. [what closer would say]."
-  "Q2: [what they did right or wrong]. [what closer would say]."
-  "Q3: [what they did right or wrong]. [what closer would say]."
-  If an exchange was STRONG, acknowledge briefly ("Good isolation.") and skip the example for that one.
-  Give examples ONLY for WEAK exchanges. This saves space for better coaching.
-  Prioritize the weakest exchange for the longest example.
+  "Q1: [what they did right or wrong in under 8 words]."
+  "Q2: [what they did right or wrong]. Try: [what closer would say]."
+  "Q3: [what they did right or wrong]. Try: [what closer would say]."
+  If an exchange was STRONG, acknowledge briefly ("Good isolation.") and skip the Try for that one.
+  Give Try examples ONLY for WEAK exchanges. This saves space for better coaching.
+  Prioritize the weakest exchange for the longest Try.
 
   ABSOLUTE RULES:
-  - NEVER use "Tracks:" or "Try:" labels. No labels of any kind. Just flowing coaching text.
-  - NEVER exceed 460 characters. When in doubt, cut a word. A complete thought at 450 chars beats a truncated thought at 470.
-  - X/20 score MUST equal A+B+C+D. If the math doesn't add up, fix it before responding.
-  - No filler. No "Great job but..." No "You did well however..." No "Keep it up."
+  - NEVER output "Tracks:" -- that label no longer exists.
+  - NEVER output "Elite rep says:" -- use exactly "Try:" for model responses.
+  - NEVER exceed 460 characters. A complete thought at 450 beats a truncated one at 470.
+  - X/20 score MUST equal A+B+C+D. Verify before writing.
+  - No filler. No "Great job but..." No "We need to talk..." No coaching narration.
   - Try examples sound like a real salesperson texting, not a training manual.
-  - Adapt Try from exemplar_dialogue -- use its energy and specific selling technique.
-  - Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special characters.
-  - Score denominator is ALWAYS /20. Never /10.
-
-- word_tracks: Write "n/a". This field is deprecated but required by the schema.
-- example_response: Write "n/a". This field is deprecated but required by the schema.`;
+  - Adapt Try from exemplar_dialogue -- use its energy and technique.
+  - Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special Unicode.
+  - Score denominator is ALWAYS /20. Never /10. Never /5.`;
 
   const user = `<training_question>${customerLine}</training_question>
 
@@ -231,7 +168,7 @@ OUTPUT FIELD INSTRUCTIONS:
 
 <exemplar_dialogue purpose="output_seed_only">
 ${eliteDialogue}
-This is one example of an excellent response. Use it as a quality floor when generating example_response. Adapt the phrasing to address what the employee specifically missed. Do NOT use this exemplar to influence numeric scores -- score based on the technique_to_reward criteria only.
+This is one example of an excellent response. Use it as a quality floor when generating Try examples. Adapt the phrasing to address what the employee specifically missed. Do NOT use this exemplar to influence numeric scores -- score based on the technique_to_reward criteria only.
 </exemplar_dialogue>
 ${historyBlock}
 <employee_response>${employeeResponse}</employee_response>`;
@@ -245,10 +182,15 @@ function buildV7TemplateC(
   techniqueTag: string,
   failSignals: string,
   eliteDialogue: string,
-  employeeResponse: string
+  employeeResponse: string,
+  conversationHistory?: string
 ): { system: string; user: string } {
   // Strip KNOWLEDGE_CHECK prefix before injecting as reference_answer
   const referenceAnswer = techniqueTag.replace(/^KNOWLEDGE_CHECK\.\s*/, '');
+
+  const historyBlock = conversationHistory
+    ? `\n<conversation_history>\n${conversationHistory}\n</conversation_history>\n`
+    : '';
 
   const system = `You are an elite automotive sales trainer grading a salesperson's knowledge answer via SMS.
 
@@ -270,18 +212,26 @@ OUTPUT FIELD INSTRUCTIONS:
 
   ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
-  After the score, state what key facts they got right or missed in under 12 words. Then give the concise, correct answer -- clear enough that a rep could text it to a customer. Adapt from exemplar_dialogue.
+  SINGLE-TURN (the employee gave ONE response -- no conversation_history tag, or conversation_history contains only one employee message):
+  After the score, state what key facts they got right or missed in under 12 words. Then "Try:" followed by the concise, correct answer -- clear enough that a rep could text it to a customer. Adapt from exemplar_dialogue.
+
+  MULTI-TURN (conversation_history contains TWO OR MORE employee responses):
+  After the score, address EACH exchange the employee responded to:
+  "Q1: [what they got right or wrong in under 8 words]."
+  "Q2: [what they got right or wrong]. Try: [correct answer]."
+  "Q3: [what they got right or wrong]. Try: [correct answer]."
+  If an exchange was STRONG, acknowledge briefly and skip the Try for it.
+  Give Try examples ONLY for WEAK exchanges.
+  Prioritize the weakest exchange for the longest Try.
 
   ABSOLUTE RULES:
-  - NEVER use "Tracks:" or "Try:" labels. No labels of any kind. Just flowing coaching text.
-  - NEVER exceed 460 characters.
-  - X/20 score MUST equal A+B+C+D. If the math doesn't add up, fix it before responding.
+  - NEVER output "Tracks:" -- that label no longer exists.
+  - NEVER output "Elite rep says:" -- use exactly "Try:" for model responses.
+  - NEVER exceed 460 characters. A complete thought at 450 beats a truncated one at 470.
+  - X/20 score MUST equal A+B+C+D. Verify before writing.
   - No filler. No "Great job but..." No "Keep it up."
-  - Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special characters.
-  - Score denominator is ALWAYS /20. Never /10.
-
-- word_tracks: Write "n/a". This field is deprecated but required by the schema.
-- example_response: Write "n/a". This field is deprecated but required by the schema.`;
+  - Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special Unicode.
+  - Score denominator is ALWAYS /20. Never /10. Never /5.`;
 
   const user = `<training_question>${customerLine}</training_question>
 
@@ -293,9 +243,9 @@ OUTPUT FIELD INSTRUCTIONS:
 
 <exemplar_dialogue purpose="output_seed_only">
 ${eliteDialogue}
-Use this as the quality floor for your example_response.
+Use this as the quality floor for your Try examples.
 </exemplar_dialogue>
-
+${historyBlock}
 <employee_response>${employeeResponse}</employee_response>`;
 
   return { system, user };
@@ -431,18 +381,27 @@ SCENARIO-SPECIFIC WEIGHTING:
 
 ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
-After the score, state what they did well or missed in under 12 words. Then show what an elite rep would actually say. Spoken closer language, not a textbook.
+SINGLE-TURN (the employee gave ONE response):
+After the score, state what they did well or missed in under 12 words. Then "Try:" followed by what an elite rep would actually say. Spoken closer language, not a textbook.
+
+MULTI-TURN (the full conversation contains TWO OR MORE employee responses):
+After the score, address EACH exchange:
+"Q1: [what they did right or wrong in under 8 words]."
+"Q2: [what they did right or wrong]. Try: [what closer would say]."
+"Q3: [what they did right or wrong]. Try: [what closer would say]."
+If an exchange was STRONG, acknowledge briefly and skip the Try for it.
+Give Try examples ONLY for WEAK exchanges.
+Prioritize the weakest exchange for the longest Try.
 
 ABSOLUTE RULES:
-- NEVER use "Tracks:" or "Try:" labels. No labels of any kind. Just flowing coaching text.
-- NEVER exceed 460 characters.
-- X/20 score MUST equal A+B+C+D.
-- No filler. No "Great job but..." No "Keep it up."
-- Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special characters.
-
-"word_tracks": Write "n/a". This field is deprecated but required by the schema.
-
-"example_response": Write "n/a". This field is deprecated but required by the schema.
+- NEVER output "Tracks:" -- that label no longer exists.
+- NEVER output "Elite rep says:" -- use exactly "Try:" for model responses.
+- NEVER exceed 460 characters. A complete thought at 450 beats a truncated one at 470.
+- X/20 score MUST equal A+B+C+D. Verify before writing.
+- No filler. No "Great job but..." No "We need to talk..." No coaching narration.
+- Try examples sound like a real salesperson texting, not a training manual.
+- Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special Unicode.
+- Score denominator is ALWAYS /20. Never /10. Never /5.
 
 "reasoning": Your internal evaluation notes. Walk through the steps briefly. Under 500 characters.
 
@@ -460,9 +419,7 @@ Match your tone to their score. Be direct, never soft -- but NEVER use insults, 
 - Talk like a sales manager, not a trainer. No jargon like "reframe", "low-friction", "leverage the objection."
 - Do NOT use labels like "Feedback:" or "Word Tracks:" -- just the content for each field.
 - Grade on what was SAID, not what was meant. If the intent was good but the words were wrong, the words are what the customer heard.
-- Channel-agnostic: grade the same whether it was said over text, phone, or in person.
-- The example_response must be something a real person would actually say. Not a textbook answer. Natural language, contractions, personality.
-- word_tracks MUST use " | " (pipe with spaces on both sides) as the separator between phrases. Never commas, semicolons, or line breaks.`;
+- Channel-agnostic: grade the same whether it was said over text, phone, or in person.`;
 
 // --- Behavioral scoring addendum (urgency + competitive) ---
 const BEHAVIORAL_SCORING_ADDENDUM = `
@@ -665,7 +622,7 @@ async function gradeResponseV7(
   const template = selectV7Template(mode, techniqueTag);
 
   const { system, user } = template === 'C'
-    ? buildV7TemplateC(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse)
+    ? buildV7TemplateC(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText)
     : buildV7TemplateA(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText);
 
   // v7 schema: rationale first, no maxLength (enforced post-parse)
@@ -676,13 +633,10 @@ async function gradeResponseV7(
     addressed_concern: { type: 'integer', enum: [1, 2, 3, 4, 5] },
     close_attempt:     { type: 'integer', enum: [1, 2, 3, 4, 5] },
     feedback:          { type: 'string' },
-    word_tracks:       { type: 'string' },
-    example_response:  { type: 'string' },
   };
   const v7RequiredFields = [
     'rationale', 'product_accuracy', 'tone_rapport',
     'addressed_concern', 'close_attempt', 'feedback',
-    'word_tracks', 'example_response',
   ];
 
   // v7 mini schema: no rationale
@@ -692,12 +646,10 @@ async function gradeResponseV7(
     addressed_concern: { type: 'integer', enum: [1, 2, 3, 4, 5] },
     close_attempt:     { type: 'integer', enum: [1, 2, 3, 4, 5] },
     feedback:          { type: 'string' },
-    word_tracks:       { type: 'string' },
-    example_response:  { type: 'string' },
   };
   const v7MiniRequiredFields = [
     'product_accuracy', 'tone_rapport', 'addressed_concern',
-    'close_attempt', 'feedback', 'word_tracks', 'example_response',
+    'close_attempt', 'feedback',
   ];
 
   // Try primary, then fallback
@@ -738,9 +690,7 @@ async function gradeResponseV7(
         addressed_concern: data.addressed_concern as number,
         close_attempt: data.close_attempt as number,
         feedback: finalSms,
-        word_tracks: undefined as unknown as string,
-        example_response: undefined as unknown as string,
-        reasoning: truncateAtWord((data.rationale as string) ?? 'v7 mini fallback -- no rationale', SMS_MAX_V7.rationale),
+        reasoning: truncateAtWord((data.rationale as string) ?? 'v7 mini fallback -- no rationale', SMS_MAX.reasoning),
         model,
         promptVersionId: opts.promptVersionId,
         assembledSms: finalSms,
@@ -807,13 +757,11 @@ Grade the salesperson's overall performance across all exchanges.`;
     addressed_concern: { type: 'number' },
     close_attempt: { type: 'number' },
     feedback: { type: 'string', maxLength: SMS_MAX.feedback },
-    word_tracks: { type: 'string', maxLength: SMS_MAX.word_tracks },
-    example_response: { type: 'string', maxLength: SMS_MAX.example_response },
     reasoning: { type: 'string', maxLength: SMS_MAX.reasoning },
   };
   const requiredFields = [
     'product_accuracy', 'tone_rapport', 'addressed_concern', 'close_attempt',
-    'feedback', 'word_tracks', 'example_response', 'reasoning',
+    'feedback', 'reasoning',
   ];
 
   if (opts.scoreBehavioralUrgency) {
