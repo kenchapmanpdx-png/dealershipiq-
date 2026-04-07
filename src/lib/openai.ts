@@ -198,19 +198,19 @@ OUTPUT FIELD INSTRUCTIONS:
   ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
   SINGLE-TURN (the employee gave ONE response -- no conversation_history tag, or conversation_history contains only one employee message):
-  After the score, state what they did well or missed in under 12 words. Then "Try:" followed by what an elite rep would actually say -- adapt from the exemplar_dialogue. Spoken closer language, not a textbook.
+  After the score, state what they did well or missed in under 12 words. Then show what an elite rep would actually say -- adapt from the exemplar_dialogue. Spoken closer language, not a textbook.
 
   MULTI-TURN (conversation_history contains TWO OR MORE employee responses):
   After the score, address EACH exchange the employee responded to:
-  "Q1: [what they did right or wrong in under 8 words]."
-  "Q2: [what they did right or wrong]. Try: [what closer would say]."
-  "Q3: [what they did right or wrong]. Try: [what closer would say]."
-  If an exchange was STRONG, acknowledge briefly ("Good isolation.") and skip the Try for that one.
-  Give Try examples ONLY for WEAK exchanges. This saves space for better coaching.
-  Prioritize the weakest exchange for the longest Try example.
+  "Q1: [what they did right or wrong in under 8 words]. [what closer would say]."
+  "Q2: [what they did right or wrong]. [what closer would say]."
+  "Q3: [what they did right or wrong]. [what closer would say]."
+  If an exchange was STRONG, acknowledge briefly ("Good isolation.") and skip the example for that one.
+  Give examples ONLY for WEAK exchanges. This saves space for better coaching.
+  Prioritize the weakest exchange for the longest example.
 
   ABSOLUTE RULES:
-  - NEVER use "Tracks:" label. It no longer exists in this format.
+  - NEVER use "Tracks:" or "Try:" labels. No labels of any kind. Just flowing coaching text.
   - NEVER exceed 460 characters. When in doubt, cut a word. A complete thought at 450 chars beats a truncated thought at 470.
   - X/20 score MUST equal A+B+C+D. If the math doesn't add up, fix it before responding.
   - No filler. No "Great job but..." No "You did well however..." No "Keep it up."
@@ -270,10 +270,10 @@ OUTPUT FIELD INSTRUCTIONS:
 
   ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
-  After the score, state what key facts they got right or missed in under 12 words. Then "Try:" followed by the concise, correct answer -- clear enough that a rep could text it to a customer. Adapt from exemplar_dialogue.
+  After the score, state what key facts they got right or missed in under 12 words. Then give the concise, correct answer -- clear enough that a rep could text it to a customer. Adapt from exemplar_dialogue.
 
   ABSOLUTE RULES:
-  - NEVER use "Tracks:" label. It no longer exists in this format.
+  - NEVER use "Tracks:" or "Try:" labels. No labels of any kind. Just flowing coaching text.
   - NEVER exceed 460 characters.
   - X/20 score MUST equal A+B+C+D. If the math doesn't add up, fix it before responding.
   - No filler. No "Great job but..." No "Keep it up."
@@ -431,10 +431,10 @@ SCENARIO-SPECIFIC WEIGHTING:
 
 ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
-After the score, state what they did well or missed in under 12 words. Then "Try:" followed by what an elite rep would actually say. Spoken closer language, not a textbook.
+After the score, state what they did well or missed in under 12 words. Then show what an elite rep would actually say. Spoken closer language, not a textbook.
 
 ABSOLUTE RULES:
-- NEVER use "Tracks:" label. It no longer exists.
+- NEVER use "Tracks:" or "Try:" labels. No labels of any kind. Just flowing coaching text.
 - NEVER exceed 460 characters.
 - X/20 score MUST equal A+B+C+D.
 - No filler. No "Great job but..." No "Keep it up."
