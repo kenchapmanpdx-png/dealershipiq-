@@ -83,6 +83,20 @@ export interface FeatureFlag {
   updated_at: string;
 }
 
+export interface ScenarioBankEntry {
+  scenario_id: string;
+  customer_line: string;
+  technique_tag: string;
+  elite_dialogue: string;
+  elite_response: string | null;
+  fail_signals: string;
+  mode: string;
+  domain: string;
+  difficulty: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 // JWT custom claims shape (injected by Custom Access Token Hook)
 export interface AppMetadataClaims {
   dealership_id: string;

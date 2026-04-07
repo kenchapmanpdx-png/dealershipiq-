@@ -1666,6 +1666,7 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
   const { data, error } = await serviceClient
     .from('scenario_bank')
     .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain')
+    .eq('is_active', true)
     .eq('customer_line', stripped)
     .limit(1)
     .maybeSingle();
@@ -1680,6 +1681,7 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
     const { data: fuzzyData } = await serviceClient
       .from('scenario_bank')
       .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain')
+      .eq('is_active', true)
       .ilike('customer_line', `%${escaped}%`)
       .limit(1)
       .maybeSingle();
