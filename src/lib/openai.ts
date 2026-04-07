@@ -17,6 +17,7 @@
 
 import { z } from 'zod';
 import type { TranscriptEntry } from '@/lib/service-db';
+import { escapeXml } from '@/lib/sms';
 
 // =============================================================================
 // GRADING SCHEMAS (Structured Outputs)
@@ -66,6 +67,11 @@ export type FollowUpResult = z.infer<typeof FollowUpSchema>;
 // v7 SMS LENGTH CONSTANTS
 // =============================================================================
 
+// M5-FIX: Separator strings as constants so safety-net math stays in sync
+const SMS_SEP_TRACKS = ' Tracks: ';   // 9 chars
+const SMS_SEP_TRY = '. Try: ';        // 7 chars
+const SMS_SEP_OVERHEAD = SMS_SEP_TRACKS.length + SMS_SEP_TRY.length; // 16 chars
+
 const SMS_MAX_V7 = {
   rationale: 500,
   feedback: 115,
@@ -111,13 +117,13 @@ function assembleGradingSms(feedback: string, wordTracks: string, exampleRespons
   const w = truncateAtWord(sanitizeGsm7(wordTracks), SMS_MAX_V7.word_tracks);
   const e = truncateAtWord(sanitizeGsm7(exampleResponse), SMS_MAX_V7.example_response);
 
-  const assembled = `${f} Tracks: ${w}. Try: ${e}`;
+  const assembled = `${f}${SMS_SEP_TRACKS}${w}${SMS_SEP_TRY}${e}`;
 
   // Safety net -- should not trigger with correct field limits
   if (assembled.length > SMS_MAX_V7.assembled) {
-    const available = SMS_MAX_V7.assembled - f.length - w.length - 16;
+    const available = SMS_MAX_V7.assembled - f.length - w.length - SMS_SEP_OVERHEAD;
     const eTrimmed = truncateAtWord(e, Math.max(available, 50));
-    return `${f} Tracks: ${w}. Try: ${eTrimmed}`;
+    return `${f}${SMS_SEP_TRACKS}${w}${SMS_SEP_TRY}${eTrimmed}`;
   }
 
   return assembled;
@@ -519,9 +525,10 @@ function formatConversationForAI(
 ): string {
   const lines = history.map((entry) => {
     const role = entry.direction === 'inbound' ? 'Salesperson' : 'Customer';
-    return `${role}: ${entry.messageBody}`;
+    // Escape XML to prevent prompt injection via conversation history
+    return `${role}: ${escapeXml(entry.messageBody)}`;
   });
-  lines.push(`Salesperson: ${latestResponse}`);
+  lines.push(`Salesperson: ${escapeXml(latestResponse)}`);
   return lines.join('\n');
 }
 
@@ -653,9 +660,10 @@ async function gradeResponseV7(
       const schemaProps = isMini ? v7MiniSchemaProperties : v7SchemaProperties;
       const reqFields = isMini ? v7MiniRequiredFields : v7RequiredFields;
 
-      // For mini: remove rationale instruction from system prompt
+      // M3-FIX: For mini, remove rationale instruction line more robustly.
+      // Matches "- rationale:" with any preceding whitespace and any content until newline.
       const systemPrompt = isMini
-        ? system.replace(/- rationale:[^\n]*\n/, '')
+        ? system.replace(/^[\t ]*- rationale:.*$/m, '')
         : system;
 
       const result = await callOpenAIGrading(apiKey, model, systemPrompt, user, schemaProps, reqFields);
@@ -729,7 +737,7 @@ export async function gradeResponse(opts: GradeOptions): Promise<GradingResult &
   // ─── v6 PATH: general-purpose grading (original logic, unchanged) ───────────
   const conversation = opts.conversationHistory?.length
     ? formatConversationForAI(opts.conversationHistory, opts.employeeResponse)
-    : `Customer: ${opts.scenario}\nSalesperson: ${opts.employeeResponse}`;
+    : `Customer: ${escapeXml(opts.scenario)}\nSalesperson: ${escapeXml(opts.employeeResponse)}`;
 
   const includeBehavioral = opts.scoreBehavioralUrgency || opts.scoreBehavioralCompetitive;
 
@@ -745,7 +753,7 @@ export async function gradeResponse(opts: GradeOptions): Promise<GradingResult &
     .replace(/>/g, '&gt;');
 
   const userPrompt = `Training mode: ${opts.mode}
-Opening scenario: ${opts.scenario}${moodContext}
+Opening scenario: ${escapeXml(opts.scenario)}${moodContext}
 
 Full conversation:
 ${conversation}

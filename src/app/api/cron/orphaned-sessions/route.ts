@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 
   for (const session of orphaned) {
     try {
-      await updateSessionStatus(session.id, 'abandoned');
+      await updateSessionStatus(session.id, session.dealership_id as string, 'abandoned');
       cleaned++;
       console.warn(
         `Orphaned session ${session.id} (${session.status}) for user ${session.user_id} — marked abandoned`

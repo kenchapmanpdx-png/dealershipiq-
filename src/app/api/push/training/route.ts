@@ -104,8 +104,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // C-003: RLS-backed — users + memberships SELECT policies auto-filter by dealership from JWT.
-    // Using !inner ensures only users with membership in THIS dealership are returned.
+    // C-003: RLS-backed + explicit dealership_id filter for defense-in-depth.
+    // Ensures only users in the calling manager's dealership are returned.
     const { data: targetUsers, error: usersError } = await supabase
       .from('users')
       .select(`
@@ -117,7 +117,8 @@ export async function POST(request: NextRequest) {
           dealership_id
         )
       `)
-      .in('id', body.user_ids);
+      .in('id', body.user_ids)
+      .eq('dealership_memberships.dealership_id', dealershipId);
 
     if (usersError) {
       console.error('Failed to fetch users:', (usersError as Error).message ?? usersError);
@@ -144,7 +145,7 @@ export async function POST(request: NextRequest) {
         const smsResponse = await sendSms(targetUser.phone, questionText);
 
         // Transition: pending → active
-        await updateSessionStatus(session.id, 'active');
+        await updateSessionStatus(session.id, dealershipId, 'active');
 
         // Log outbound
         await insertTranscriptLog({

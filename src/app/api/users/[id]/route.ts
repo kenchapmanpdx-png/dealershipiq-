@@ -31,11 +31,13 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // C-003: RLS-backed — memberships SELECT policy auto-filters by dealership_id from JWT
+    // C-003: RLS-backed + explicit dealership_id filter for defense-in-depth.
+    // Ensures target user belongs to the calling manager's dealership.
     const { data: membership, error: memberError } = await supabase
       .from('dealership_memberships')
       .select('id')
       .eq('user_id', id)
+      .eq('dealership_id', dealershipId)
       .maybeSingle();
 
     if (memberError && memberError.code !== 'PGRST116') {

@@ -305,7 +305,7 @@ export async function GET(request: NextRequest) {
         // Send SMS
         const sinchResponse = await sendSms(user.phone, fullQuestion);
 
-        await updateSessionStatus(session.id, 'active');
+        await updateSessionStatus(session.id, dealership.id, 'active');
 
         await insertTranscriptLog({
           userId: user.id,

@@ -146,11 +146,12 @@ export async function getActiveSession(userId: string, dealershipId: string) {
 
 // ─── Session step management (multi-exchange) ─────────────────────────
 
-export async function updateSessionStep(sessionId: string, stepIndex: number) {
+export async function updateSessionStep(sessionId: string, dealershipId: string, stepIndex: number) {
   const { error } = await serviceClient
     .from('conversation_sessions')
     .update({ step_index: stepIndex, updated_at: new Date().toISOString() })
-    .eq('id', sessionId);
+    .eq('id', sessionId)
+    .eq('dealership_id', dealershipId);
 
   if (error) throw error;
 }
@@ -163,11 +164,12 @@ export interface TranscriptEntry {
   createdAt: string;
 }
 
-export async function getSessionTranscript(sessionId: string): Promise<TranscriptEntry[]> {
+export async function getSessionTranscript(sessionId: string, dealershipId: string): Promise<TranscriptEntry[]> {
   const { data, error } = await serviceClient
     .from('sms_transcript_log')
     .select('direction, message_body, created_at')
     .eq('session_id', sessionId)
+    .eq('dealership_id', dealershipId)
     .order('created_at', { ascending: true });
 
   if (error) throw error;
@@ -179,11 +181,12 @@ export async function getSessionTranscript(sessionId: string): Promise<Transcrip
   }));
 }
 
-export async function updateSessionStatus(sessionId: string, status: string) {
+export async function updateSessionStatus(sessionId: string, dealershipId: string, status: string) {
   const { error } = await serviceClient
     .from('conversation_sessions')
     .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', sessionId);
+    .eq('id', sessionId)
+    .eq('dealership_id', dealershipId);
 
   if (error) throw error;
 }
@@ -1263,11 +1266,12 @@ export async function createDealershipWithManager(
 // ─── Scenario Chains (Progressive Scenario Chains) ─────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getScenarioChain(chainId: string): Promise<any | null> {
+export async function getScenarioChain(chainId: string, dealershipId: string): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('scenario_chains')
     .select('*')
     .eq('id', chainId)
+    .eq('dealership_id', dealershipId)
     .maybeSingle();
 
   if (error && error.code !== 'PGRST116') throw error;
@@ -1322,6 +1326,7 @@ export async function createScenarioChain(
 
 export async function updateScenarioChain(
   chainId: string,
+  dealershipId: string,
   updates: Record<string, unknown>
 ): Promise<void> {
   const updateData: Record<string, unknown> = {};
@@ -1335,7 +1340,8 @@ export async function updateScenarioChain(
   const { error } = await serviceClient
     .from('scenario_chains')
     .update(updateData)
-    .eq('id', chainId);
+    .eq('id', chainId)
+    .eq('dealership_id', dealershipId);
 
   if (error) throw error;
 }
@@ -1366,11 +1372,12 @@ export async function createDailyChallenge(data: {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getDailyChallenge(challengeId: string): Promise<any | null> {
+export async function getDailyChallenge(challengeId: string, dealershipId: string): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('daily_challenges')
     .select('*')
     .eq('id', challengeId)
+    .eq('dealership_id', dealershipId)
     .maybeSingle();
 
   if (error && error.code !== 'PGRST116') throw error;
@@ -1395,6 +1402,7 @@ export async function getDailyChallengeByChallengeDate(
 
 export async function updateDailyChallenge(
   challengeId: string,
+  dealershipId: string,
   updates: Record<string, unknown>
 ): Promise<void> {
   const updateData: Record<string, unknown> = {};
@@ -1405,7 +1413,8 @@ export async function updateDailyChallenge(
   const { error } = await serviceClient
     .from('daily_challenges')
     .update(updateData)
-    .eq('id', challengeId);
+    .eq('id', challengeId)
+    .eq('dealership_id', dealershipId);
 
   if (error) throw error;
 }
@@ -1438,11 +1447,12 @@ export async function createPeerChallenge(data: {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getPeerChallenge(challengeId: string): Promise<any | null> {
+export async function getPeerChallenge(challengeId: string, dealershipId: string): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('peer_challenges')
     .select('*')
     .eq('id', challengeId)
+    .eq('dealership_id', dealershipId)
     .maybeSingle();
 
   if (error && error.code !== 'PGRST116') throw error;
@@ -1464,6 +1474,7 @@ export async function getPeerChallengesForUser(userId: string, dealershipId: str
 
 export async function updatePeerChallenge(
   challengeId: string,
+  dealershipId: string,
   updates: Record<string, unknown>
 ): Promise<void> {
   const updateData: Record<string, unknown> = {};
@@ -1479,7 +1490,8 @@ export async function updatePeerChallenge(
   const { error } = await serviceClient
     .from('peer_challenges')
     .update(updateData)
-    .eq('id', challengeId);
+    .eq('id', challengeId)
+    .eq('dealership_id', dealershipId);
 
   if (error) throw error;
 }
@@ -1526,11 +1538,12 @@ export async function createCustomTrainingContent(data: {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getCustomTrainingContent(contentId: string): Promise<any | null> {
+export async function getCustomTrainingContent(contentId: string, dealershipId: string): Promise<any | null> {
   const { data, error } = await serviceClient
     .from('custom_training_content')
     .select('*')
     .eq('id', contentId)
+    .eq('dealership_id', dealershipId)
     .maybeSingle();
 
   if (error && error.code !== 'PGRST116') throw error;
@@ -1539,6 +1552,7 @@ export async function getCustomTrainingContent(contentId: string): Promise<any |
 
 export async function updateCustomTrainingContent(
   contentId: string,
+  dealershipId: string,
   updates: Record<string, unknown>
 ): Promise<void> {
   const updateData: Record<string, unknown> = {};
@@ -1549,7 +1563,8 @@ export async function updateCustomTrainingContent(
   const { error } = await serviceClient
     .from('custom_training_content')
     .update(updateData)
-    .eq('id', contentId);
+    .eq('id', contentId)
+    .eq('dealership_id', dealershipId);
 
   if (error) throw error;
 }

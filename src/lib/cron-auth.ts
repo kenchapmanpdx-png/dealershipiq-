@@ -13,9 +13,10 @@ export function verifyCronSecret(request: NextRequest): boolean {
   if (!authHeader?.startsWith('Bearer ')) return false;
 
   const token = authHeader.slice(7);
-  const tokenBuf = Buffer.from(token);
-  const secretBuf = Buffer.from(secret);
 
-  if (tokenBuf.length !== secretBuf.length) return false;
-  return crypto.timingSafeEqual(tokenBuf, secretBuf);
+  // Hash both values to fixed length before comparing.
+  // Prevents leaking secret length via timing on the old length check.
+  const tokenHash = crypto.createHash('sha256').update(token).digest();
+  const secretHash = crypto.createHash('sha256').update(secret).digest();
+  return crypto.timingSafeEqual(tokenHash, secretHash);
 }

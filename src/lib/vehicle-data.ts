@@ -167,27 +167,27 @@ async function getRandomTrim(makeIds: string[] | null): Promise<TrimWithContext 
     .order('created_at', { ascending: false })
     .limit(100);
 
-  // If makeIds provided, filter. Otherwise get any.
-  // Note: We can't directly filter by make_id through nested joins easily,
-  // so we'll filter in JS after fetching.
+  // H-016: Never fall back to wrong-brand vehicles.
+  // If no makeIds provided (dealership has no brands configured), return null immediately.
+  if (!makeIds || makeIds.length === 0) {
+    console.warn('[vehicle-data] Dealership has no brands configured — cannot select vehicle trim');
+    return null;
+  }
 
   const { data, error } = await query;
   if (error || !data || data.length === 0) return null;
 
-  // Filter by makeIds if provided
-  let filtered = data;
-  if (makeIds && makeIds.length > 0) {
-    filtered = data.filter((t) => {
-      const my = t.model_years as Record<string, unknown>;
-      const model = my.models as Record<string, unknown>;
-      const make = model.makes as Record<string, unknown>;
-      return makeIds.includes(make.id as string);
-    });
-    // H-016: Do NOT fall back to wrong-brand vehicles. Return null instead.
-    if (filtered.length === 0) {
-      console.warn(`[vehicle-data] No trims found for dealership brands: ${makeIds.join(', ')}`);
-      return null;
-    }
+  // Filter to dealership brands only
+  const filtered = data.filter((t) => {
+    const my = t.model_years as Record<string, unknown>;
+    const model = my.models as Record<string, unknown>;
+    const make = model.makes as Record<string, unknown>;
+    return makeIds.includes(make.id as string);
+  });
+
+  if (filtered.length === 0) {
+    console.warn(`[vehicle-data] No trims found for dealership brands: ${makeIds.join(', ')}`);
+    return null;
   }
 
   // Prefer current year trims

@@ -20,12 +20,12 @@ export const metadata: Metadata = {
   },
   description:
     'Daily sales training via text message. AI grades responses in real time. Managers track performance on a live dashboard. Built for automotive dealerships.',
-  metadataBase: new URL('https://dealershipiq-wua7.vercel.app'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dealershipiq-wua7.vercel.app'),
   openGraph: {
     title: 'DealershipIQ — SMS-Powered Sales Training',
     description:
       'Daily SMS training questions, AI grading, and a real-time manager dashboard. Built for automotive dealerships.',
-    url: 'https://dealershipiq-wua7.vercel.app',
+    url: process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dealershipiq-wua7.vercel.app',
     siteName: 'DealershipIQ',
     type: 'website',
   },

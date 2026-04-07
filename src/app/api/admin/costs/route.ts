@@ -7,7 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { serviceClient } from '@/lib/supabase/service';
 
-const ADMIN_EMAIL = 'kenchapmanpdx@gmail.com';
+// M10-FIX: Admin email from env var (falls back to hardcoded for backward compat)
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'kenchapmanpdx@gmail.com';
 
 export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient();

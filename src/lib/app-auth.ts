@@ -31,9 +31,9 @@ export function verifyAppToken(token: string): {
       return null;
     }
 
-    // Check expiration
-    if (payload.expiresAt < Date.now()) {
-      console.warn('App token expired');
+    // Check expiration — guard against missing/non-numeric expiresAt
+    if (!payload.expiresAt || typeof payload.expiresAt !== 'number' || payload.expiresAt < Date.now()) {
+      console.warn('App token expired or missing expiresAt');
       return null;
     }
 

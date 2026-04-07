@@ -27,26 +27,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
-  // C-009 + C-011: Idempotency check with full error handling.
-  // Must be inside try-catch AND check error object (not just data).
+  // C-009 + C-011: Atomic idempotency via INSERT-first with UNIQUE constraint.
+  // The UNIQUE constraint on stripe_event_id prevents duplicate processing even
+  // under concurrent webhook deliveries. We INSERT first; if it conflicts, skip.
   try {
-    const { data: existing, error: idempError } = await serviceClient
-      .from('billing_events')
-      .select('id')
-      .eq('stripe_event_id', event.id)
-      .maybeSingle();
-
-    if (idempError) {
-      console.error('Stripe idempotency check DB error:', idempError.message);
-      // Return 500 so Stripe retries later when DB is healthy
-      return NextResponse.json({ error: 'Idempotency check failed' }, { status: 500 });
-    }
-
-    if (existing) {
+    const claimed = await claimEvent(event);
+    if (!claimed) {
+      // UNIQUE constraint violation = already processed
       return NextResponse.json({ received: true, skipped: true });
     }
   } catch (idempErr) {
-    console.error('Stripe idempotency check exception:', (idempErr as Error).message ?? idempErr);
+    console.error('Stripe idempotency claim exception:', (idempErr as Error).message ?? idempErr);
     return NextResponse.json({ error: 'Idempotency check failed' }, { status: 500 });
   }
 
@@ -74,12 +65,9 @@ export async function POST(request: NextRequest) {
         console.log(`Unhandled Stripe event: ${event.type}`);
     }
 
-    // Record processed event
-    await recordEvent(event);
     return NextResponse.json({ received: true });
   } catch (err) {
     console.error(`Stripe webhook handler error for ${event.type}:`, (err as Error).message ?? err);
-    await recordEvent(event, err);
     return NextResponse.json({ error: 'Handler error' }, { status: 500 });
   }
 }
@@ -344,36 +332,45 @@ async function handlePaymentFailed(event: Stripe.Event) {
 
 // --- Helpers ---
 
-async function recordEvent(event: Stripe.Event, error?: unknown) {
-  try {
-    let dealershipId: string | null = null;
-    const obj = event.data.object as unknown as Record<string, unknown>;
+// Atomic idempotency: INSERT the event record FIRST. If UNIQUE constraint on
+// stripe_event_id rejects it, the event was already claimed by another request.
+// Returns true if this request claimed the event, false if already processed.
+async function claimEvent(event: Stripe.Event): Promise<boolean> {
+  let dealershipId: string | null = null;
+  const obj = event.data.object as unknown as Record<string, unknown>;
 
-    if (obj.client_reference_id) {
-      dealershipId = obj.client_reference_id as string;
-    } else if (obj.metadata && (obj.metadata as Record<string, unknown>).dealership_id) {
-      dealershipId = (obj.metadata as Record<string, unknown>).dealership_id as string;
-    } else {
-      const customerId =
-        typeof obj.customer === 'string'
-          ? obj.customer
-          : (obj.customer as Record<string, unknown>)?.id as string | undefined;
-      if (customerId) {
-        const d = await findDealershipByStripeCustomer(customerId);
-        if (d) dealershipId = d.id;
-      }
+  if (obj.client_reference_id) {
+    dealershipId = obj.client_reference_id as string;
+  } else if (obj.metadata && (obj.metadata as Record<string, unknown>).dealership_id) {
+    dealershipId = (obj.metadata as Record<string, unknown>).dealership_id as string;
+  } else {
+    const customerId =
+      typeof obj.customer === 'string'
+        ? obj.customer
+        : (obj.customer as Record<string, unknown>)?.id as string | undefined;
+    if (customerId) {
+      const d = await findDealershipByStripeCustomer(customerId);
+      if (d) dealershipId = d.id;
     }
-
-    await serviceClient.from('billing_events').insert({
-      stripe_event_id: event.id,
-      event_type: event.type,
-      dealership_id: dealershipId,
-      payload: {
-        ...(error ? { error: String(error) } : {}),
-        event_data_type: obj.object,
-      },
-    });
-  } catch (err) {
-    console.error('Failed to record billing event:', (err as Error).message ?? err);
   }
+
+  const { error } = await serviceClient.from('billing_events').insert({
+    stripe_event_id: event.id,
+    event_type: event.type,
+    dealership_id: dealershipId,
+    payload: {
+      event_data_type: obj.object,
+    },
+  });
+
+  if (error) {
+    // UNIQUE violation code = '23505' — event already claimed
+    if (error.code === '23505') {
+      return false;
+    }
+    // Any other DB error — rethrow so caller returns 500 for Stripe to retry
+    throw error;
+  }
+
+  return true;
 }

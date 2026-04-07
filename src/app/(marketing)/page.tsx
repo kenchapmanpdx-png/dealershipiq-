@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description:
     'Train your sales team via daily text messages. AI grades every response. Managers see real-time results. 30-day free trial, no credit card required.',
   alternates: {
-    canonical: 'https://dealershipiq-wua7.vercel.app',
+    canonical: process.env.NEXT_PUBLIC_BASE_URL ?? 'https://dealershipiq-wua7.vercel.app',
   },
 };
 

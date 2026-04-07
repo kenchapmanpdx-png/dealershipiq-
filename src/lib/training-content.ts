@@ -230,10 +230,13 @@ function buildSystemPrompt(
     ? `\n\n# Vehicle Data for This Scenario\n${vehiclePrompt}`
     : '';
 
+  // M7-FIX: Validate domain exists in DOMAIN_PROMPTS before indexing
+  const domainPrompt = DOMAIN_PROMPTS[domain]?.[mode] ?? DOMAIN_PROMPTS['objection_handling']?.[mode] ?? '';
+
   const systemPrompt = `You are an AI customer in a car dealership training scenario.
 
 # Your Role
-${DOMAIN_PROMPTS[domain][mode]}
+${domainPrompt}
 
 # Your Mood/Personality
 ${mood.description}

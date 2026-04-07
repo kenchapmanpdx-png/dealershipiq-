@@ -27,7 +27,7 @@ export const maxDuration = 300;
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySinchWebhookSignature } from '@/lib/sinch-auth';
 import { getAppUrl } from '@/lib/url';
-import { sendSms, detectKeyword, helpResponse } from '@/lib/sms';
+import { sendSms, detectKeyword, helpResponse, isValidE164 } from '@/lib/sms';
 import { gradeResponse, generateFollowUp, ERROR_SMS } from '@/lib/openai';
 import { assertTransition, isFinalExchange } from '@/lib/state-machine';
 import {
@@ -149,6 +149,43 @@ export async function POST(request: NextRequest) {
 
   const parsed = payload as Record<string, unknown>;
 
+  // =========================================================================
+  // AUTH VERIFICATION — runs BEFORE any message processing
+  // =========================================================================
+  // Conversation API: HMAC signature headers present → verify them
+  // REST API (XMS): No HMAC headers → validate `to` matches our number + E.164 phone
+  const signature = request.headers.get('x-sinch-webhook-signature');
+  const nonce = request.headers.get('x-sinch-webhook-signature-nonce');
+  const timestamp = request.headers.get('x-sinch-webhook-signature-timestamp');
+  const hasHmacHeaders = !!(signature && nonce && timestamp);
+
+  const isRestApi = parsed.type === 'mo_text' || parsed.type === 'mo_binary'
+    || parsed.type === 'recipient_delivery_report_sms' || parsed.type === 'delivery_report_sms';
+
+  if (hasHmacHeaders) {
+    // Conversation API path: verify HMAC signature
+    if (!verifySinchWebhookSignature(rawBody, signature, nonce, timestamp)) {
+      console.error('[SECURITY] Sinch webhook HMAC verification failed');
+      return NextResponse.json({ status: 'ok' });
+    }
+  } else if (isRestApi) {
+    // REST API (XMS) path: validate `to` matches our configured phone number
+    const toNumber = parsed.to as string | undefined;
+    const ourNumber = (process.env.SINCH_PHONE_NUMBER ?? '').replace(/^\+/, '');
+    if (!toNumber || toNumber.replace(/^\+/, '') !== ourNumber) {
+      console.error('[SECURITY] REST API webhook `to` does not match SINCH_PHONE_NUMBER');
+      return NextResponse.json({ status: 'ok' });
+    }
+  } else {
+    // Unknown format with no HMAC headers — reject
+    console.error('[SECURITY] Webhook has no HMAC headers and is not a known REST API format');
+    return NextResponse.json({ status: 'ok' });
+  }
+
+  // =========================================================================
+  // MESSAGE ROUTING — auth verified above
+  // =========================================================================
+
   // --- REST API (XMS) inbound format ---
   // Sinch REST API sends { type: "mo_text", id, from, to, body, ... }
   if (parsed.type === 'mo_text' || parsed.type === 'mo_binary') {
@@ -157,6 +194,12 @@ export async function POST(request: NextRequest) {
     const phone = fromPhone.startsWith('+') ? fromPhone : `+${fromPhone}`;
     const messageId = parsed.id as string;
     const body = (parsed.body as string) ?? '';
+
+    // Validate E.164 phone format
+    if (!isValidE164(phone)) {
+      console.warn(`[SECURITY] Invalid E.164 phone in REST API webhook: ***${(phone ?? '').slice(-4)}`);
+      return NextResponse.json({ status: 'ok' });
+    }
 
     // Wrap in Conversation API shape so existing handler works unchanged
     const normalized: SinchInboundMessage = {
@@ -186,13 +229,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' });
   }
 
- // --- REST API delivery report format ---
+  // --- REST API delivery report format ---
   if (parsed.type === 'recipient_delivery_report_sms' || parsed.type === 'delivery_report_sms') {
     console.log('[webhook] REST API delivery report - skipping');
     return NextResponse.json({ status: 'ok' });
   }
 
- // --- Conversation API inbound message format ---
+  // --- Conversation API inbound message format ---
   // Detected by presence of message.contact_message (inbound from user)
   const convMessage = (parsed as Record<string, unknown>).message as Record<string, unknown> | undefined;
   if (convMessage?.contact_message) {
@@ -201,7 +244,13 @@ export async function POST(request: NextRequest) {
     const chanId = (convMessage.channel_identity as Record<string, unknown> | undefined);
     if (chanId?.identity) {
       const rawPhone = chanId.identity as string;
-      chanId.identity = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
+      const normalizedPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
+      // Validate E.164 phone format
+      if (!isValidE164(normalizedPhone)) {
+        console.warn(`[SECURITY] Invalid E.164 phone in ConvAPI webhook: ***${normalizedPhone.slice(-4)}`);
+        return NextResponse.json({ status: 'ok' });
+      }
+      chanId.identity = normalizedPhone;
     }
     try {
       await handleInboundMessage(payload as unknown as SinchInboundMessage);
@@ -222,26 +271,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' });
   }
 
-  // --- Fallback: HMAC-verified Conversation API format ---
-  const signature = request.headers.get('x-sinch-webhook-signature');
-  const nonce = request.headers.get('x-sinch-webhook-signature-nonce');
-  const timestamp = request.headers.get('x-sinch-webhook-signature-timestamp');
-
-  if (!verifySinchWebhookSignature(rawBody, signature, nonce, timestamp)) {
-    console.error('Sinch webhook HMAC verification failed');
-    return NextResponse.json({ status: 'ok' });
-  }
-
-  try {
-    if ('message_delivery_report' in parsed) {
-      await handleDeliveryReport(parsed as unknown as SinchDeliveryReport);
-    } else if ('message' in parsed) {
-      await handleInboundMessage(parsed as unknown as SinchInboundMessage);
-    }
-  } catch (err) {
-    console.error('Webhook processing error:', (err as Error).message ?? err);
-  }
-
+  // If we reach here with valid HMAC, it's an unrecognized format
+  console.warn('[webhook] Unrecognized webhook payload format (HMAC valid)');
   return NextResponse.json({ status: 'ok' });
 }
 
@@ -270,31 +301,8 @@ async function handleDeliveryReport(report: SinchDeliveryReport) {
 async function handleInboundMessage(payload: SinchInboundMessage) {
   const messageId = payload.message.id;
 
-  // Idempotency check (C-002 audit fix: database-backed with in-memory cache)
-  // Fast-path: check in-memory Set first
+  // Idempotency fast-path: in-memory cache (no DB round-trip for known duplicates)
   if (processedMessages.has(messageId)) return;
-
-  // Database-level check: query sms_transcript_log for this sinch_message_id
-  const { serviceClient } = await import('@/lib/supabase/service');
-  const { data: existing } = await serviceClient
-    .from('sms_transcript_log')
-    .select('id')
-    .eq('sinch_message_id', messageId)
-    .limit(1)
-    .maybeSingle();
-
-  if (existing) {
-    // Message already processed, return early
-    return;
-  }
-
-  // M-020: Mark as processed with hard cap enforcement (evict oldest half when full)
-  processedMessages.add(messageId);
-  if (processedMessages.size > MAX_PROCESSED_CACHE) {
-    const entries = Array.from(processedMessages);
-    const evictCount = Math.floor(entries.length / 2);
-    for (let i = 0; i < evictCount; i++) processedMessages.delete(entries[i]);
-  }
 
   const phone = payload.message.channel_identity.identity;
   const text = payload.message.contact_message?.text_message?.text ?? '';
@@ -307,13 +315,10 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     return;
   }
 
-  // M-001: Advisory lock acquired BEFORE any state-modifying operations.
-  // Covers: opt-out, consent, resubscribe, schedule, and state machine transitions.
-  // HELP keyword is read-only (just sends a response) so it's checked before lock.
+  // HELP keyword is read-only (just sends a response) — no lock or idempotency needed
   const trimmedText = text.trim();
   const trimmedUpper = trimmedText.toUpperCase();
 
-  // 2. HELP keyword (CTIA compliant — read-only, no lock needed)
   if (trimmedUpper === 'HELP' || trimmedUpper === 'INFO' || trimmedUpper === 'AYUDA') {
     const helpMsg = helpResponse(user.dealershipName);
     await sendSms(phone, helpMsg);
@@ -327,15 +332,41 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     return;
   }
 
-  // --- Advisory Lock: all state-modifying paths below are protected ---
-  // F1-H-001: Uses pg_try_advisory_lock (session-scoped). Lock held until
-  // unlockUser() in the finally block below, preventing concurrent processing.
+  // --- Advisory Lock: acquired BEFORE idempotency check (C-002 fix) ---
+  // This ensures the idempotency check + processing is atomic per-user.
+  // Without this ordering, two concurrent webhooks for the same message
+  // could both pass the DB check before either inserts.
   const { tryLockUser, unlockUser } = await import('@/lib/service-db');
   const locked = await tryLockUser(phone);
   if (!locked) return;
 
   try {
-    // Log inbound message
+    // Idempotency check (C-002 audit fix: database-backed, inside advisory lock)
+    // DB UNIQUE constraint on sinch_message_id is the ultimate safety net,
+    // but checking first avoids wasted processing.
+    const { serviceClient } = await import('@/lib/supabase/service');
+    const { data: existing } = await serviceClient
+      .from('sms_transcript_log')
+      .select('id')
+      .eq('sinch_message_id', messageId)
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      // Message already processed — add to cache and return
+      processedMessages.add(messageId);
+      return;
+    }
+
+    // M-020: Mark as processed with hard cap enforcement (evict oldest half when full)
+    processedMessages.add(messageId);
+    if (processedMessages.size > MAX_PROCESSED_CACHE) {
+      const entries = Array.from(processedMessages);
+      const evictCount = Math.floor(entries.length / 2);
+      for (let i = 0; i < evictCount; i++) processedMessages.delete(entries[i]);
+    }
+
+    // Log inbound message (UNIQUE constraint on sinch_message_id catches any remaining races)
     await insertTranscriptLog({
       userId: user.id,
       dealershipId: user.dealershipId,
@@ -695,7 +726,7 @@ async function handleNowKeyword(
         const fullMsg = `${greeting}${pending.scenarioText}`;
 
         const smsRes = await sendSms(rep.phone, fullMsg);
-        await updateSessionStatus(session.id, 'active');
+        await updateSessionStatus(session.id, user.dealershipId, 'active');
         await insertTranscriptLog({
           userId: rep.id,
           dealershipId: user.dealershipId,
@@ -948,8 +979,8 @@ async function handleAcceptKeyword(
       challenged_session_id: challengedSession.id,
     }).eq('id', pendingChallenge.id);
 
-    await updateSessionStatus(challengerSession.id, 'active');
-    await updateSessionStatus(challengedSession.id, 'active');
+    await updateSessionStatus(challengerSession.id, user.dealershipId, 'active');
+    await updateSessionStatus(challengedSession.id, user.dealershipId, 'active');
 
     // Send scenario to both
     const challengedFirst = user.fullName ? user.fullName.split(/\s+/)[0] : 'your opponent';
@@ -1089,7 +1120,7 @@ async function handleGoKeyword(
       trainingDomain,
       personaMood: personaMoodValue,
     });
-    await updateSessionStatus(session.id, 'active');
+    await updateSessionStatus(session.id, user.dealershipId, 'active');
 
     const sinchResponse = await sendSms(phone, fullQuestion);
     await insertTranscriptLog({
@@ -1130,10 +1161,10 @@ async function handleFinalExchange(
   mode: 'roleplay' | 'quiz' | 'objection'
 ) {
   assertTransition(session.status as 'active', 'grading');
-  await updateSessionStatus(session.id, 'grading');
+  await updateSessionStatus(session.id, user.dealershipId, 'grading');
 
   try {
-    const history = await getSessionTranscript(session.id);
+    const history = await getSessionTranscript(session.id, user.dealershipId);
 
     const scoreBehavioralUrgency = await isFeatureEnabled(user.dealershipId, 'behavioral_scoring_urgency');
     const scoreBehavioralCompetitive = await isFeatureEnabled(user.dealershipId, 'behavioral_scoring_competitive');
@@ -1225,7 +1256,7 @@ async function handleFinalExchange(
     });
 
     assertTransition('grading', 'completed');
-    await updateSessionStatus(session.id, 'completed');
+    await updateSessionStatus(session.id, user.dealershipId, 'completed');
 
     // --- Phase 6C: Chain step recording ---
     if (session.scenarioChainId) {
@@ -1353,7 +1384,7 @@ async function handleFinalExchange(
     }
   } catch (gradingErr) {
     console.error('AI grading failed:', (gradingErr as Error).message ?? gradingErr);
-    await updateSessionStatus(session.id, 'error');
+    await updateSessionStatus(session.id, user.dealershipId, 'error');
 
     const errorMsg = ERROR_SMS.ai_timeout;
     await sendSms(phone, errorMsg);
@@ -1378,7 +1409,7 @@ async function handleMidExchange(
   stepIndex: number
 ) {
   try {
-    const history = await getSessionTranscript(session.id);
+    const history = await getSessionTranscript(session.id, user.dealershipId);
 
     const followUp = await generateFollowUp({
       scenario: session.questionText,
@@ -1414,10 +1445,10 @@ async function handleMidExchange(
       sessionId: session.id,
     });
 
-    await updateSessionStep(session.id, stepIndex + 1);
+    await updateSessionStep(session.id, user.dealershipId, stepIndex + 1);
   } catch (err) {
     console.error('Follow-up generation failed:', (err as Error).message ?? err);
-    await updateSessionStatus(session.id, 'error');
+    await updateSessionStatus(session.id, user.dealershipId, 'error');
     const errorMsg = ERROR_SMS.ai_timeout;
     await sendSms(phone, errorMsg);
     await insertTranscriptLog({

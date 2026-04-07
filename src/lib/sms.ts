@@ -154,6 +154,25 @@ export function smsSegmentCount(text: string): number {
   return text.length <= 70 ? 1 : Math.ceil(text.length / 67);
 }
 
+// --- E.164 Phone Validation ---
+// Validates phone numbers conform to E.164 format: + followed by 1-15 digits.
+// Rejects non-numeric, too-long, or malformed strings before they hit the DB.
+export function isValidE164(phone: string): boolean {
+  return /^\+\d{1,15}$/.test(phone);
+}
+
+// --- XML/Prompt Escape ---
+// Escapes characters that could break XML tags in LLM prompt templates.
+// Prevents prompt injection via employee SMS content injected into grading prompts.
+export function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 // --- Keyword detection ---
 // Build Master 2E: STOP/END/CANCEL/QUIT/UNSUBSCRIBE are intercepted by Sinch
 // and never reach our webhook. These are for natural language opt-outs.
@@ -193,8 +212,11 @@ export function detectKeyword(
   // not when "stop" appears inside a training response like "stop the customer said..."
   // Skip natural patterns if user has an active session (could be part of training response)
   if (!hasActiveSession) {
+    // M8-FIX: Removed arbitrary 60-char limit that bypassed legitimate verbose opt-outs.
+    // Instead, check that the message is under 120 chars (real opt-out requests are short,
+    // but 60 was too restrictive for messages like "please stop texting me about this").
     for (const pattern of NATURAL_OPT_OUT_PATTERNS) {
-      if (pattern.test(trimmed) && trimmed.length < 60) return 'opt_out';
+      if (pattern.test(trimmed) && trimmed.length < 120) return 'opt_out';
     }
   }
 

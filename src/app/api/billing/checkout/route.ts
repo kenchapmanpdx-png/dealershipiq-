@@ -12,10 +12,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serviceClient } from '@/lib/supabase/service';
 import { createCheckoutSession } from '@/lib/stripe';
+import { checkSignupLimit } from '@/lib/rate-limit';
 import type { CheckoutRequest } from '@/types/billing';
 
 export async function POST(request: NextRequest) {
   try {
+    // C2-FIX: Rate limit public signup endpoint (5/hour per IP)
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      ?? request.headers.get('x-real-ip')
+      ?? 'unknown';
+    const rateLimitResult = await checkSignupLimit(ip);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many signup attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
     // S-009: Reject oversized JSON payloads
     const contentLength = parseInt(request.headers.get('content-length') ?? '0', 10);
     if (contentLength > 10_000) {
@@ -162,12 +175,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ checkoutUrl: url });
     } catch (operationError) {
       // F12-H-001: Rollback all created rows — memberships, feature_flags, user, dealership, auth
+      // Each delete wrapped independently so one failure doesn't orphan remaining records.
       console.error('Signup flow failed, rolling back:', (operationError as Error).message ?? operationError);
-      await serviceClient.from('feature_flags').delete().eq('dealership_id', dealershipId);
-      await serviceClient.from('dealership_memberships').delete().eq('dealership_id', dealershipId);
-      await serviceClient.from('users').delete().eq('id', userId);
-      await serviceClient.auth.admin.deleteUser(userId);
-      await serviceClient.from('dealerships').delete().eq('id', dealershipId);
+      try { await serviceClient.from('feature_flags').delete().eq('dealership_id', dealershipId); } catch (e) { console.error('Rollback feature_flags failed:', (e as Error).message); }
+      try { await serviceClient.from('dealership_memberships').delete().eq('dealership_id', dealershipId); } catch (e) { console.error('Rollback memberships failed:', (e as Error).message); }
+      try { await serviceClient.from('users').delete().eq('id', userId); } catch (e) { console.error('Rollback users failed:', (e as Error).message); }
+      try { await serviceClient.auth.admin.deleteUser(userId); } catch (e) { console.error('Rollback auth user failed:', (e as Error).message); }
+      try { await serviceClient.from('dealerships').delete().eq('id', dealershipId); } catch (e) { console.error('Rollback dealerships failed:', (e as Error).message); }
       return NextResponse.json(
         { error: 'Signup failed. Please try again.' },
         { status: 500 }

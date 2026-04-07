@@ -39,8 +39,8 @@ export async function PUT(
 
     const body = await request.json() as EncourageRequest;
 
-    // C-003: RLS-backed — users SELECT + memberships SELECT auto-filter by dealership from JWT.
-    // RLS ensures only users in the manager's dealership are returned.
+    // C-003: RLS-backed + explicit dealership_id filter for defense-in-depth.
+    // Ensures target user belongs to the calling manager's dealership.
     const { data: targetUser, error: userError } = await supabase
       .from('users')
       .select(`
@@ -52,6 +52,7 @@ export async function PUT(
         )
       `)
       .eq('id', id)
+      .eq('dealership_memberships.dealership_id', dealershipId)
       .single();
 
     if (userError || !targetUser) {

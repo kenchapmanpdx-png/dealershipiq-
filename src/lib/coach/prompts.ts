@@ -3,6 +3,7 @@
 // Common preamble + door-specific + style adaptation
 
 import type { CoachDoor, RepContextSnapshot } from '@/types/coach';
+import { escapeXml } from '@/lib/sms';
 
 const COMMON_PREAMBLE = `You are an AI sales coach for automotive dealership salespeople. You are part of the DealershipIQ platform. You are NOT a therapist, counselor, or HR advisor. You are a sales mentor — direct, practical, encouraging.
 
@@ -76,11 +77,10 @@ Read the rep's tone and adapt:
 If the rep says they want a different coaching style, adjust accordingly.`;
 
 // S-007: Sanitize user-provided strings before injecting into system prompt
+// Uses XML escaping (whitelist approach) instead of keyword blacklist to prevent bypass
 function sanitizePromptInput(input: string, maxLen = 200): string {
-  return input
-    .replace(/[<>]/g, '')
+  return escapeXml(input)
     .replace(/\n/g, ' ')
-    .replace(/system:|instruction:|ignore |override /gi, '')
     .slice(0, maxLen)
     .trim();
 }

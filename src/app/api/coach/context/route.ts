@@ -8,10 +8,18 @@ import { buildRepContext } from '@/lib/coach/context';
 
 export async function GET(request: NextRequest) {
   // Internal route — verify admin API key (S-017: timing-safe comparison)
+  // M11-FIX: Pad to equal length before timingSafeEqual to avoid length-based timing leak
   const adminKey = request.headers.get('x-admin-key') ?? '';
   const expected = process.env.ADMIN_API_KEY ?? '';
-  if (!expected || adminKey.length !== expected.length ||
-      !timingSafeEqual(Buffer.from(adminKey), Buffer.from(expected))) {
+  if (!expected) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const maxLen = Math.max(adminKey.length, expected.length);
+  const paddedKey = Buffer.alloc(maxLen);
+  const paddedExpected = Buffer.alloc(maxLen);
+  Buffer.from(adminKey).copy(paddedKey);
+  Buffer.from(expected).copy(paddedExpected);
+  if (!timingSafeEqual(paddedKey, paddedExpected) || adminKey.length !== expected.length) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

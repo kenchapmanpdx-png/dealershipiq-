@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { sendSms } from '@/lib/sms';
+import { sendSms, isValidE164 } from '@/lib/sms';
 import { getDealershipName, insertTranscriptLog } from '@/lib/service-db';
 
 interface ImportRow {
@@ -127,8 +127,10 @@ function parseCSV(csvText: string): ImportRow[] {
 // S-014: Strip formula injection characters from CSV fields
 function sanitizeCsvField(value: string): string {
   if (!value) return value;
+  // Normalize Unicode first to prevent bypass via fullwidth/compatibility chars (e.g. \uFF1D for =)
+  const normalized = value.normalize('NFKD');
   // Strip leading characters that could trigger formula execution in Excel
-  return value.replace(/^[=+\-@\t\r]+/, '').trim();
+  return normalized.replace(/^[=+\-@\t\r]+/, '').trim();
 }
 
 const MAX_CSV_SIZE = 5 * 1024 * 1024; // 5MB
@@ -280,6 +282,19 @@ export async function POST(request: NextRequest) {
       }
 
       const normalizedPhone = normalizePhone(row.phone);
+
+      // Post-normalization E.164 validation
+      if (!isValidE164(normalizedPhone)) {
+        result.skipped++;
+        result.rows.push({
+          row_number: rowNumber,
+          full_name: row.full_name,
+          phone: row.phone,
+          status: 'skipped',
+          reason: 'Phone does not normalize to valid E.164',
+        });
+        continue;
+      }
 
       // Check for duplicates within this import
       if (seenPhones.has(normalizedPhone)) {

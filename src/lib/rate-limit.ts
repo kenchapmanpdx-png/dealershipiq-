@@ -109,6 +109,29 @@ export async function checkSmsSendLimit(): Promise<RateLimitResult> {
   }
 }
 
+// Signup: 5 requests per hour per IP (prevents spam account creation)
+export async function checkSignupLimit(ip: string): Promise<RateLimitResult> {
+  const redis = await getRedis();
+  const mod = await getRatelimit();
+  if (!redis || !mod) {
+    logBypass('signup');
+    return PASS_THROUGH;
+  }
+
+  try {
+    const limiter = new mod.Ratelimit({
+      redis,
+      limiter: mod.Ratelimit.slidingWindow(5, '3600 s'),
+      prefix: 'rl:signup:',
+    });
+    const result = await limiter.limit(ip);
+    return { success: result.success, remaining: result.remaining, reset: result.reset };
+  } catch (err) {
+    console.error('Signup rate limit check failed:', (err as Error).message ?? err);
+    return PASS_THROUGH;
+  }
+}
+
 // Circuit breaker: track AI failures per 5-min window
 // Open after 3 failures → 5-min cooldown
 export async function checkCircuitBreaker(): Promise<boolean> {

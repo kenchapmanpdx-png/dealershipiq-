@@ -93,7 +93,11 @@ async function verifyAndExtractClaims(
 ): Promise<{ dealershipId: string | null; userRole: string | null } | null> {
   try {
     const jwtSecret = process.env.SUPABASE_JWT_SECRET;
-    if (!jwtSecret) return null;
+    if (!jwtSecret) {
+      // H10-FIX: Log at error level so missing secret is immediately visible in prod logs
+      console.error('[AUTH] SUPABASE_JWT_SECRET is not set — all JWT verification will fail');
+      return null;
+    }
 
     // Extract token from Supabase auth cookie
     const authCookie = request.cookies.getAll().find(
