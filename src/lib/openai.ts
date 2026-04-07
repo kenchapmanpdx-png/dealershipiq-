@@ -33,7 +33,7 @@ export const GradingResultSchema = z.object({
   close_attempt: z.number().min(1).max(5),
   urgency_creation: z.number().min(0).max(2).optional(),
   competitive_positioning: z.number().min(0).max(2).optional(),
-  feedback: z.string().min(1).max(200),
+  feedback: z.string().min(1).max(500),
   word_tracks: z.string().min(1).max(250).optional(),
   example_response: z.string().min(1).max(350).optional(),
   reasoning: z.string().min(1).max(600),
@@ -48,7 +48,7 @@ export const GradingResultSchemaV7 = z.object({
   tone_rapport: z.number().min(1).max(5),
   addressed_concern: z.number().min(1).max(5),
   close_attempt: z.number().min(1).max(5),
-  feedback: z.string().min(1).max(300),
+  feedback: z.string().min(1).max(500),
   word_tracks: z.string().min(1).max(300),
   example_response: z.string().min(1).max(400),
 });
@@ -82,7 +82,7 @@ const SMS_MAX_V7 = {
 
 // v6 SMS constants (preserved for feature flag OFF path)
 const SMS_MAX = {
-  feedback: 115,
+  feedback: 480,
   word_tracks: 150,
   example_response: 200,
   reasoning: 500,
@@ -416,11 +416,8 @@ CONFIDENCE SIGNALS (REWARD):
 - Owning the process: "Here's what I'm going to do for you" -> tone_rapport +1
 - Naming the customer's concern back to them accurately -> addressed_concern +1
 
-===== STEP 6: WEIGHTED SCORING =====
-Calculate total: sum of four dimension scores, divide by 2, round to nearest integer = X/10.
-
-CRITICAL RULE: If ANY single dimension is 1, the total score CAPS AT 4/10 regardless of math.
-One catastrophic weakness poisons everything. A rep who knows the product cold but is aggressive (tone=1) is a liability. A rep who's warm and friendly but gives wrong information (accuracy=1) is dangerous.
+===== STEP 6: SCORING =====
+Calculate total: X = product_accuracy + tone_rapport + addressed_concern + close_attempt. Report as X/20. ALWAYS use /20. NEVER use /10 or any other denominator. Verify the arithmetic before writing.
 
 SCENARIO-SPECIFIC WEIGHTING:
 - Trade-in scenarios: weight tone_rapport highest.
@@ -430,22 +427,32 @@ SCENARIO-SPECIFIC WEIGHTING:
 
 ===== STEP 7: OUTPUT =====
 
-"feedback": Start with X/10, then one punchy sentence about what they did or didn't do. Talk like a sales manager between customers, not a teacher writing a report card. Under 115 characters total. No emojis. No curly quotes.
+"feedback": This is the COMPLETE text message the employee receives. HARD LIMIT: 460 characters.
 
-"word_tracks": 2-4 specific phrases or moves they should practice. Each phrase separated by " | " (pipe with spaces). This is a strict format -- always use " | " between phrases, never commas or line breaks. Under 150 characters total.
+ALWAYS start with X/20 (A/B/C/D) where A=product_accuracy B=tone_rapport C=addressed_concern D=close_attempt. X MUST equal A+B+C+D. Verify the arithmetic before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
-"example_response": Write what an elite salesperson would actually say in this exact scenario. This is the gold -- a real response they can steal. Must demonstrate the word tracks in action. Under 200 characters. Written as dialogue, not instructions.
+After the score, state what they did well or missed in under 12 words. Then "Try:" followed by what an elite rep would actually say. Spoken closer language, not a textbook.
 
-"reasoning": Your internal evaluation notes. Walk through the 7 steps briefly. Which step revealed the biggest issue? What would you tell this rep in a 30-second coaching session? Under 500 characters.
+ABSOLUTE RULES:
+- NEVER use "Tracks:" label. It no longer exists.
+- NEVER exceed 460 characters.
+- X/20 score MUST equal A+B+C+D.
+- No filler. No "Great job but..." No "Keep it up."
+- Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special characters.
+
+"word_tracks": Write "n/a". This field is deprecated but required by the schema.
+
+"example_response": Write "n/a". This field is deprecated but required by the schema.
+
+"reasoning": Your internal evaluation notes. Walk through the steps briefly. Under 500 characters.
 
 ===== COACHING TONE LADDER =====
-Match your tone to their score. Be direct, never soft -- but NEVER use insults, profanity, or words like "useless", "pathetic", "terrible", "garbage", "awful", or "embarrassing". You are coaching professionals, not hazing them. Even at 1/10 the goal is to wake them up, not tear them down.
-- 1-3/10: Wake-up call. "This loses the deal every time." Name the specific thing that killed it.
-- 4-5/10: Direct but constructive. "You left money on the table. Here's what was missing." Name the gap and the fix.
-- 6/10: Constructive. "You've got the basics. Here's what separates you from the top earners."
-- 7/10: Respect + push. "Good work. Here's the one thing that takes this from good to great."
-- 8-9/10: Earned praise + elite move. "Strong. One more technique to add to your arsenal."
-- 10/10: (Rare) "That's how you build a book of business. Textbook."
+Match your tone to their score. Be direct, never soft -- but NEVER use insults, profanity, or words like "useless", "pathetic", "terrible", "garbage", "awful", or "embarrassing". You are coaching professionals, not hazing them.
+- 1-6/20: Wake-up call. "This loses the deal every time." Name the specific thing that killed it.
+- 7-10/20: Direct but constructive. "You left money on the table. Here's what was missing."
+- 11-14/20: Constructive. "You've got the basics. Here's what separates you from the top earners."
+- 15-17/20: Respect + push. "Good work. One thing to add to your arsenal."
+- 18-20/20: (Rare) "That's how you build a book of business."
 
 ===== RULES =====
 - Use ONLY plain ASCII characters. No emojis, curly quotes, em-dashes, or special symbols.
@@ -829,13 +836,8 @@ Grade the salesperson's overall performance across all exchanges.`;
 
         const gradingResult = parsed.data;
 
-        // v6 assembly logic (preserved)
-        if (gradingResult.word_tracks && gradingResult.example_response) {
-          const assembled = `${gradingResult.feedback} Tracks: ${gradingResult.word_tracks}. Try: ${gradingResult.example_response}`;
-          gradingResult.feedback = assembled.length > 480
-            ? assembled.slice(0, 477) + '...'
-            : assembled;
-        }
+        // v6: feedback now carries the complete SMS (same as v7). Sanitize + truncate.
+        gradingResult.feedback = truncateAtWord(sanitizeGsm7(gradingResult.feedback), 480);
 
         return { ...gradingResult, model, promptVersionId: opts.promptVersionId };
       }
