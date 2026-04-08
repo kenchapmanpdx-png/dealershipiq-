@@ -249,6 +249,9 @@ export async function insertTrainingResult(result: {
   urgencyCreation?: number | null;
   competitivePositioning?: number | null;
   trainingDomain?: string;
+  weightClass?: string;
+  rawTotal?: number;
+  weightedTotal?: number;
 }) {
   const insertData: Record<string, unknown> = {
     user_id: result.userId,
@@ -274,6 +277,17 @@ export async function insertTrainingResult(result: {
   // Phase 4B: training domain tracking
   if (result.trainingDomain) {
     insertData.training_domain = result.trainingDomain;
+  }
+
+  // v7 weighted scoring fields
+  if (result.weightClass) {
+    insertData.weight_class = result.weightClass;
+  }
+  if (result.rawTotal != null) {
+    insertData.raw_total = result.rawTotal;
+  }
+  if (result.weightedTotal != null) {
+    insertData.weighted_total = result.weightedTotal;
   }
 
   const { error } = await serviceClient
@@ -1674,13 +1688,14 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
   failSignals: string;
   mode: string;
   domain: string;
+  weightClass: string;
 } | null> {
   // Strip greeting prefix (e.g., "Hey John, ") to match raw customer_line
   const stripped = customerLine.replace(/^Hey\s+\S+,\s*/i, '').trim();
 
   const { data, error } = await serviceClient
     .from('scenario_bank')
-    .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain')
+    .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain, weight_class')
     .eq('is_active', true)
     .eq('customer_line', stripped)
     .limit(1)
@@ -1695,7 +1710,7 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
     const escaped = stripped.slice(0, 60).replace(/%/g, '\\%').replace(/_/g, '\\_');
     const { data: fuzzyData } = await serviceClient
       .from('scenario_bank')
-      .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain')
+      .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain, weight_class')
       .eq('is_active', true)
       .ilike('customer_line', `%${escaped}%`)
       .limit(1)
@@ -1710,6 +1725,7 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
       failSignals: fuzzyData.fail_signals as string,
       mode: fuzzyData.mode as string,
       domain: fuzzyData.domain as string,
+      weightClass: (fuzzyData.weight_class as string) || 'hybrid',
     };
   }
 
@@ -1720,6 +1736,7 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
     failSignals: data.fail_signals as string,
     mode: data.mode as string,
     domain: data.domain as string,
+    weightClass: (data.weight_class as string) || 'hybrid',
   };
 }
 

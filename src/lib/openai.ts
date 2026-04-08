@@ -102,6 +102,92 @@ function applyQuizOverrides(
 }
 
 // =============================================================================
+// v7 WEIGHTED SCORING — Types, Configs, Functions
+// =============================================================================
+
+export type WeightClass = 'fact_heavy' | 'hybrid' | 'rapport_heavy';
+
+interface ScenarioWeights {
+  pa: number;  // product_accuracy weight
+  ac: number;  // addressed_concern weight
+  tr: number;  // tone_rapport weight
+  ca: number;  // close_attempt weight
+}
+
+interface GradingScores {
+  product_accuracy: number;
+  tone_rapport: number;
+  addressed_concern: number;
+  close_attempt: number;
+}
+
+const WEIGHT_CONFIGS: Record<WeightClass, ScenarioWeights> = {
+  fact_heavy:    { pa: 8, ac: 5, tr: 4, ca: 3 },
+  hybrid:        { pa: 5, ac: 5, tr: 5, ca: 5 },
+  rapport_heavy: { pa: 3, ac: 5, tr: 7, ca: 5 },
+};
+
+export function computeWeightedTotal(
+  scores: GradingScores,
+  weightClass: WeightClass
+): number {
+  const w = WEIGHT_CONFIGS[weightClass] || WEIGHT_CONFIGS.hybrid;
+  const weightedSum =
+    scores.product_accuracy * w.pa +
+    scores.addressed_concern * w.ac +
+    scores.tone_rapport * w.tr +
+    scores.close_attempt * w.ca;
+  // All weight configs sum to 20. Max = 5*20 = 100. 100/5 = 20.
+  // Min (all 1s) = 1*20 = 20. 20/5 = 4. Floor to 1 for safety.
+  return Math.max(1, Math.round(weightedSum / 5));
+}
+
+export function replaceScoreInFeedback(
+  feedback: string,
+  weightedTotal: number
+): string {
+  // Anchored to start — prompt says "Start with X/20"
+  // Handles optional spaces around slash
+  const result = feedback.replace(/^\d+\s*\/\s*20/, `${weightedTotal}/20`);
+
+  // If no match (GPT violated prompt contract), prepend the weighted score
+  if (result === feedback && feedback.length > 0 && !/^\d+\s*\/\s*20/.test(feedback)) {
+    return `${weightedTotal}/20. ${feedback}`;
+  }
+
+  return result;
+}
+
+const CALIBRATION_ANCHORS: Record<string, { mediocre: string; poor: string }> = {
+  objection_handling: {
+    mediocre: "I understand your concern. The CR-V is a great vehicle and I think you'd really like it. Want to take a look?",
+    poor: "Well that's not really true. Our cars are priced fairly. You should just come in and see for yourself.",
+  },
+  product_knowledge: {
+    mediocre: "The EX-L has leather seats and more features than the EX. It costs a bit more but it's worth it.",
+    poor: "I think the EX-L is the one with the bigger engine? It's definitely nicer. Let me check on the price.",
+  },
+  closing_technique: {
+    mediocre: "Sounds like this could work for you. Do you want to come in this weekend and we can talk numbers?",
+    poor: "OK well let me know if you have any other questions. We're here Monday through Saturday.",
+  },
+  competitive_positioning: {
+    mediocre: "Honda is known for reliability. I think you'd be happier with us than with a Toyota honestly.",
+    poor: "I don't really know much about the RAV4 but I know our CR-V is better. Honda is the best.",
+  },
+  financing: {
+    mediocre: "Leasing is like renting the car for a few years. Your payment would be lower than financing.",
+    poor: "I'm not sure about the exact rates right now. You'd have to talk to our finance guy about that.",
+  },
+};
+
+export function getCalibrationAnchors(domain: string | null): { mediocre: string; poor: string } {
+  const DEFAULT_DOMAIN = 'objection_handling';
+  const key = domain && CALIBRATION_ANCHORS[domain] ? domain : DEFAULT_DOMAIN;
+  return CALIBRATION_ANCHORS[key];
+}
+
+// =============================================================================
 // v7 PROMPT TEMPLATES
 // =============================================================================
 
@@ -112,7 +198,10 @@ function buildV7TemplateA(
   failSignals: string,
   eliteDialogue: string,
   employeeResponse: string,
-  conversationHistory?: string
+  conversationHistory?: string,
+  weightClass?: WeightClass | null,
+  domain?: string | null,
+  isFallbackModel?: boolean
 ): { system: string; user: string } {
   const historyBlock = conversationHistory
     ? `\n<conversation_history>\n${conversationHistory}\n</conversation_history>\n`
@@ -137,13 +226,13 @@ OUTPUT FIELD INSTRUCTIONS:
   ALWAYS start with X/20 where X is the sum of all four dimension scores. Verify the sum before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
   SINGLE-TURN (the employee gave ONE response -- no conversation_history tag, or conversation_history contains only one employee message):
-  After the score, state what they did well or missed in under 12 words. Then "Try:" followed by what an elite rep would actually say -- adapt from the exemplar_dialogue. Spoken closer language, not a textbook.
+  After the score, identify the SINGLE most impactful error -- the one that would cause the biggest problem on a real sales floor. If no errors, name the strongest technique executed. Under 12 words. Then "Try:" followed by what an elite rep would actually say -- adapt from the exemplar_dialogue. Spoken closer language, not a textbook.
 
   MULTI-TURN (conversation_history contains TWO OR MORE employee responses):
   After the score, address EACH exchange the employee responded to:
-  "Q1: [what they did right or wrong]. Try: [what closer would say]."
-  "Q2: [what they did right or wrong]. Try: [what closer would say]."
-  "Q3: [what they did right or wrong]. Try: [what closer would say]."
+  "Q1: [single most impactful error or strongest move]. Try: [what closer would say]."
+  "Q2: [single most impactful error or strongest move]. Try: [what closer would say]."
+  "Q3: [single most impactful error or strongest move]. Try: [what closer would say]."
   Every exchange gets a Try. If an exchange was strong, the callout and Try can be shorter but both must be present.
   Prioritize the weakest exchange for the longest Try.
 
@@ -158,18 +247,55 @@ OUTPUT FIELD INSTRUCTIONS:
   - Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special Unicode.
   - Score denominator is ALWAYS /20. Never /10. Never /5.`;
 
-  const user = `<training_question>${customerLine}</training_question>
+  // Build scoring_weights block (skip for mini fallback)
+  const wc: WeightClass = (weightClass as WeightClass) || 'hybrid';
+  const w = WEIGHT_CONFIGS[wc] || WEIGHT_CONFIGS.hybrid;
+  const paInstruction = wc === 'fact_heavy'
+    ? ' This is the primary success criterion. Wrong numbers, wrong specs, or wrong pricing = score 1-2.'
+    : '';
+  const trInstruction = wc === 'rapport_heavy'
+    ? ' This is the primary success criterion. Cold, dismissive, or robotic tone = score 1-2.'
+    : '';
+
+  const scoringWeightsBlock = isFallbackModel ? '' : `
+<scoring_weights>
+This is a ${wc} scenario. Apply these scoring priorities:
+- product_accuracy: weight ${w.pa}/20.${paInstruction}
+- addressed_concern: weight ${w.ac}/20.
+- tone_rapport: weight ${w.tr}/20.${trInstruction}
+- close_attempt: weight ${w.ca}/20.
+Score the highest-weighted dimension MOST STRICTLY. A wrong fact in a fact_heavy scenario should score product_accuracy 1-2 regardless of other dimensions.
+</scoring_weights>
+`;
+
+  // Build calibration_anchors block (skip for mini fallback)
+  const anchors = getCalibrationAnchors(domain ?? null);
+  const calibrationBlock = isFallbackModel ? '' : `
+<calibration_anchors purpose="scoring_reference_only">
+<mediocre_example score_range="3/5">
+${anchors.mediocre}
+This represents a 3/5 response on the primary dimension.
+</mediocre_example>
+<poor_example score_range="1-2/5">
+${anchors.poor}
+This represents a 1-2/5 response on the primary dimension.
+</poor_example>
+Do NOT use these to generate feedback. Scoring reference only.
+</calibration_anchors>
+`;
+
+  const user = `<training_question>${escapeXml(customerLine)}</training_question>
 
 <evaluation_criteria>
-<technique_to_reward>${techniqueTag}</technique_to_reward>
-<behaviors_to_penalize>${failSignals}</behaviors_to_penalize>
+<technique_to_reward>${escapeXml(techniqueTag)}</technique_to_reward>
+<behaviors_to_penalize>${escapeXml(failSignals)}</behaviors_to_penalize>
 </evaluation_criteria>
-
+${scoringWeightsBlock}
 <exemplar_dialogue purpose="output_seed_only">
-${eliteDialogue}
+${escapeXml(eliteDialogue)}
 This is one example of an excellent response. Use it as a quality floor when generating Try examples. Adapt the phrasing to address what the employee specifically missed. Do NOT use this exemplar to influence numeric scores -- score based on the technique_to_reward criteria only.
 </exemplar_dialogue>
-${historyBlock}
+${calibrationBlock}${historyBlock}
 <employee_response>${employeeResponse}</employee_response>`;
 
   return { system, user };
@@ -182,7 +308,8 @@ function buildV7TemplateC(
   failSignals: string,
   eliteDialogue: string,
   employeeResponse: string,
-  conversationHistory?: string
+  conversationHistory?: string,
+  isFallbackModel?: boolean
 ): { system: string; user: string } {
   // Strip KNOWLEDGE_CHECK prefix before injecting as reference_answer
   const referenceAnswer = techniqueTag.replace(/^KNOWLEDGE_CHECK\.\s*/, '');
@@ -212,13 +339,13 @@ OUTPUT FIELD INSTRUCTIONS:
   ALWAYS start with X/20 where X is the sum of all four dimension scores. Verify the sum before writing. ALWAYS use /20. NEVER use /10 or any other denominator.
 
   SINGLE-TURN (the employee gave ONE response -- no conversation_history tag, or conversation_history contains only one employee message):
-  After the score, state what key facts they got right or missed in under 12 words. Then "Try:" followed by the concise, correct answer -- clear enough that a rep could text it to a customer. Adapt from exemplar_dialogue.
+  After the score, name the SINGLE most critical factual error or omission. If all facts correct, name the strongest point. Under 12 words. Then "Try:" followed by the concise, correct answer -- clear enough that a rep could text it to a customer. Adapt from exemplar_dialogue.
 
   MULTI-TURN (conversation_history contains TWO OR MORE employee responses):
   After the score, address EACH exchange the employee responded to:
-  "Q1: [what they got right or wrong]. Try: [correct answer]."
-  "Q2: [what they got right or wrong]. Try: [correct answer]."
-  "Q3: [what they got right or wrong]. Try: [correct answer]."
+  "Q1: [single most critical factual error or strongest point]. Try: [correct answer]."
+  "Q2: [single most critical factual error or strongest point]. Try: [correct answer]."
+  "Q3: [single most critical factual error or strongest point]. Try: [correct answer]."
   Every exchange gets a Try. If an exchange was strong, the callout and Try can be shorter but both must be present.
   Prioritize the weakest exchange for the longest Try.
 
@@ -231,16 +358,27 @@ OUTPUT FIELD INSTRUCTIONS:
   - Use " -- " for dashes. Straight quotes only. No em dashes, curly quotes, or special Unicode.
   - Score denominator is ALWAYS /20. Never /10. Never /5.`;
 
-  const user = `<training_question>${customerLine}</training_question>
+  // Template C always uses fact_heavy weights
+  const scoringWeightsBlock = isFallbackModel ? '' : `
+<scoring_weights>
+This is a fact_heavy knowledge check. Scoring priorities:
+- product_accuracy: weight 8/20. Primary criterion. Wrong facts = score 1-2.
+- addressed_concern: weight 5/20. Did they cover the key points?
+- tone_rapport: weight 4/20. Was the explanation clear?
+- close_attempt: weight 3/20. Default to 3 for knowledge checks.
+</scoring_weights>
+`;
+
+  const user = `<training_question>${escapeXml(customerLine)}</training_question>
 
 <evaluation_criteria>
 <mode>KNOWLEDGE_CHECK</mode>
-<reference_answer>${referenceAnswer}</reference_answer>
-<common_errors>${failSignals}</common_errors>
+<reference_answer>${escapeXml(referenceAnswer)}</reference_answer>
+<common_errors>${escapeXml(failSignals)}</common_errors>
 </evaluation_criteria>
-
+${scoringWeightsBlock}
 <exemplar_dialogue purpose="output_seed_only">
-${eliteDialogue}
+${escapeXml(eliteDialogue)}
 Use this as the quality floor for your Try examples.
 </exemplar_dialogue>
 ${historyBlock}
@@ -549,6 +687,7 @@ interface GradeOptions {
   eliteDialogue?: string;
   failSignals?: string;
   scenarioDomain?: string;
+  weightClass?: string;
 }
 
 interface FollowUpOptions {
@@ -643,11 +782,12 @@ async function callOpenAIGrading(
 async function gradeResponseV7(
   apiKey: string,
   opts: GradeOptions
-): Promise<(GradingResult & { model: string; promptVersionId?: string; assembledSms?: string }) | null> {
+): Promise<(GradingResult & { model: string; promptVersionId?: string; assembledSms?: string; weightClass?: string; rawTotal?: number; weightedTotal?: number }) | null> {
   const techniqueTag = opts.techniqueTag!;
   const eliteDialogue = opts.eliteDialogue!;
   const failSignals = opts.failSignals!;
   const mode = opts.mode;
+  const weightClass: WeightClass = (opts.weightClass as WeightClass) || 'hybrid';
 
   // M-005 fix: Escape XML special chars in employee response
   const sanitizedResponse = opts.employeeResponse
@@ -661,10 +801,6 @@ async function gradeResponseV7(
 
   // Select template A or C
   const template = selectV7Template(mode, techniqueTag);
-
-  const { system, user } = template === 'C'
-    ? buildV7TemplateC(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText)
-    : buildV7TemplateA(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText);
 
   // v7 schema: rationale first, no maxLength (enforced post-parse)
   const v7SchemaProperties: Record<string, unknown> = {
@@ -700,8 +836,13 @@ async function gradeResponseV7(
       const schemaProps = isMini ? v7MiniSchemaProperties : v7SchemaProperties;
       const reqFields = isMini ? v7MiniRequiredFields : v7RequiredFields;
 
+      // Build prompts with isFallbackModel flag — scoring_weights and calibration_anchors
+      // are stripped from mini to reduce cognitive load (per v7 spec Section 4).
+      const { system, user } = template === 'C'
+        ? buildV7TemplateC(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, isMini)
+        : buildV7TemplateA(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, weightClass, opts.scenarioDomain ?? null, isMini);
+
       // M3-FIX: For mini, remove rationale instruction line more robustly.
-      // Matches "- rationale:" with any preceding whitespace and any content until newline.
       const systemPrompt = isMini
         ? system.replace(/^[\t ]*- rationale:.*$/m, '')
         : system;
@@ -720,21 +861,37 @@ async function gradeResponseV7(
       // Pipeline step 3: Q2 quiz override
       applyQuizOverrides(data as { close_attempt: number }, mode, techniqueTag);
 
-      // Pipeline step 4: Sanitize + truncate feedback (GPT writes complete SMS into feedback)
-      // Prompt targets 460 chars. App truncation catches overflow at 480.
-      const finalSms = truncateAtWord(sanitizeGsm7(data.feedback as string), 480);
-
-      // Build result compatible with existing GradingResult type
-      const gradingResult: GradingResult & { model: string; promptVersionId?: string; assembledSms: string } = {
+      // Pipeline step 3.5: Compute weighted total
+      const scores: GradingScores = {
         product_accuracy: data.product_accuracy as number,
         tone_rapport: data.tone_rapport as number,
         addressed_concern: data.addressed_concern as number,
         close_attempt: data.close_attempt as number,
+      };
+      const rawTotal = scores.product_accuracy + scores.tone_rapport + scores.addressed_concern + scores.close_attempt;
+      const weightedTotal = computeWeightedTotal(scores, weightClass);
+
+      // Pipeline step 3.6: Replace raw score in feedback with weighted total
+      const adjustedFeedback = replaceScoreInFeedback(data.feedback as string, weightedTotal);
+
+      // Pipeline step 4: Sanitize + truncate feedback (GPT writes complete SMS into feedback)
+      // Prompt targets 460 chars. App truncation catches overflow at 480.
+      const finalSms = truncateAtWord(sanitizeGsm7(adjustedFeedback), 480);
+
+      // Build result compatible with existing GradingResult type
+      const gradingResult: GradingResult & { model: string; promptVersionId?: string; assembledSms: string; weightClass: string; rawTotal: number; weightedTotal: number } = {
+        product_accuracy: scores.product_accuracy,
+        tone_rapport: scores.tone_rapport,
+        addressed_concern: scores.addressed_concern,
+        close_attempt: scores.close_attempt,
         feedback: finalSms,
         reasoning: truncateAtWord((data.rationale as string) ?? 'v7 mini fallback -- no rationale', SMS_MAX.reasoning),
         model,
         promptVersionId: opts.promptVersionId,
         assembledSms: finalSms,
+        weightClass,
+        rawTotal,
+        weightedTotal,
       };
 
       return gradingResult;

@@ -1175,6 +1175,7 @@ async function handleFinalExchange(
     let eliteDialogue: string | undefined;
     let failSignals: string | undefined;
     let scenarioDomain: string | undefined;
+    let weightClass: string | undefined;
 
     const v7Enabled = await isFeatureEnabled(user.dealershipId, 'grader_v7_enabled');
     if (v7Enabled) {
@@ -1185,6 +1186,7 @@ async function handleFinalExchange(
           eliteDialogue = scenarioData.eliteDialogue;
           failSignals = scenarioData.failSignals;
           scenarioDomain = scenarioData.domain;
+          weightClass = scenarioData.weightClass;
         }
       } catch (lookupErr) {
         console.error('Scenario bank lookup failed:', (lookupErr as Error).message ?? lookupErr);
@@ -1205,6 +1207,7 @@ async function handleFinalExchange(
       eliteDialogue,
       failSignals,
       scenarioDomain,
+      weightClass,
     });
 
     const averageScore = (
@@ -1213,6 +1216,9 @@ async function handleFinalExchange(
       result.addressed_concern +
       result.close_attempt
     ) / 4;
+
+    // Extract v7 weighted scoring fields (present when v7 path ran)
+    const v7Result = result as typeof result & { weightClass?: string; rawTotal?: number; weightedTotal?: number };
 
     await insertTrainingResult({
       userId: user.id,
@@ -1229,6 +1235,9 @@ async function handleFinalExchange(
       urgencyCreation: result.urgency_creation ?? null,
       competitivePositioning: result.competitive_positioning ?? null,
       trainingDomain: session.trainingDomain ?? undefined,
+      weightClass: v7Result.weightClass,
+      rawTotal: v7Result.rawTotal,
+      weightedTotal: v7Result.weightedTotal,
     });
 
     // Phase 4D: Update priority vector if domain tracked
