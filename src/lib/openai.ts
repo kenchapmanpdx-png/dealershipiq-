@@ -457,6 +457,7 @@ TONE RULES:
 ANGLE RULES:
 - Each follow-up must test a DIFFERENT ANGLE of the same topic. NEVER rephrase the same question with different words.
 - Each follow-up must have real training value -- it should force the employee to use a selling skill (explaining a gap, giving a range, handling skepticism, advancing the deal). No filler questions that just make conversation.
+- NEVER summarize the correct answer for the employee. The customer asks questions -- they don't provide answers and ask for confirmation. BAD: "Got it, so AWD handles rain and snow automatically, right?" GOOD: "OK but which one do I actually need for rain and snow?"
 - STAY ON THE SAME TOPIC as the original customer objection. Push deeper on different angles, don't pivot to new topics.
 - If the customer asked about price, the follow-up is about price. Not about a competitor brand or trade-in value.
 - Do NOT introduce new objection topics. One topic per conversation.

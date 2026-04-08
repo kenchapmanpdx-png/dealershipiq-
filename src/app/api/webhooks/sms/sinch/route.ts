@@ -366,7 +366,11 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       for (let i = 0; i < evictCount; i++) processedMessages.delete(entries[i]);
     }
 
-    // Log inbound message (UNIQUE constraint on sinch_message_id catches any remaining races)
+    // Look up active session BEFORE logging inbound, so we can tag the transcript row
+    const activeSession = await getActiveSession(user.id, user.dealershipId);
+    const hasActiveSession = !!activeSession && activeSession.status === 'active';
+
+    // Log inbound message with session_id (UNIQUE constraint on sinch_message_id catches any remaining races)
     await insertTranscriptLog({
       userId: user.id,
       dealershipId: user.dealershipId,
@@ -374,6 +378,7 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       direction: 'inbound',
       messageBody: text,
       sinchMessageId: messageId,
+      sessionId: activeSession?.id,
     });
 
     // ==========================================================================
@@ -399,10 +404,6 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     // Check opt-out status (DB-level opt-out)
     const isOptedOut = await checkOptOut(phone, user.dealershipId);
     if (isOptedOut) return;
-
-    // Check for active session (for keyword detection context)
-    const activeSession = await getActiveSession(user.id, user.dealershipId);
-    const hasActiveSession = !!activeSession && activeSession.status === 'active';
 
     // 3. PARAR/CANCELAR (Spanish opt-out)
     if (trimmedUpper === 'PARAR' || trimmedUpper === 'CANCELAR') {
