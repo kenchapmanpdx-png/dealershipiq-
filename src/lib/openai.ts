@@ -448,17 +448,25 @@ REALISM RULES:
 - Never append meta-instructions like "Reply with your best sales response".
 - Use ONLY plain ASCII characters. No em dashes, curly quotes, or special Unicode.
 
-TOPIC RULES:
-- STAY ON THE SAME TOPIC as the original customer objection. Push deeper, don't pivot.
-- If the customer asked about price, the follow-up is about price. Not about a competitor brand.
-- If the customer asked about financing, the follow-up is about financing. Not about trade-in value.
+TONE RULES:
+- The customer's tone stays NEUTRAL or gets SOFTER across follow-ups. NEVER more aggressive, demanding, or confrontational.
+- If the employee gave a weak answer, the customer can express mild confusion or rephrase, but never escalate pressure or demand answers.
+- The customer is here to buy a car, not win an argument.
+- No ultimatums. No "what are you ACTUALLY offering." No "so what's the number then."
+
+ANGLE RULES:
+- Each follow-up must test a DIFFERENT ANGLE of the same topic. NEVER rephrase the same question with different words.
+- Each follow-up must have real training value -- it should force the employee to use a selling skill (explaining a gap, giving a range, handling skepticism, advancing the deal). No filler questions that just make conversation.
+- STAY ON THE SAME TOPIC as the original customer objection. Push deeper on different angles, don't pivot to new topics.
+- If the customer asked about price, the follow-up is about price. Not about a competitor brand or trade-in value.
 - Do NOT introduce new objection topics. One topic per conversation.
 - The only exception: if the employee fully resolved the concern, the customer can acknowledge and move to closing ("OK that makes sense, so what's the next step?").
 
 DIFFICULTY RULES:
-- If the employee's response was WEAK (missed the point, gave fluff, no specifics), ask a SIMPLER version of the same question. Give them another chance.
-- If the employee's response was STRONG (addressed the concern, gave specifics, advanced the deal), the customer can push slightly harder on the same topic or begin moving toward agreement.
+- If the employee's response was WEAK (missed the point, gave fluff, no specifics), ask a SIMPLER version or a different angle. Give them another chance to demonstrate knowledge.
+- If the employee's response was STRONG (addressed the concern, gave specifics, advanced the deal), the customer can push slightly deeper on the same topic or begin moving toward agreement.
 - NEVER escalate difficulty when the employee is struggling. Meet them where they are.
+- If the employee already failed to give specifics twice, the customer should bring up a SPECIFIC concern they've heard about, NOT ask for specifics a third time.
 
 BANNED follow-ups (these don't train anything):
 - "How long will this take?"
@@ -467,22 +475,27 @@ BANNED follow-ups (these don't train anything):
 - "Can I bring it back if I don't like it?"
 - Any question about the dealership process rather than the deal itself
 
-EXAMPLES of good vs bad follow-ups:
+GOOD PROGRESSION EXAMPLES:
 
-Customer opens: "Why would I finance through you when my credit union is 1.9%?"
-Employee gives weak response: "We can probably match that rate"
-GOOD: "Match it how? What rate can you actually get me?"
-BAD: "And what about the trade? I need $15K minimum or I'm walking." (new topic)
+Trade-in scenario:
+Q1: "My trade-in is worth $18K according to KBB. What are you going to give me?"
+Q2 (after weak answer): "So why would your number be different from KBB? What am I missing?"
+Q3 (after another weak answer): "Can you at least give me a range before I drive over?"
 
-Customer opens: "Help me decide between the sedan and SUV"
-Employee gives weak response about lifestyle instead of answering:
-GOOD: "I don't need a lifestyle quiz. What's the monthly difference?"
-BAD: "I'm also looking at a CR-V and RAV4, so if your SUV isn't clearly the better value..." (new topic, harder, too wordy)
+EV maintenance scenario:
+Q1: "I heard EVs cost a fortune to maintain."
+Q2 (after weak answer): "Like do you still have to do oil changes and all that or is it different?"
+Q3 (after another weak answer): "OK so what does a normal service visit actually cost? My Honda is like $150."
 
-Customer opens: "Your price is $2000 more than the dealer across town"
-Employee gives strong response comparing total deal value:
-GOOD: "OK so you're saying the extra $2K covers the inspection and warranty? Let me think about that."
-BAD: "Well my buddy got his for $3K under sticker last month." (new topic, escalation)`;
+Financing scenario:
+Q1: "Why would I finance through you when my credit union is 1.9%?"
+Q2 (after weak answer): "Does it matter if I already have the approval in hand or do you need to run credit first?"
+Q3 (after another weak answer): "What if the rate is close -- is there anything else that makes financing here worth it?"
+
+BAD PROGRESSION EXAMPLES (do NOT generate these):
+"What are you offering?" then "What are you ACTUALLY offering?" then "So what's the number?" (same question, escalating aggression)
+"What costs less?" then "Like what specifically?" then "OK but real numbers?" (same question, rephrased three times)
+"Can you beat my rate?" then "My buddy got 1.5% last week" then "And what about the trade? I need $15K minimum" (new topic introduced)`;
 
 // Retained for potential future use in mid-exchange coaching (currently disabled)
 const _OBJECTION_COACHING_PROMPT = `You are a brief, direct sales manager coaching your rep mid-conversation. Give exactly 1-2 sentences of specific, actionable coaching.
