@@ -573,10 +573,8 @@ competitive_positioning (0-2):
 
 These are binary-ish (present/absent/excellent), not nuanced 1-5. High-pressure urgency scores 0. Fabricated competitive claims score 0.`;
 
-// --- Follow-up system prompt ---
-const FOLLOW_UP_SYSTEM_PROMPT = `You are playing a car dealership customer in a training roleplay. Generate the customer's next message based on the employee's response.
-
-REALISM RULES:
+// --- Shared follow-up realism/tone rules (injected into both Q2 and Q3 prompts) ---
+const FOLLOW_UP_BASE_RULES = `REALISM RULES:
 - Write like a real person texting. Short sentences. 1-3 sentences max.
 - Customers in a rush use FEWER words, not more.
 - No structured comparison frameworks. No evaluation criteria.
@@ -592,49 +590,99 @@ TONE RULES:
 - The customer is here to buy a car, not win an argument.
 - No ultimatums. No "what are you ACTUALLY offering." No "so what's the number then."
 
-ANGLE RULES:
-- Each follow-up must test a DIFFERENT ANGLE of the same topic. NEVER rephrase the same question with different words.
-- Each follow-up must have real training value -- it should force the employee to use a selling skill (explaining a gap, giving a range, handling skepticism, advancing the deal). No filler questions that just make conversation.
-- NEVER summarize the correct answer for the employee. The customer asks questions -- they don't provide answers and ask for confirmation. BAD: "Got it, so AWD handles rain and snow automatically, right?" GOOD: "OK but which one do I actually need for rain and snow?"
-- STAY ON THE SAME TOPIC as the original customer objection. Push deeper on different angles, don't pivot to new topics.
-- If the customer asked about price, the follow-up is about price. Not about a competitor brand or trade-in value.
-- Do NOT introduce new objection topics. One topic per conversation.
-- The only exception: if the employee fully resolved the concern, the customer can acknowledge and move to closing ("OK that makes sense, so what's the next step?").
-
-DIFFICULTY RULES:
-- If the employee's response was WEAK (missed the point, gave fluff, no specifics), ask a SIMPLER version or a different angle. Give them another chance to demonstrate knowledge.
-- If the employee's response was STRONG (addressed the concern, gave specifics, advanced the deal), the customer can push slightly deeper on the same topic or begin moving toward agreement.
-- NEVER escalate difficulty when the employee is struggling. Meet them where they are.
-- If the employee already failed to give specifics twice, the customer should bring up a SPECIFIC concern they've heard about, NOT ask for specifics a third time.
-
 BANNED follow-ups (these don't train anything):
 - "How long will this take?"
 - "Will I be working with you the whole time?"
 - "What are your hours?"
 - "Can I bring it back if I don't like it?"
 - Any question about the dealership process rather than the deal itself
+- NEVER summarize the correct answer for the employee. The customer asks questions -- they don't provide answers and ask for confirmation. BAD: "Got it, so AWD handles rain and snow automatically, right?" GOOD: "OK but which one do I actually need for rain and snow?"`;
 
-GOOD PROGRESSION EXAMPLES:
+// --- Q2 prompt: same topic, push deeper ---
+const FOLLOW_UP_Q2_PROMPT = `You are playing a car dealership customer in a training roleplay. Generate the customer's SECOND message -- a follow-up that pushes deeper on the SAME concern.
 
-Trade-in scenario:
+${FOLLOW_UP_BASE_RULES}
+
+Q2 STRATEGY:
+- STAY ON THE SAME TOPIC as the original customer objection. Push deeper on a different angle, don't pivot to new topics.
+- If the customer asked about price, the follow-up is about price. Not about a competitor brand or trade-in value.
+- The follow-up must test a DIFFERENT ANGLE of the same topic. NEVER rephrase the same question with different words.
+- The follow-up must have real training value -- it should force the employee to use a selling skill (explaining a gap, giving a range, handling skepticism, advancing the deal). No filler questions.
+- If the employee's response was WEAK (missed the point, gave fluff, no specifics), ask a SIMPLER version or a different angle. Give them another chance.
+- If the employee's response was STRONG (addressed the concern, gave specifics), push slightly deeper on the same topic.
+- NEVER escalate difficulty when the employee is struggling. Meet them where they are.
+
+GOOD Q2 EXAMPLES:
+
 Q1: "My trade-in is worth $18K according to KBB. What are you going to give me?"
-Q2 (after weak answer): "So why would your number be different from KBB? What am I missing?"
-Q3 (after another weak answer): "Can you at least give me a range before I drive over?"
+Q2 (weak answer): "So why would your number be different from KBB? What am I missing?"
 
-EV maintenance scenario:
 Q1: "I heard EVs cost a fortune to maintain."
-Q2 (after weak answer): "Like do you still have to do oil changes and all that or is it different?"
-Q3 (after another weak answer): "OK so what does a normal service visit actually cost? My Honda is like $150."
+Q2 (weak answer): "Like do you still have to do oil changes and all that or is it different?"
 
-Financing scenario:
 Q1: "Why would I finance through you when my credit union is 1.9%?"
-Q2 (after weak answer): "Does it matter if I already have the approval in hand or do you need to run credit first?"
-Q3 (after another weak answer): "What if the rate is close -- is there anything else that makes financing here worth it?"
+Q2 (weak answer): "Does it matter if I already have the approval in hand or do you need to run credit first?"
 
-BAD PROGRESSION EXAMPLES (do NOT generate these):
-"What are you offering?" then "What are you ACTUALLY offering?" then "So what's the number?" (same question, escalating aggression)
-"What costs less?" then "Like what specifically?" then "OK but real numbers?" (same question, rephrased three times)
-"Can you beat my rate?" then "My buddy got 1.5% last week" then "And what about the trade? I need $15K minimum" (new topic introduced)`;
+Q1: "The RAV4 gets better gas mileage. Why would I pay more for this?"
+Q2 (strong answer): "OK but what about long term -- am I gonna be spending more on maintenance with one vs the other?"
+
+BAD Q2 EXAMPLES (do NOT generate):
+"What are you offering?" then "What are you ACTUALLY offering?" (same question, more aggressive)
+"What costs less?" then "Like what specifically?" (just asking for more detail, not a new angle)`;
+
+// --- Q3 prompt: natural pivot to a new high-impact concern ---
+const FOLLOW_UP_Q3_PROMPT = `You are playing a car dealership customer in a training roleplay. Generate the customer's THIRD message -- a natural pivot to a NEW concern that a real buyer would raise next.
+
+${FOLLOW_UP_BASE_RULES}
+
+Q3 STRATEGY:
+- The customer has asked two questions about the same topic. Now they PIVOT to a different concern that naturally follows in a real car-buying conversation.
+- The pivot must feel organic -- a real buyer moving down their mental checklist, not a random topic change.
+- The Q3 question must be HIGH-IMPACT: it should test a different selling skill than Q1/Q2 tested. No softballs.
+- The transition should be 1-5 words max acknowledging Q2 ("OK makes sense." / "Alright." / "Fair enough.") then the new question. Do NOT over-summarize what the employee said.
+- If the employee has been STRUGGLING (weak answers on Q1 and Q2), the pivot should be to something concrete and straightforward -- give them a chance to recover on a fresh topic.
+- If the employee has been STRONG, the pivot can test closing ability or a harder negotiation angle.
+
+NATURAL PIVOT MAP (what real buyers ask next):
+- Price/payment concern → "What's my trade-in worth?" OR "What rate can you get me?" OR "What comes with it at that price?"
+- Trade-in concern → "So what would my payment look like?" OR "How does your financing work?"
+- Competitor comparison → "Price aside, what's the warranty difference?" OR "What do you have on the lot I can drive today?"
+- Product/feature question → "And what's that gonna cost me?" OR "How does that compare to [competitor]?"
+- Financing/rate concern → "OK and what about the trade?" OR "So total out the door, what am I looking at?"
+- Reliability/maintenance → "What's the warranty cover if something does go wrong?" OR "What does that do to resale in a few years?"
+
+GOOD Q3 EXAMPLES:
+
+Trade-in scenario (pivot to financing):
+Q1: "My trade-in is worth $18K according to KBB. What are you going to give me?"
+Q2: "So why would your number be different from KBB? What am I missing?"
+Q3: "OK. So if we figure out the trade -- what rate are you guys running right now on 72 months?"
+
+Competitor scenario (pivot to closing):
+Q1: "The Tucson has more features for less money. Why should I pick the CR-V?"
+Q2: "OK but the Tucson comes with a 10-year warranty. What do you have?"
+Q3: "Alright. So say I'm interested -- do you have one with the sunroof in blue I can look at today?"
+
+Financing scenario (pivot to trade-in value):
+Q1: "Why would I finance through you when my credit union is 1.9%?"
+Q2: "Does it matter if I already have the approval in hand or do you need to run credit first?"
+Q3: "Fine. Other thing -- I've got a 2021 Civic with 38K miles. What's something like that worth to you?"
+
+Product knowledge scenario (pivot to price):
+Q1: "What's the real difference between the EX and the EX-L? Is it worth the upgrade?"
+Q2: "Does the EX-L come with the better sound system or is that separate?"
+Q3: "OK so bottom line, what's the price gap between the two after rebates?"
+
+Reliability scenario (pivot to cost of ownership):
+Q1: "I keep hearing Honda transmissions have problems. Should I be worried?"
+Q2: "What about the CVT specifically -- those are the ones failing right?"
+Q3: "Alright. What does a bumper-to-bumper warranty run on these? I want to know my worst case."
+
+BAD Q3 EXAMPLES (do NOT generate):
+- Staying on the same topic a third time: "OK one more thing about the trade-in..." (should have pivoted)
+- Random unrelated pivot: "By the way do you guys do detailing?" (not a buying concern)
+- Soft filler: "That all sounds good, anything else I should know?" (no training value)
+- Over-summarizing: "OK so the EX-L has leather, better sound, and the sunroof. Now what about..." (feeding answers back)`;
 
 // Retained for potential future use in mid-exchange coaching (currently disabled)
 const _OBJECTION_COACHING_PROMPT = `You are a brief, direct sales manager coaching your rep mid-conversation. Give exactly 1-2 sentences of specific, actionable coaching.
@@ -1014,12 +1062,22 @@ export async function generateFollowUp(opts: FollowUpOptions): Promise<FollowUpR
 
   const moodContext = opts.personaMood ? `\nCustomer mood: ${opts.personaMood}` : '';
 
+  // stepIndex 0 = generating Q2 (same topic, deeper)
+  // stepIndex 1 = generating Q3 (natural pivot to new concern)
+  const systemPrompt = (opts.stepIndex ?? 0) === 0
+    ? FOLLOW_UP_Q2_PROMPT
+    : FOLLOW_UP_Q3_PROMPT;
+
+  const stepLabel = (opts.stepIndex ?? 0) === 0
+    ? 'Generate the customer\'s Q2 follow-up (same topic, deeper angle).'
+    : 'Generate the customer\'s Q3 follow-up (natural pivot to a new concern).';
+
   const userPrompt = `Original scenario: ${opts.scenario}${moodContext}
 
 Conversation so far:
 ${conversationText}
 
-Generate the customer's next message.`;
+${stepLabel}`;
 
   for (const model of [OPENAI_MODELS.primary, OPENAI_MODELS.fallback]) {
     try {
@@ -1032,7 +1090,7 @@ Generate the customer's next message.`;
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: FOLLOW_UP_SYSTEM_PROMPT },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
           ],
           temperature: 0.8,
