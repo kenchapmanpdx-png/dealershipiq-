@@ -5,6 +5,10 @@
 
 import { notFound } from 'next/navigation';
 import { serviceClient } from '@/lib/supabase/service';
+import { publicDisplayName } from '@/lib/privacy';
+
+// 2026-04-18 H-7: Public page — display names are masked via
+// publicDisplayName (see src/lib/privacy.ts).
 
 interface LeaderboardEntry {
   userId: string;
@@ -69,7 +73,9 @@ export default async function LeaderboardPage({
 
   (results ?? []).forEach((result: Record<string, unknown>) => {
     const userId = result.user_id as string;
-    const userName = ((result.users as Record<string, unknown>)?.full_name ?? 'Unknown') as string;
+    // H-7: mask PII — "Jane S." rather than "Jane Smith" on the public TV view.
+    const rawName = ((result.users as Record<string, unknown>)?.full_name ?? null) as string | null;
+    const userName = publicDisplayName(rawName);
     const avgScore =
       ((result.product_accuracy as number) +
         (result.tone_rapport as number) +

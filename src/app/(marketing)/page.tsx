@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Metadata } from 'next';
 import PhoneMockup from '@/components/marketing/PhoneMockup';
+import PhoneScrollAnimation from '@/components/marketing/PhoneScrollAnimation';
 import AnimatedCounter from '@/components/marketing/AnimatedCounter';
 import ScrollReveal from '@/components/marketing/ScrollReveal';
 import { StaggerReveal } from '@/components/marketing/ScrollReveal';
@@ -102,21 +103,41 @@ const steps = [
     num: '01',
     title: 'Enroll your team',
     description: 'Add salespeople by phone number. Takes 30 seconds per rep. No app to install.',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+      </svg>
+    ),
   },
   {
     num: '02',
     title: 'Training goes out daily',
     description: 'Each rep gets a scenario or question via text, tailored to their skill level.',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+      </svg>
+    ),
   },
   {
     num: '03',
     title: 'AI grades instantly',
     description: 'Responses scored on accuracy, technique, and professionalism. Feedback in seconds.',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+      </svg>
+    ),
   },
   {
     num: '04',
     title: 'Managers see everything',
     description: 'Live dashboard: scores, trends, skill gaps, and who needs coaching — across all stores.',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+      </svg>
+    ),
   },
 ];
 
@@ -191,8 +212,8 @@ export default function LandingPage() {
       />
 
       {/* ══════════ HERO ══════════ */}
-      <section className="relative py-20 md:py-28 lg:py-36 hero-gradient hero-grid overflow-hidden">
-        {/* Ambient orbs — independent drift for depth */}
+      <section className="relative py-24 md:py-32 lg:py-40 hero-gradient hero-grid overflow-hidden">
+        {/* Ambient orbs */}
         <div className="orb orb-blue w-[700px] h-[700px] -top-56 -left-56 animate-orb-drift-1" />
         <div className="orb orb-purple w-[600px] h-[600px] top-10 right-[-18%] animate-orb-drift-2" />
         <div className="orb orb-cyan w-[400px] h-[400px] bottom-[-8%] left-[20%] animate-orb-drift-3" />
@@ -212,21 +233,25 @@ export default function LandingPage() {
               </p>
 
               {/* Headline */}
-              <h1 className="text-hero font-bold tracking-[-0.03em] text-white leading-[1.06] text-balance mb-6">
-                Turn every rep into{' '}
+              <h1 className="text-hero font-bold tracking-[-0.03em] text-white leading-[1.06] mb-2">
+                Turn reps into
+                <br />
                 <span className="bg-gradient-to-r from-blue-400 via-blue-300 to-cyan-400 bg-clip-text text-transparent">
-                  a closer
+                  closers
                 </span>
               </h1>
+              <p className="text-[calc(var(--text-hero)*0.75)] font-bold tracking-[-0.02em] text-white/75 leading-[1.1] mb-4">
+                not order takers.
+              </p>
 
               {/* Tagline */}
               <p className="text-xl sm:text-2xl font-semibold text-white/70 tracking-wide mb-6">
-                Not another order taker.
+                Daily Micro-Learning delivered by text message.
               </p>
 
               {/* Subheadline */}
               <p className="text-body text-[var(--text-secondary)] max-w-lg mb-10 leading-relaxed">
-                Daily training delivered by text message. AI grades every response in seconds.
+                AI grades every response in seconds.
                 Managers see real-time results across every rooftop — no apps, no classroom time,
                 no disruption to the floor.
               </p>
@@ -235,10 +260,10 @@ export default function LandingPage() {
               <div className="flex flex-col sm:flex-row items-start gap-4">
                 <Link
                   href="/signup"
-                  className="inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-base px-8 py-4 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
+                  className="group inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-base px-8 py-4 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
                 >
                   Start Free Trial
-                  <svg className="w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="w-4 h-4 ml-2 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                   </svg>
                 </Link>
@@ -275,15 +300,17 @@ export default function LandingPage() {
 
             {/* Right — Phone mockup */}
             <div className="hero-stagger flex justify-center lg:justify-end">
-              <PhoneMockup />
+              <PhoneScrollAnimation>
+                <PhoneMockup />
+              </PhoneScrollAnimation>
             </div>
           </div>
         </div>
       </section>
 
       {/* ══════════ METRICS BAR ══════════ */}
-      <section className="border-y border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 md:py-20">
+      <section className="relative border-y border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-10 md:gap-12">
             {metrics.map((m) => (
               <AnimatedCounter key={m.label} value={m.value} label={m.label} />
@@ -293,7 +320,7 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ SOCIAL PROOF ══════════ */}
-      <section className="py-16 md:py-20 lg:py-24">
+      <section className="py-20 md:py-28">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
             <div className="text-center mb-16">
@@ -329,11 +356,14 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Section Divider ── */}
+      <div className="section-divider max-w-4xl mx-auto" />
+
       {/* ══════════ FEATURES — BENTO GRID ══════════ */}
-      <section id="features" className="py-16 md:py-20 lg:py-24 bg-[var(--bg-secondary)] scroll-mt-20">
+      <section id="features" className="py-20 md:py-28 bg-[var(--bg-secondary)] scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
-            <div className="max-w-2xl mb-16">
+            <div className="text-center max-w-2xl mx-auto mb-16">
               <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
                 Capabilities
               </p>
@@ -364,14 +394,14 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Section Divider ── */}
+      <div className="section-divider max-w-4xl mx-auto" />
+
       {/* ══════════ HOW IT WORKS ══════════ */}
-      <section
-        id="how-it-works"
-        className="py-16 md:py-20 lg:py-24"
-      >
+      <section id="how-it-works" className="py-20 md:py-28 scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
-            <div className="max-w-2xl mx-auto text-center mb-14">
+            <div className="max-w-2xl mx-auto text-center mb-16">
               <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
                 How It Works
               </p>
@@ -381,14 +411,20 @@ export default function LandingPage() {
             </div>
           </ScrollReveal>
 
-          <StaggerReveal className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-10" staggerMs={120}>
+          <StaggerReveal className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6" staggerMs={120}>
             {steps.map((s, i) => (
-              <div key={s.num} className="relative">
+              <div key={s.num} className="relative text-center lg:text-left">
                 {/* Connector line between steps on desktop */}
                 {i < steps.length - 1 && (
-                  <div className="hidden lg:block absolute top-8 left-[calc(100%+8px)] w-[calc(100%-16px)] h-px bg-gradient-to-r from-[var(--accent)]/20 to-transparent" />
+                  <div className="hidden lg:block absolute top-10 left-[calc(100%+4px)] w-[calc(100%-20px)] h-px bg-gradient-to-r from-[var(--accent)]/20 via-[var(--accent)]/10 to-transparent" />
                 )}
-                <p className="step-number mb-4">{s.num}</p>
+
+                {/* Icon circle */}
+                <div className="w-14 h-14 rounded-2xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] mb-5 mx-auto lg:mx-0">
+                  {s.icon}
+                </div>
+
+                <p className="step-number mb-2">{s.num}</p>
                 <h3 className="text-lg font-semibold text-white mb-2 tracking-tight">
                   {s.title}
                 </h3>
@@ -401,8 +437,11 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Section Divider ── */}
+      <div className="section-divider max-w-4xl mx-auto" />
+
       {/* ══════════ PRICING ══════════ */}
-      <section id="pricing" className="py-16 md:py-20 lg:py-24 bg-[var(--bg-secondary)] scroll-mt-20">
+      <section id="pricing" className="py-20 md:py-28 bg-[var(--bg-secondary)] scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
             <div className="max-w-2xl mx-auto text-center mb-16">
@@ -452,9 +491,12 @@ export default function LandingPage() {
 
                 <Link
                   href="/signup"
-                  className="block w-full text-center bg-[var(--accent)] text-white font-semibold py-4 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow text-base"
+                  className="group block w-full text-center bg-[var(--accent)] text-white font-semibold py-4 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow text-base"
                 >
                   Start Free Trial
+                  <svg className="w-4 h-4 ml-2 inline transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
                 </Link>
                 <p className="text-xs text-[var(--text-muted)] text-center mt-4">
                   30-day free trial · No credit card required · Cancel anytime
@@ -466,7 +508,7 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ FAQ ══════════ */}
-      <section className="py-16 md:py-20 lg:py-24">
+      <section className="py-20 md:py-28">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
             <div className="text-center mb-12">
@@ -485,8 +527,11 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Section Divider ── */}
+      <div className="section-divider max-w-4xl mx-auto" />
+
       {/* ══════════ FINAL CTA ══════════ */}
-      <section className="relative py-16 md:py-20 lg:py-24 overflow-hidden">
+      <section className="relative py-20 md:py-28 overflow-hidden">
         <div className="orb orb-blue w-[700px] h-[700px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-orb-drift-2" />
         <div className="orb orb-purple w-[450px] h-[450px] bottom-0 right-[10%] animate-orb-drift-3" />
 
@@ -500,10 +545,10 @@ export default function LandingPage() {
             </p>
             <Link
               href="/signup"
-              className="inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-lg px-10 py-5 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
+              className="group inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-lg px-10 py-5 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
             >
               Start Your Free Trial
-              <svg className="w-5 h-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-5 h-5 ml-2 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
               </svg>
             </Link>

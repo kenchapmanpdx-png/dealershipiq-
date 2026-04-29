@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
+import { requireJsonContentType } from '@/lib/api-helpers';
 import { sendSms } from '@/lib/sms';
 import {
   createConversationSession,
@@ -23,6 +24,12 @@ interface PushTrainingRequest {
   mode?: 'roleplay' | 'quiz' | 'objection';
   custom_question?: string;
 }
+
+// 2026-04-18 H-3: Cap batch size to prevent unbounded billable SMS + OpenAI
+// work from a single request. With a 50ms stagger, 200 users = ~10s of work
+// which comfortably fits the Vercel function budget. Beyond 200 the manager
+// should queue a daily training schedule instead.
+const MAX_USER_IDS = 200;
 
 interface PushResult {
   sent: number;
@@ -42,6 +49,10 @@ const DEFAULT_QUESTIONS: Record<string, string> = {
 
 export async function POST(request: NextRequest) {
   try {
+    // L-14: content-type gate
+    const ctErr = requireJsonContentType(request);
+    if (ctErr) return ctErr;
+
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -87,6 +98,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 2026-04-18 H-3: Reject over-cap batches rather than letting a manager at
+    // a large dealership fan out 1000+ SMS/OpenAI calls from one request.
+    if (body.user_ids.length > MAX_USER_IDS) {
+      return NextResponse.json(
+        {
+          error: `Push training is limited to ${MAX_USER_IDS} recipients per request. Received ${body.user_ids.length}.`,
+        },
+        { status: 400 }
+      );
+    }
+
     const mode = body.mode ?? 'roleplay';
     if (!['roleplay', 'quiz', 'objection'].includes(mode)) {
       return NextResponse.json(
@@ -104,21 +126,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // C-003: RLS-backed + explicit dealership_id filter for defense-in-depth.
-    // Ensures only users in the calling manager's dealership are returned.
+    // H21: Two-step tenant check. First verify every user_id has a membership
+    // in the caller's dealership; then fetch the user rows. Using a JOIN filter
+    // alone with `.in('id', ...)` can return user rows even if the inner-join
+    // filter behaves unexpectedly on certain PostgREST configurations.
+    const { data: validMemberships, error: memErr } = await supabase
+      .from('dealership_memberships')
+      .select('user_id')
+      .eq('dealership_id', dealershipId)
+      .in('user_id', body.user_ids);
+
+    if (memErr) {
+      console.error('Failed to validate user memberships:', memErr.message);
+      return NextResponse.json({ error: 'Failed to validate users' }, { status: 500 });
+    }
+
+    const allowedUserIds = new Set((validMemberships ?? []).map((m) => m.user_id as string));
+    if (allowedUserIds.size === 0) {
+      return NextResponse.json({ error: 'No eligible users in this dealership' }, { status: 400 });
+    }
+
     const { data: targetUsers, error: usersError } = await supabase
       .from('users')
-      .select(`
-        id,
-        phone,
-        full_name,
-        status,
-        dealership_memberships!inner (
-          dealership_id
-        )
-      `)
-      .in('id', body.user_ids)
-      .eq('dealership_memberships.dealership_id', dealershipId);
+      .select('id, phone, full_name, status')
+      .in('id', Array.from(allowedUserIds));
 
     if (usersError) {
       console.error('Failed to fetch users:', (usersError as Error).message ?? usersError);
@@ -190,9 +221,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     console.error('POST /api/push/training error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

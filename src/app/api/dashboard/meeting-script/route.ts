@@ -8,28 +8,21 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
+import { requireAuth } from '@/lib/auth-helpers';
+import { apiError, apiSuccess } from '@/lib/api-helpers';
 import type { MeetingScriptResponse, MeetingScriptFullScript } from '@/types/meeting-script';
 
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // C-007: Only trust app_metadata (server-set). user_metadata is client-editable.
-    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
-
-    if (!dealershipId) {
-      return NextResponse.json({ error: 'No dealership' }, { status: 403 });
-    }
+    const auth = await requireAuth(supabase, ['manager', 'owner']);
+    if (auth instanceof NextResponse) return auth;
+    const { dealershipId } = auth;
 
     // H-010: Subscription gating
     const subCheck = await checkSubscriptionAccess(dealershipId);
     if (!subCheck.allowed) {
-      return NextResponse.json({ error: 'Subscription required', reason: subCheck.reason }, { status: 403 });
+      return apiError(`Subscription required: ${subCheck.reason}`, 403);
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -47,7 +40,7 @@ export async function GET() {
         is_yesterday: false,
         script_date: todayScript.script_date as string,
       };
-      return NextResponse.json(response);
+      return apiSuccess(response);
     }
 
     // Fallback: yesterday's script
@@ -67,7 +60,7 @@ export async function GET() {
         is_yesterday: true,
         script_date: yesterdayScript.script_date as string,
       };
-      return NextResponse.json(response);
+      return apiSuccess(response);
     }
 
     // No script at all
@@ -76,12 +69,9 @@ export async function GET() {
       is_yesterday: false,
       script_date: todayStr,
     };
-    return NextResponse.json(response);
+    return apiSuccess(response);
   } catch (err) {
     console.error('Meeting script API error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Internal error' },
-      { status: 500 }
-    );
+    return apiError('Internal error', 500);
   }
 }

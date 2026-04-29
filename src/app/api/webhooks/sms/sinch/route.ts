@@ -25,7 +25,8 @@
 export const maxDuration = 300;
 
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySinchWebhookSignature } from '@/lib/sinch-auth';
+import { log } from '@/lib/logger';
+import { verifySinchWebhookSignature, verifySinchRestWebhookSecret } from '@/lib/sinch-auth';
 import { getAppUrl } from '@/lib/url';
 import { sendSms, detectKeyword, helpResponse, isValidE164 } from '@/lib/sms';
 import { gradeResponse, generateFollowUp, ERROR_SMS } from '@/lib/openai';
@@ -45,6 +46,7 @@ import {
   createConversationSession,
   getScenarioBankEntry,
 } from '@/lib/service-db';
+import { serviceClient } from '@/lib/supabase/service';
 import {
   parseScheduleKeyword,
   updateEmployeeSchedule,
@@ -143,7 +145,7 @@ export async function POST(request: NextRequest) {
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    console.error('[webhook] JSON parse failed');
+    log.warn('sinch.webhook.json_parse_failed', { body_len: rawBody.length });
     return NextResponse.json({ status: 'ok' });
   }
 
@@ -165,20 +167,65 @@ export async function POST(request: NextRequest) {
   if (hasHmacHeaders) {
     // Conversation API path: verify HMAC signature
     if (!verifySinchWebhookSignature(rawBody, signature, nonce, timestamp)) {
-      console.error('[SECURITY] Sinch webhook HMAC verification failed');
+      log.error('sinch.webhook.hmac_verify_failed', {});
       return NextResponse.json({ status: 'ok' });
     }
   } else if (isRestApi) {
-    // REST API (XMS) path: validate `to` matches our configured phone number
+    // REST API (XMS) path: shared-secret auth + `to`-number sanity check.
+    //
+    // 2026-04-28 SECURITY (re-applies S2 + M-18, regressed since 2026-04-18):
+    // Sinch REST/XMS webhooks carry no HMAC headers, so a `to`-number check
+    // alone is NOT authentication (the toll-free number is public). Anyone
+    // who discovered the webhook URL could forge inbound SMS payloads.
+    // We require SINCH_XMS_CALLBACK_TOKEN in one of:
+    //   - X-Sinch-Webhook-Token: <secret>      (canonical)
+    //   - Authorization: Bearer <secret>       (alt)
+    //   - ?secret=<value> query string         (fallback)
+    //
+    // FAIL-CLOSED on all auth failures. Always return 200 to Sinch — non-429
+    // 4xx responses permanently kill callbacks.
+    const restAuth = verifySinchRestWebhookSecret({
+      sinchTokenHeader: request.headers.get('x-sinch-webhook-token'),
+      authorizationHeader: request.headers.get('authorization'),
+      url: request.url,
+    });
+    if (!restAuth.ok) {
+      // M-18 (2026-04-18): split env-missing from token-missing/mismatch so
+      // Sentry surfaces missing config as a loud ERROR (page-worthy) rather
+      // than burying it in the same warn used for spoof attempts.
+      if (restAuth.reason === 'env_missing') {
+        log.error('sinch.webhook.env_missing', { env: 'SINCH_XMS_CALLBACK_TOKEN' });
+      } else if (restAuth.reason === 'no_credential') {
+        log.warn('sinch.webhook.rest_token_missing', {});
+      } else {
+        log.warn('sinch.webhook.rest_token_mismatch', {});
+      }
+      return NextResponse.json({ status: 'ok' });
+    }
+
+    // Belt-and-braces: also validate `to` matches our configured number.
+    // M-18 (2026-04-18): split the "env missing" path from the "mismatch" path
+    // so Sentry surfaces missing config as a loud error (page-worthy) rather
+    // than silently returning 200 under the same mismatch log, which looks
+    // like a spoof attempt. Missing SINCH_PHONE_NUMBER means NO REST webhook
+    // can authenticate — it is a deploy/config regression, not an attack.
+    const rawEnv = process.env.SINCH_PHONE_NUMBER;
+    if (!rawEnv) {
+      log.error('sinch.webhook.env_missing', { env: 'SINCH_PHONE_NUMBER' });
+      return NextResponse.json({ status: 'ok' });
+    }
     const toNumber = parsed.to as string | undefined;
-    const ourNumber = (process.env.SINCH_PHONE_NUMBER ?? '').replace(/^\+/, '');
+    const ourNumber = rawEnv.replace(/^\+/, '');
     if (!toNumber || toNumber.replace(/^\+/, '') !== ourNumber) {
-      console.error('[SECURITY] REST API webhook `to` does not match SINCH_PHONE_NUMBER');
+      log.warn('sinch.webhook.to_mismatch', {
+        to_last4: (toNumber ?? '').slice(-4),
+        expected_last4: ourNumber.slice(-4),
+      });
       return NextResponse.json({ status: 'ok' });
     }
   } else {
     // Unknown format with no HMAC headers — reject
-    console.error('[SECURITY] Webhook has no HMAC headers and is not a known REST API format');
+    log.warn('sinch.webhook.unknown_format', { type: (parsed.type as string) ?? 'unknown' });
     return NextResponse.json({ status: 'ok' });
   }
 
@@ -191,13 +238,18 @@ export async function POST(request: NextRequest) {
   if (parsed.type === 'mo_text' || parsed.type === 'mo_binary') {
     console.log('[webhook] REST API inbound detected');
     const fromPhone = parsed.from as string;
-    const phone = fromPhone.startsWith('+') ? fromPhone : `+${fromPhone}`;
+    // M-14 (2026-04-18): normalize formatted phones (e.g. "(503) 555-0123",
+    // "503-555-0123", "+1 503 555 0123") into E.164. Sinch REST API has been
+    // observed delivering "from" values in carrier-local formats that fail
+    // the naive `+` prefix check below and get dropped silently.
+    const { tryNormalizePhone } = await import('@/lib/phone');
+    const phone = tryNormalizePhone(fromPhone) ?? '';
     const messageId = parsed.id as string;
     const body = (parsed.body as string) ?? '';
 
     // Validate E.164 phone format
-    if (!isValidE164(phone)) {
-      console.warn(`[SECURITY] Invalid E.164 phone in REST API webhook: ***${(phone ?? '').slice(-4)}`);
+    if (!phone || !isValidE164(phone)) {
+      console.warn(`[SECURITY] Invalid E.164 phone in REST API webhook: ***${(fromPhone ?? '').slice(-4)}`);
       return NextResponse.json({ status: 'ok' });
     }
 
@@ -344,7 +396,6 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     // Idempotency check (C-002 audit fix: database-backed, inside advisory lock)
     // DB UNIQUE constraint on sinch_message_id is the ultimate safety net,
     // but checking first avoids wasted processing.
-    const { serviceClient } = await import('@/lib/supabase/service');
     const { data: existing } = await serviceClient
       .from('sms_transcript_log')
       .select('id')
@@ -702,7 +753,7 @@ async function handleNowKeyword(
     // Push scenario to all eligible reps now
     const { getEligibleUsers, getOutboundCountToday } = await import('@/lib/service-db');
     // Look up dealership timezone for cap check + eligible user filtering
-    const { serviceClient: scTz } = await import('@/lib/supabase/service');
+    const scTz = serviceClient;
     const { data: dlrData } = await scTz.from('dealerships').select('timezone').eq('id', user.dealershipId).single();
     const dlrTimezone = (dlrData?.timezone as string) || 'America/New_York';
     const eligible = await getEligibleUsers(user.dealershipId, dlrTimezone);
@@ -825,11 +876,24 @@ async function handleChallengeKeyword(
 
       // Notify challenged
       const challengerFirst = user.fullName ? user.fullName.split(/\s+/)[0] : 'Someone';
-      const { serviceClient: sc } = await import('@/lib/supabase/service');
+      const sc = serviceClient;
       const { data: targetUser } = await sc.from('users').select('phone').eq('id', target.id).single();
       if (targetUser?.phone) {
         const notifyMsg = `${challengerFirst} challenged you! Reply ACCEPT to compete or PASS to skip.`;
-        await sendSms(targetUser.phone as string, notifyMsg);
+        try {
+          // M-3: proactive ping -- must respect recipient quiet hours.
+          await sendSms(targetUser.phone as string, notifyMsg, undefined, { proactive: true });
+        } catch (err) {
+          const { SmsQuietHoursError } = await import('@/lib/sms');
+          if (err instanceof SmsQuietHoursError) {
+            log.info('sinch.peer_challenge.quiet_hours_deferred', {
+              challenger_user_id: user.id,
+              target_user_id: target.id,
+            });
+            return;
+          }
+          throw err;
+        }
         await insertTranscriptLog({
           userId: target.id,
           dealershipId: user.dealershipId,
@@ -903,12 +967,25 @@ async function handleDisambiguationReply(
     });
 
     // Notify challenged
-    const { serviceClient: sc } = await import('@/lib/supabase/service');
+    const sc = serviceClient;
     const { data: targetUser } = await sc.from('users').select('phone').eq('id', selected.user_id).single();
     if (targetUser?.phone) {
       const challengerFirst = user.fullName ? user.fullName.split(/\s+/)[0] : 'Someone';
       const notifyMsg = `${challengerFirst} challenged you! Reply ACCEPT to compete or PASS to skip.`;
-      await sendSms(targetUser.phone as string, notifyMsg);
+      try {
+        // M-3: proactive ping -- must respect recipient quiet hours.
+        await sendSms(targetUser.phone as string, notifyMsg, undefined, { proactive: true });
+      } catch (err) {
+        const { SmsQuietHoursError } = await import('@/lib/sms');
+        if (err instanceof SmsQuietHoursError) {
+          log.info('sinch.peer_challenge.quiet_hours_deferred', {
+            challenger_user_id: user.id,
+            target_user_id: selected.user_id,
+          });
+          return true;
+        }
+        throw err;
+      }
       await insertTranscriptLog({
         userId: selected.user_id,
         dealershipId: user.dealershipId,
@@ -974,7 +1051,7 @@ async function handleAcceptKeyword(
     });
 
     // Update peer challenge with session IDs
-    const { serviceClient: sc } = await import('@/lib/supabase/service');
+    const sc = serviceClient;
     await sc.from('peer_challenges').update({
       challenger_session_id: challengerSession.id,
       challenged_session_id: challengedSession.id,
@@ -1046,7 +1123,7 @@ async function handlePassKeyword(
     });
 
     // Notify challenger
-    const { serviceClient: sc } = await import('@/lib/supabase/service');
+    const sc = serviceClient;
     const { data: challengerUser } = await sc.from('users').select('phone, full_name').eq('id', pendingChallenge.challengerId).single();
     const { data: declinedUser } = await sc.from('users').select('full_name').eq('id', user.id).single();
     const declinedFirst = declinedUser?.full_name ? (declinedUser.full_name as string).split(/\s+/)[0] : 'Your opponent';
@@ -1285,7 +1362,7 @@ async function handleFinalExchange(
         const chainComplete = await recordChainStepResult(session.scenarioChainId, stepResult);
         if (chainComplete) {
           // Load chain context for completion SMS
-          const { serviceClient: sc } = await import('@/lib/supabase/service');
+          const sc = serviceClient;
           const { data: chainRow } = await sc
             .from('scenario_chains')
             .select('chain_context, step_results')
@@ -1319,7 +1396,7 @@ async function handleFinalExchange(
       // Note: session.challengeId here is used for daily challenges AND peer challenges.
       // For peer challenges, we look up whether this session is linked to a peer_challenge row.
       try {
-        const { serviceClient: sc } = await import('@/lib/supabase/service');
+        const sc = serviceClient;
         const { data: peerChallenge } = await sc
           .from('peer_challenges')
           .select('id, challenger_id, challenged_id, status')
@@ -1509,7 +1586,7 @@ async function handlePendingConsent(
     const { registerOptOut } = await import('@/lib/service-db');
     await registerOptOut(phone, user.dealershipId);
     // X-007: Cancel active chains/challenges on consent decline
-    await cancelUserActiveState(user.id);
+    await cancelUserActiveState(user.id, user.dealershipId);
 
     const declineMsg = 'You have opted out of DealershipIQ training. No messages will be sent. Reply START if you change your mind.';
     await sendSms(phone, declineMsg);
@@ -1543,7 +1620,7 @@ async function handleNaturalOptOut(
   await registerOptOut(phone, user.dealershipId);
 
   // X-007: Cancel active chains and pending peer challenges on opt-out
-  await cancelUserActiveState(user.id);
+  await cancelUserActiveState(user.id, user.dealershipId);
 
   const confirmMsg = 'You have been unsubscribed from DealershipIQ training messages. Reply START to re-subscribe.';
   await sendSms(phone, confirmMsg);
@@ -1556,29 +1633,56 @@ async function handleNaturalOptOut(
   });
 }
 
-// X-007: Helper to cancel chains + peer challenges when user opts out
-async function cancelUserActiveState(userId: string) {
-  const { serviceClient: sc } = await import('@/lib/supabase/service');
+// X-007: Helper to cancel chains + peer challenges when user opts out.
+// M-4 (2026-04-18): dealership_id added so cancellation is tenant-scoped.
+// Also: capture per-table failures and emit a single structured error log
+// instead of swallowing the first thrown error.
+async function cancelUserActiveState(userId: string, dealershipId: string) {
+  const sc = serviceClient;
+  const failures: Array<{ table: string; op: string; error: string }> = [];
+
   try {
-    await sc
+    const { error } = await sc
       .from('scenario_chains')
       .update({ status: 'canceled', completed_at: new Date().toISOString() })
       .eq('user_id', userId)
+      .eq('dealership_id', dealershipId)
       .eq('status', 'active');
+    if (error) failures.push({ table: 'scenario_chains', op: 'cancel', error: error.message });
+  } catch (err) {
+    failures.push({ table: 'scenario_chains', op: 'cancel', error: (err as Error).message ?? String(err) });
+  }
 
-    await sc
+  try {
+    const { error } = await sc
       .from('peer_challenges')
       .update({ status: 'canceled' })
       .eq('challenged_id', userId)
+      .eq('dealership_id', dealershipId)
       .in('status', ['pending', 'active']);
+    if (error) failures.push({ table: 'peer_challenges', op: 'cancel_challenged', error: error.message });
+  } catch (err) {
+    failures.push({ table: 'peer_challenges', op: 'cancel_challenged', error: (err as Error).message ?? String(err) });
+  }
 
-    await sc
+  try {
+    const { error } = await sc
       .from('peer_challenges')
       .update({ status: 'canceled' })
       .eq('challenger_id', userId)
+      .eq('dealership_id', dealershipId)
       .in('status', ['pending', 'active']);
+    if (error) failures.push({ table: 'peer_challenges', op: 'cancel_challenger', error: error.message });
   } catch (err) {
-    console.error('[opt-out] Failed to cancel active state:', (err as Error).message ?? err);
+    failures.push({ table: 'peer_challenges', op: 'cancel_challenger', error: (err as Error).message ?? String(err) });
+  }
+
+  if (failures.length > 0) {
+    log.error('sinch.opt_out.cancel_failed', {
+      user_id: userId,
+      dealership_id: dealershipId,
+      failures,
+    });
   }
 }
 
@@ -1588,7 +1692,7 @@ async function handleDetailsKeyword(
   phone: string
 ) {
   try {
-    const { serviceClient: sc } = await import('@/lib/supabase/service');
+    const sc = serviceClient;
     const { data: membership } = await sc
       .from('dealership_memberships')
       .select('role')

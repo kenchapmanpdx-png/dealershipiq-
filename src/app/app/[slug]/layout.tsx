@@ -1,6 +1,10 @@
 // PWA Layout — Employee-facing app (Ask IQ + Coach Mode)
-// Auth: phone number + last 4 digits → session cookie
+// Auth: phone number + last 4 digits → HttpOnly server-side session cookie
 // Phase 4.5A: Coach Mode MVP
+// 2026-04-18 C-2: Cookie is now HttpOnly and cannot be read from JS. All
+//   session state is loaded via /api/app/verify; logout goes through
+//   /api/app/logout. Removed every `document.cookie = diq_session=...`
+//   assignment because the browser can no longer set or clear the cookie.
 
 'use client';
 
@@ -9,6 +13,15 @@ import { usePathname, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { SessionContext } from '@/lib/pwa/session-context';
 import type { RepSession } from '@/lib/pwa/session-context';
+
+async function clearSessionCookie(): Promise<void> {
+  // C-2: Cookie is HttpOnly — only the server can clear it.
+  try {
+    await fetch('/api/app/logout', { method: 'POST' });
+  } catch {
+    // best-effort
+  }
+}
 
 export default function PWALayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<RepSession | null>(null);
@@ -21,43 +34,39 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
   const slug = params.slug as string;
 
   useEffect(() => {
-    // C5: Server-side token verification — don't trust client-side atob decode
-    const existing = document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('diq_session='));
-    if (!existing) {
-      setLoading(false);
-      return;
-    }
-    const token = existing.split('=')[1];
+    // C-2: Always ask the server whether we have a valid session — the cookie
+    // is HttpOnly so there's nothing to decode client-side. /api/app/verify
+    // reads the cookie, verifies the HMAC, checks users.status, and returns
+    // the decoded payload (or clears the cookie and 401s).
+    let cancelled = false;
     fetch('/api/app/verify')
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) {
-          // Server rejected token — clear cookie
-          document.cookie = 'diq_session=; path=/; max-age=0';
-          setLoading(false);
+          if (!cancelled) setLoading(false);
           return;
         }
         return res.json();
       })
       .then((data) => {
+        if (cancelled) return;
         if (data?.userId && data?.dealershipId) {
           setSession({
             userId: data.userId,
             dealershipId: data.dealershipId,
             firstName: data.firstName ?? 'there',
             language: data.language ?? 'en',
-            token,
+            authenticatedSlug: slug,
           });
         }
         setLoading(false);
       })
       .catch(() => {
-        // Network error — clear cookie and force re-auth
-        document.cookie = 'diq_session=; path=/; max-age=0';
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       });
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
 
   const handleAuth = useCallback(async () => {
     setAuthError('');
@@ -78,21 +87,15 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // C-2: The response body now returns the decoded session directly.
+      // The bearer token itself lives only in the HttpOnly cookie set by the
+      // server — client JS never sees it.
       const data = await res.json();
-      const token = data.token;
-
-      // Set cookie (24h expiry)
-      document.cookie = `diq_session=${token}; path=/; max-age=86400; SameSite=Lax`;
-
-      // B-001 fix: Token is base64-encoded JSON, not colon-delimited
-      const decoded = JSON.parse(atob(token));
-      // M-018: Store slug from auth for later validation
       setSession({
-        userId: decoded.userId,
-        dealershipId: decoded.dealershipId,
-        firstName: decoded.firstName ?? 'there',
-        language: decoded.language ?? 'en',
-        token,
+        userId: data.userId,
+        dealershipId: data.dealershipId,
+        firstName: data.firstName ?? 'there',
+        language: data.language ?? 'en',
         authenticatedSlug: slug,
       });
     } catch {
@@ -104,8 +107,7 @@ export default function PWALayout({ children }: { children: React.ReactNode }) {
   // NOTE: Must be before conditional returns to satisfy React hooks rules-of-hooks
   useEffect(() => {
     if (session?.authenticatedSlug && session.authenticatedSlug !== slug) {
-      document.cookie = 'diq_session=; path=/; max-age=0';
-      setSession(null);
+      clearSessionCookie().finally(() => setSession(null));
     }
   }, [slug, session]);
 

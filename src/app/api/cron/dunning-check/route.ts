@@ -2,7 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { getPastDueDealerships, updateDealershipBilling } from '@/lib/service-db';
-import { getDunningStage, shouldCancel, shouldSuspend } from '@/lib/billing/dunning';
+import { getDunningStage, shouldCancel, shouldSuspend, processDunning } from '@/lib/billing/dunning';
+import { log } from '@/lib/logger';
 
 export const maxDuration = 60;
 
@@ -44,12 +45,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // H17: also process dunning emails here (moved from red-flag-check).
+    // processDunning is now idempotent via billing_events UNIQUE constraint (C10).
+    let dunningResults: { processed: number; emails_sent: number; errors: number } = {
+      processed: 0, emails_sent: 0, errors: 0,
+    };
+    try {
+      dunningResults = await processDunning();
+    } catch (err) {
+      log.error('dunning_check.processDunning_failed', { err: (err as Error).message });
+    }
+
     return NextResponse.json({
       success: true,
       processedCount: dealerships.length,
+      dunning: dunningResults,
     });
   } catch (error) {
-    console.error('Dunning check error:', (error as Error).message ?? error);
+    log.error('dunning_check.fatal', { err: (error as Error).message ?? String(error) });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

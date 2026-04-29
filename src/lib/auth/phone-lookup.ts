@@ -3,6 +3,7 @@
 // Identified by MSISDN lookup against users table + dealership_memberships.
 
 import { serviceClient } from '@/lib/supabase/service';
+import { normalizePhone } from '@/lib/phone';
 
 interface PhoneLookupResult {
   userId: string;
@@ -70,30 +71,12 @@ export async function lookupByPhone(phone: string): Promise<PhoneLookupResult | 
 }
 
 /**
- * Normalize phone to E.164 format (+1XXXXXXXXXX for North American numbers).
- * Strips non-digit characters, adds country code if missing.
+ * Normalize phone to E.164 format.
+ * DELEGATES to the canonical implementation in `@/lib/phone`.
+ * Re-exported so existing imports continue to work.
+ * New code should import directly from `@/lib/phone`.
  */
-export function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-
-  // Already has country code
-  if (digits.length === 11 && digits.startsWith('1')) {
-    return `+${digits}`;
-  }
-
-  // 10-digit North American number
-  if (digits.length === 10) {
-    return `+1${digits}`;
-  }
-
-  // Already in E.164 with +
-  if (phone.startsWith('+') && digits.length >= 10) {
-    return `+${digits}`;
-  }
-
-  // Return as-is with + prefix — let Sinch validate
-  return phone.startsWith('+') ? phone : `+${digits}`;
-}
+export { normalizePhone };
 
 /**
  * Resolve which dealership an inbound SMS should route to.

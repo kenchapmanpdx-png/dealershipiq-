@@ -72,17 +72,22 @@ export async function getDealershipsByTimezoneHour(hour: number) {
 // Exception to Rule 2: initial phone lookup to determine dealership_id
 export async function getUserByPhone(phone: string) {
   // Cross-tenant lookup — approved exception (phone → dealership resolution).
+  // M-8 (2026-04-18): order memberships deterministically by created_at so
+  // the "first membership" fallback is stable across requests. Without this
+  // order clause, Postgres can return rows in any order and a user assigned
+  // to two dealerships sees their active dealership flip randomly.
   const { data, error } = await serviceClient
     .from('users')
     .select(`
       id, phone, full_name, language, status,
       last_active_dealership_id,
       dealership_memberships (
-        dealership_id, role,
+        dealership_id, role, created_at,
         dealerships ( id, name, timezone )
       )
     `)
     .eq('phone', phone)
+    .order('created_at', { foreignTable: 'dealership_memberships', ascending: true })
     .single();
 
   if (error && error.code !== 'PGRST116') throw error;
@@ -92,6 +97,7 @@ export async function getUserByPhone(phone: string) {
   const memberships = (data.dealership_memberships ?? []) as unknown as Array<{
     dealership_id: string;
     role: string;
+    created_at: string;
     dealerships: { id: string; name: string; timezone: string } | null;
   }>;
   const activeMembership = memberships.find(
@@ -222,12 +228,18 @@ export async function insertTranscriptLog(entry: {
   if (error) throw error;
 }
 
-export async function checkOptOut(phone: string, dealershipId: string) {
+// M-13 (2026-04-18): TCPA opt-out must be GLOBAL across any dealership
+// that shares the carrier short/long code. The prior per-dealership scoping
+// could let a user who said STOP at dealership A still receive proactive
+// pings from dealership B via the same toll-free / short code, which is
+// a federal TCPA violation ($500-$1500 per message).
+// The dealershipId param is retained for caller compatibility but ignored.
+export async function checkOptOut(phone: string, _dealershipId?: string) {
   const { data, error } = await serviceClient
     .from('sms_opt_outs')
     .select('id')
     .eq('phone', phone)
-    .eq('dealership_id', dealershipId)
+    .limit(1)
     .maybeSingle();
 
   if (error) throw error;

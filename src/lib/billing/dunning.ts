@@ -3,6 +3,7 @@
 // Uses Resend for transactional email.
 
 import { serviceClient } from '@/lib/supabase/service';
+import { log } from '@/lib/logger';
 import { getAppUrl } from '@/lib/url';
 import { daysSinceUTC } from './subscription';
 import type { DunningStage, DunningTemplate } from '@/types/billing';
@@ -122,15 +123,24 @@ export async function sendDunningEmail(params: {
 }): Promise<boolean> {
   const resendKey = process.env.RESEND_API_KEY;
   if (!resendKey) {
-    console.error('RESEND_API_KEY not set — skipping dunning email');
+    log.error('billing.dunning.env_missing', { env: 'RESEND_API_KEY', stage: params.stage });
     return false;
   }
 
   const template = DUNNING_TEMPLATES[params.stage];
-  const body = template.body
-    .replace(/\{\{manager_name\}\}/g, params.managerName)
-    .replace(/\{\{dealership_name\}\}/g, params.dealershipName)
-    .replace(/\{\{portal_url\}\}/g, params.portalUrl);
+
+  // S8: one-pass tokenized substitution. Chained .replace() calls allowed a
+  // nested-placeholder injection: a dealership name containing `{{portal_url}}`
+  // would get further-substituted on a later pass. Single-pass replace visits
+  // each placeholder exactly once; attacker-controlled values cannot reach a
+  // later substitution.
+  const vars: Record<string, string> = {
+    manager_name: params.managerName,
+    dealership_name: params.dealershipName,
+    portal_url: params.portalUrl,
+  };
+  const body = template.body.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => vars[key] ?? '');
+  const subject = template.subject.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => vars[key] ?? '');
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -142,19 +152,27 @@ export async function sendDunningEmail(params: {
       body: JSON.stringify({
         from: 'DealershipIQ <billing@dealershipiq.com>',
         to: params.to,
-        subject: template.subject,
+        subject,
         text: body,
       }),
     });
 
     if (!res.ok) {
-      console.error('Resend dunning email failed:', res.status, await res.text());
+      const errBody = await res.text();
+      log.error('billing.dunning.resend_failed', {
+        stage: params.stage,
+        status: res.status,
+        body: errBody.slice(0, 500),
+      });
       return false;
     }
 
     return true;
   } catch (err) {
-    console.error('Dunning email error:', (err as Error).message ?? err);
+    log.error('billing.dunning.resend_exception', {
+      stage: params.stage,
+      error: (err as Error).message ?? String(err),
+    });
     return false;
   }
 }
@@ -232,6 +250,28 @@ export async function processDunning(): Promise<{
     const portalUrl = `${appUrl}/dashboard/billing`;
 
     try {
+      // C10: Record the billing_event FIRST. If the row insert succeeds we know
+      // (via UNIQUE constraint on stripe_event_id) that no prior cron run sent
+      // this stage. If the email send then fails, the event still exists — the
+      // next cron run sees it and skips. This swaps "email-twice on retry" for
+      // "email-zero-times on a hard send failure", which a support ticket can
+      // recover from; email-twice is harder to recover from.
+      const eventKey = `dunning_${targetStage}_${dealership.id}_${new Date().toISOString().split('T')[0]}`;
+      const { error: insertErr } = await serviceClient.from('billing_events').insert({
+        stripe_event_id: eventKey,
+        event_type: `dunning_${targetStage}`,
+        dealership_id: dealership.id as string,
+        payload: { days_past_due: days, manager_email: managerEmail },
+      });
+
+      if (insertErr) {
+        // 23505 = UNIQUE → another cron run already claimed this; skip silently
+        if ((insertErr as { code?: string }).code === '23505') {
+          continue;
+        }
+        throw insertErr;
+      }
+
       const sent = await sendDunningEmail({
         to: managerEmail,
         managerName,
@@ -240,15 +280,22 @@ export async function processDunning(): Promise<{
         stage: targetStage,
       });
 
-      // X-019: Only record billing_event on successful send.
-      // If email fails, no event → next cron run retries this stage.
       if (sent) {
         emailsSent++;
-        await serviceClient.from('billing_events').insert({
-          stripe_event_id: `dunning_${targetStage}_${dealership.id}_${new Date().toISOString().split('T')[0]}`,
-          event_type: `dunning_${targetStage}`,
+        log.info('billing.dunning.email_sent', {
           dealership_id: dealership.id as string,
-          payload: { days_past_due: days, manager_email: managerEmail },
+          stage: targetStage,
+          days_past_due: days,
+        });
+      } else {
+        // Event is recorded but email provider failed. We do NOT delete the event --
+        // that would reopen the duplicate-send race. Support handles manually.
+        // M-9 (2026-04-18): loud structured log for support dashboard alerting.
+        log.error('billing.dunning.event_recorded_but_email_failed', {
+          dealership_id: dealership.id as string,
+          stage: targetStage,
+          days_past_due: days,
+          action_required: 'manual_follow_up',
         });
       }
 
@@ -260,7 +307,11 @@ export async function processDunning(): Promise<{
           .eq('id', dealership.id as string);
       }
     } catch (err) {
-      console.error(`Dunning error for ${dealership.id}:`, (err as Error).message ?? err);
+      log.error('billing.dunning.stage_failed', {
+        dealership_id: dealership.id as string,
+        stage: targetStage,
+        error: (err as Error).message ?? String(err),
+      });
       errors++;
     }
   }

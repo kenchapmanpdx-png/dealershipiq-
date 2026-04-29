@@ -10,13 +10,19 @@
 // 5. Redirect to Stripe Checkout with client_reference_id = dealership_id
 
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { serviceClient } from '@/lib/supabase/service';
 import { createCheckoutSession } from '@/lib/stripe';
 import { checkSignupLimit } from '@/lib/rate-limit';
+import { requireJsonContentType } from '@/lib/api-helpers';
 import type { CheckoutRequest } from '@/types/billing';
 
 export async function POST(request: NextRequest) {
   try {
+    // L-14: content-type gate
+    const ctErr = requireJsonContentType(request);
+    if (ctErr) return ctErr;
+
     // C2-FIX: Rate limit public signup endpoint (5/hour per IP)
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       ?? request.headers.get('x-real-ip')
@@ -172,23 +178,67 @@ export async function POST(request: NextRequest) {
         throw new Error('Failed to create checkout session');
       }
 
+      // L13: parse + validate Stripe checkout hostname (paired with S9 fix).
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' || parsed.hostname !== 'checkout.stripe.com') {
+          throw new Error(`Unexpected checkout host: ${parsed.hostname}`);
+        }
+      } catch (e) {
+        console.error('[CHECKOUT] Invalid Stripe checkout URL:', (e as Error).message);
+        throw new Error('Invalid checkout URL from Stripe');
+      }
+
       return NextResponse.json({ checkoutUrl: url });
     } catch (operationError) {
-      // F12-H-001: Rollback all created rows — memberships, feature_flags, user, dealership, auth
-      // Each delete wrapped independently so one failure doesn't orphan remaining records.
+      // H8: Reverse-FK rollback order. If ANY step fails, record it and surface
+      // a clear error to the caller so they can open a support ticket rather
+      // than silently ending up in a half-created state they can't self-recover.
       console.error('Signup flow failed, rolling back:', (operationError as Error).message ?? operationError);
-      try { await serviceClient.from('feature_flags').delete().eq('dealership_id', dealershipId); } catch (e) { console.error('Rollback feature_flags failed:', (e as Error).message); }
-      try { await serviceClient.from('dealership_memberships').delete().eq('dealership_id', dealershipId); } catch (e) { console.error('Rollback memberships failed:', (e as Error).message); }
-      try { await serviceClient.from('users').delete().eq('id', userId); } catch (e) { console.error('Rollback users failed:', (e as Error).message); }
-      try { await serviceClient.auth.admin.deleteUser(userId); } catch (e) { console.error('Rollback auth user failed:', (e as Error).message); }
-      try { await serviceClient.from('dealerships').delete().eq('id', dealershipId); } catch (e) { console.error('Rollback dealerships failed:', (e as Error).message); }
+      const rollbackErrors: string[] = [];
+      // 2026-04-18 L-8 (TODO): Each `step` runs exactly once. Transient
+      // Supabase network errors during rollback leave orphaned rows that an
+      // operator must manually clean up via the incident ID log. Upgrade
+      // path: wrap fn() in a 2-attempt exponential backoff (100ms, 500ms)
+      // before giving up. Low priority — orphaned rows are harmless
+      // (FK-clean, subscription_status='incomplete') and the incident log
+      // already surfaces them for manual cleanup.
+      const step = async (label: string, fn: () => PromiseLike<unknown>) => {
+        try { await fn(); } catch (e) { rollbackErrors.push(`${label}: ${(e as Error).message}`); }
+      };
+      // Order matters: delete children before parents so FK constraints don't block.
+      await step('feature_flags', async () => { await serviceClient.from('feature_flags').delete().eq('dealership_id', dealershipId); });
+      await step('dealership_memberships', async () => { await serviceClient.from('dealership_memberships').delete().eq('dealership_id', dealershipId); });
+      await step('users', async () => { await serviceClient.from('users').delete().eq('id', userId); });
+      await step('auth_user', async () => { await serviceClient.auth.admin.deleteUser(userId); });
+      await step('dealerships', async () => { await serviceClient.from('dealerships').delete().eq('id', dealershipId); });
+
+      if (rollbackErrors.length > 0) {
+        // S14: log full details under an opaque incident ID; return only the ID
+        // to the client so raw DB error messages can't be mined from the
+        // public response surface.
+        const incidentId = crypto.randomUUID();
+        console.error('[CHECKOUT_ROLLBACK_INCOMPLETE]', {
+          incident_id: incidentId,
+          dealership_id: dealershipId,
+          user_id: userId,
+          errors: rollbackErrors,
+        });
+        return NextResponse.json(
+          { error: 'Signup failed. Please contact support with reference: ' + incidentId },
+          { status: 500 }
+        );
+      }
       return NextResponse.json(
         { error: 'Signup failed. Please try again.' },
         { status: 500 }
       );
     }
-  } catch (error) {
-    console.error('Checkout error:', (error as Error).message ?? error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch (err) {
+    console.error('POST /api/billing/checkout error:', (err as Error).message ?? err);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

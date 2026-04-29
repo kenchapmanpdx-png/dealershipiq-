@@ -209,13 +209,16 @@ export function buildChainCompletionSMS(
  * Increment work_days_without_response for a chain. Expire if >= 3.
  */
 export async function incrementMissedDay(chainId: string): Promise<boolean> {
+  // M6: only increment chains that are still 'active'. Prevents races where
+  // another worker completed/expired the chain between our SELECT and UPDATE.
   const { data } = await serviceClient
     .from('scenario_chains')
-    .select('work_days_without_response')
+    .select('work_days_without_response, status')
     .eq('id', chainId)
     .single();
 
   if (!data) return false;
+  if (data.status !== 'active') return false;
 
   const missed = (data.work_days_without_response as number) + 1;
 
@@ -223,14 +226,16 @@ export async function incrementMissedDay(chainId: string): Promise<boolean> {
     await serviceClient
       .from('scenario_chains')
       .update({ status: 'expired', work_days_without_response: missed })
-      .eq('id', chainId);
-    return true; // expired
+      .eq('id', chainId)
+      .eq('status', 'active'); // re-check inside UPDATE
+    return true;
   }
 
   await serviceClient
     .from('scenario_chains')
     .update({ work_days_without_response: missed })
-    .eq('id', chainId);
+    .eq('id', chainId)
+    .eq('status', 'active');
   return false;
 }
 

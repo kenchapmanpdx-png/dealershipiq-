@@ -33,9 +33,9 @@ export default function CoachPage() {
   const loadSessions = useCallback(async () => {
     if (!session) return;
     try {
-      const res = await fetch('/api/coach/session', {
-        headers: { 'x-diq-session': session.token },
-      });
+      // 2026-04-18 C-2: HttpOnly cookie is auto-sent by the browser on
+      // same-origin fetches; no explicit header required.
+      const res = await fetch('/api/coach/session');
       const data = await res.json();
       const list = data.data?.sessions ?? [];
       setSessions(list);
@@ -65,7 +65,6 @@ export default function CoachPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-diq-session': session.token,
         },
         body: JSON.stringify({ door }),
       });
@@ -93,9 +92,7 @@ export default function CoachPage() {
 
     // Load session messages
     try {
-      const res = await fetch(`/api/coach/session?session_id=${sessionId}`, {
-        headers: { 'x-diq-session': session.token },
-      });
+      const res = await fetch(`/api/coach/session?session_id=${sessionId}`);
       const data = await res.json();
 
       // Find the session in our list to get its messages
@@ -110,7 +107,6 @@ export default function CoachPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-diq-session': session.token,
         },
         body: JSON.stringify({ session_id: sessionId }),
       });
@@ -190,7 +186,6 @@ export default function CoachPage() {
           <ChatInterface
             sessionId={activeSessionId}
             initialMessages={activeMessages}
-            token={session.token}
             onSessionClosed={handleSessionClosed}
           />
         </div>

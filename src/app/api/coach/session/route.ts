@@ -14,6 +14,7 @@ import { buildRepContext } from '@/lib/coach/context';
 import { buildCoachSystemPrompt, DOOR_OPENING_MESSAGES, CLASSIFY_EXCHANGE_TOOL } from '@/lib/coach/prompts';
 import { compactMessages, buildMessageHistory, isMaxExchanges } from '@/lib/coach/compaction';
 import { verifyAppToken } from '@/lib/app-auth';
+import { log } from '@/lib/logger';
 import type {
   CoachDoor,
   CoachMessage,
@@ -56,9 +57,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // M-021: In-memory rate limit — resets on cold start, not shared across Vercel instances.
-    // TODO: Replace with Upstash Redis for production. Acceptable for MVP.
-    const rateLimited = await checkRateLimit(userId);
+    // 2026-04-18 M-5: Rate limit is now per (user, dealership) pair, not global per-user.
+    const rateLimited = await checkRateLimit(userId, dealershipId);
     if (rateLimited) {
       return NextResponse.json(
         { data: null, error: 'Too many messages. Try again in a few minutes.' },
@@ -97,8 +97,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: null, error: 'Coach Mode not available' }, { status: 403 });
     }
 
-    // F9-M-001: Rate limit GET requests (120/hr — 2x POST rate, since reads are lighter)
-    const rateLimited = await checkRateLimit(userId);
+    // F9-M-001 / 2026-04-18 M-5: Rate limit GET requests per (user, dealership).
+    const rateLimited = await checkRateLimit(userId, dealershipId);
     if (rateLimited) {
       return NextResponse.json(
         { data: null, error: 'Too many requests. Try again in a few minutes.' },
@@ -109,11 +109,13 @@ export async function GET(request: NextRequest) {
     // Close stale sessions lazily (F9-H-001: scoped by dealership)
     await closeStaleSessionsForUser(userId, dealershipId);
 
-    // Fetch recent sessions (last 10)
+    // C5: Scope by dealership_id so a multi-dealership user doesn't see
+    // sessions from their other memberships mixed into the history.
     const { data: sessions } = await serviceClient
       .from('coach_sessions')
       .select('id, session_topic, sentiment_trend, door_selected, messages, created_at, ended_at')
       .eq('user_id', userId)
+      .eq('dealership_id', dealershipId)
       .order('created_at', { ascending: false })
       .limit(10);
 
@@ -569,23 +571,22 @@ async function classifySessionTopic(
   }
 }
 
-async function closeStaleSessionsForUser(userId: string, dealershipId?: string): Promise<void> {
+async function closeStaleSessionsForUser(userId: string, dealershipId: string): Promise<void> {
+  // C6: dealershipId is REQUIRED. A previous optional signature let callers
+  // accidentally run an unscoped close across every dealership the user belongs to.
+  if (!dealershipId) {
+    throw new Error('closeStaleSessionsForUser: dealershipId is required');
+  }
   try {
     const staleThreshold = new Date();
     staleThreshold.setHours(staleThreshold.getHours() - SESSION_STALE_HOURS);
 
-    // F9-H-001: Scope by dealership_id to prevent cross-tenant session access
-    let query = serviceClient
+    const { data: staleSessions } = await serviceClient
       .from('coach_sessions')
       .select('id, messages')
       .eq('user_id', userId)
+      .eq('dealership_id', dealershipId)
       .is('ended_at', null);
-
-    if (dealershipId) {
-      query = query.eq('dealership_id', dealershipId);
-    }
-
-    const { data: staleSessions } = await query;
 
     for (const session of staleSessions ?? []) {
       const msgs = (session.messages as CoachMessage[]) ?? [];
@@ -604,12 +605,13 @@ async function closeStaleSessionsForUser(userId: string, dealershipId?: string):
 async function authenticateRep(
   request: NextRequest
 ): Promise<{ userId: string; dealershipId: string } | null> {
-  // Phone-based auth: HMAC-signed session token in cookie or header
-  const token =
-    request.cookies.get('diq_session')?.value ??
-    request.headers.get('x-diq-session') ??
-    null;
-
+  // 2026-04-18 C-2: HttpOnly cookie is the only source of truth — the x-diq-session
+  // header fallback has been removed because:
+  //   1) HttpOnly means client JS can't read the cookie to forward it as a header
+  //      anyway (so the fallback was already effectively dead for browsers).
+  //   2) Accepting a header-sourced token opens a session-fixation / header-
+  //      injection path where a stolen token can bypass cookie protections.
+  const token = request.cookies.get('diq_session')?.value ?? null;
   if (!token) return null;
 
   // Verify HMAC signature + check expiry
@@ -618,19 +620,59 @@ async function authenticateRep(
 
   const { userId, dealershipId } = verified;
 
-  // D2-M-001: Verify user still exists and belongs to dealership via memberships.
-  // users table has no dealership_id column — memberships table is the join.
+  // 2026-04-18 H-16: Re-verify the user is still active AND still a member of
+  // the dealership the token was issued for. This is the server-side revocation
+  // path — drop a row in users.status or memberships and access dies on the
+  // next request without waiting for the 7-day token to expire.
+  //
+  // Fails CLOSED on any DB error: a signed token by itself must not be enough
+  // to access the coach API — we need a successful membership/status check too.
   try {
-    const { data: membership } = await serviceClient
+    const { data: user, error: userErr } = await serviceClient
+      .from('users')
+      .select('status')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (userErr) {
+      log.error('coach.auth.user_lookup_failed', { user_id: userId, error: userErr.message });
+      return null;
+    }
+    if (!user || user.status === 'inactive' || user.status === 'deactivated') {
+      log.info('coach.auth.inactive_user_rejected', { user_id: userId });
+      return null;
+    }
+
+    const { data: membership, error: memErr } = await serviceClient
       .from('dealership_memberships')
       .select('user_id')
       .eq('user_id', userId)
       .eq('dealership_id', dealershipId)
-      .single();
+      .maybeSingle();
 
-    if (!membership) return null;
+    if (memErr) {
+      log.error('coach.auth.membership_lookup_failed', {
+        user_id: userId,
+        dealership_id: dealershipId,
+        error: memErr.message,
+      });
+      return null;
+    }
+    if (!membership) {
+      log.info('coach.auth.membership_revoked', {
+        user_id: userId,
+        dealership_id: dealershipId,
+      });
+      return null;
+    }
+
     return { userId, dealershipId };
-  } catch {
+  } catch (err) {
+    log.error('coach.auth.db_error', {
+      user_id: userId,
+      dealership_id: dealershipId,
+      error: (err as Error).message ?? String(err),
+    });
     return null;
   }
 }
@@ -638,21 +680,41 @@ async function authenticateRep(
 // --- Rate limiting (DB-backed via coach_sessions) ---
 // M-003: Replaced in-memory Map with DB query. Counts user messages across
 // all coach sessions in the last hour. Shared across Vercel instances, survives cold starts.
-
-async function checkRateLimit(userId: string): Promise<boolean> {
+//
+// 2026-04-18 M-5: Rate limit is now scoped by (user_id, dealership_id). A user
+// who belongs to multiple dealerships gets MAX_MESSAGES_PER_HOUR per
+// dealership, not a single global pool. This matches the isolation model for
+// sessions and prevents one dealership's traffic from starving another's.
+//
+// 2026-04-18 H-12: Fails CLOSED in production on DB error. Previously failed
+// open (returned false → allowed request). Opening the rate limiter on DB
+// error is safer for uptime but opens an abuse window where an attacker who
+// can intermittently degrade the DB gets unlimited LLM calls. In prod we'd
+// rather 500 than allow unbounded spend; in dev we keep fail-open so local
+// DB flakiness doesn't block work.
+async function checkRateLimit(
+  userId: string,
+  dealershipId: string
+): Promise<boolean> {
+  const failClosed = process.env.NODE_ENV === 'production';
   try {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
     const { data: sessions, error } = await serviceClient
       .from('coach_sessions')
-      .select('messages')
+      .select('id, messages')
       .eq('user_id', userId)
+      .eq('dealership_id', dealershipId)
       .gte('created_at', oneHourAgo);
 
     if (error) {
-      // Fail-open: allow request if DB check fails (non-TCPA, best-effort rate limit)
-      console.error('[Coach] Rate limit DB check failed:', error.message);
-      return false;
+      log.error('coach.rate_limit.db_error', {
+        user_id: userId,
+        dealership_id: dealershipId,
+        error: error.message,
+        fail_mode: failClosed ? 'closed' : 'open',
+      });
+      return failClosed; // true = treat as rate-limited (deny)
     }
 
     let userMessageCount = 0;
@@ -663,7 +725,12 @@ async function checkRateLimit(userId: string): Promise<boolean> {
 
     return userMessageCount >= MAX_MESSAGES_PER_HOUR;
   } catch (err) {
-    console.error('[Coach] Rate limit check error:', (err as Error).message ?? err);
-    return false; // Fail-open
+    log.error('coach.rate_limit.exception', {
+      user_id: userId,
+      dealership_id: dealershipId,
+      error: (err as Error).message ?? String(err),
+      fail_mode: failClosed ? 'closed' : 'open',
+    });
+    return failClosed;
   }
 }

@@ -6,6 +6,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { serviceClient } from '@/lib/supabase/service';
+import { publicDisplayName } from '@/lib/privacy';
+
+// 2026-04-18 H-7: This endpoint is unauthenticated (public TV-display
+// leaderboard). We no longer return `full_name` to the internet — only the
+// privacy-preserving `publicDisplayName` form ("First L."). Identity is
+// still discoverable to authenticated users via the dashboard.
 
 interface LeaderboardEntry {
   user_id: string;
@@ -78,7 +84,8 @@ export async function GET(
       `)
       .eq('dealership_memberships.dealership_id', dealership.id)
       .eq('status', 'active')
-      .gte('training_results.created_at', ninetyDaysAgo);
+      .gte('training_results.created_at', ninetyDaysAgo)
+      .limit(500);
 
     if (usersError) {
       console.error('Failed to fetch users:', (usersError as Error).message ?? usersError);
@@ -108,7 +115,8 @@ export async function GET(
         return {
           user: {
             user_id: user.id as string,
-            user_name: user.full_name as string,
+            // H-7: mask PII on public endpoint — "First L." not "First Last".
+            user_name: publicDisplayName(user.full_name as string),
             total_sessions: results.length,
             average_score: Math.round(avgScore * 10) / 10,
             last_training_at: lastTraining,

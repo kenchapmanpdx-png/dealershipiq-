@@ -7,7 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { sendSms } from '@/lib/sms';
-import { processDunning } from '@/lib/billing/dunning';
+// H17: processDunning moved to dedicated `dunning-check` cron to avoid
+// duplicate-email races when this cron and the dedicated one overlap.
 import {
   getRedFlagUsers,
   getManagersForDealership,
@@ -21,7 +22,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Run for all dealerships (not timezone-gated — this runs every 6h globally)
+  // Run for all dealerships (not timezone-gated — this runs every 6h globally).
+  //
+  // 2026-04-18 L-13 (TODO): At >~500 dealerships this serial loop will hit
+  // `maxDuration = 60s`. Upgrade path: paginate by `id > cursor` and fan
+  // each page out to an internal worker queue (or a second cron pass)
+  // instead of processing everything inline. Also filter to
+  // `subscription_status IN ('active','trialing')` so dunning'd or canceled
+  // dealerships don't eat the per-run budget.
   const { data: dealerships, error } = await (
     await import('@/lib/supabase/service')
   ).serviceClient
@@ -82,7 +90,11 @@ export async function GET(request: NextRequest) {
                   details: {},
                 });
               }
-            } catch {
+            } catch (err) {
+              console.warn(
+                `Failed to insert red_flag_event for user ${flaggedUser.id}, dealership ${dealership.id}:`,
+                (err as Error).message ?? err
+              );
               // Non-critical — continue with SMS alerts
             }
           }
@@ -172,18 +184,14 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Phase 5: Process dunning emails for past_due dealerships
-  let dunningResults = { processed: 0, emails_sent: 0, errors: 0 };
-  try {
-    dunningResults = await processDunning();
-  } catch (err) {
-    console.error('Dunning processing error:', (err as Error).message ?? err);
-  }
+  // H17: Dunning is now processed exclusively by /api/cron/dunning-check.
+  // This cron is read-only for red flags; removing dunning here eliminates
+  // the duplicate-email race when both crons ran on overlapping data.
 
   return NextResponse.json({
     dealerships: dealerships?.length ?? 0,
     results,
-    dunning: dunningResults,
+    dunning_note: 'handled_by_dunning_check_cron',
   });
 }
 

@@ -9,14 +9,15 @@ import type { CoachMessage } from '@/types/coach';
 interface ChatInterfaceProps {
   sessionId: string;
   initialMessages: CoachMessage[];
-  token: string;
   onSessionClosed?: () => void;
 }
 
+// 2026-04-18 C-2: Removed `token` prop. The HttpOnly session cookie is sent
+// automatically by the browser on same-origin fetches; no explicit header is
+// required or useful (client JS can't read the cookie anyway).
 export default function ChatInterface({
   sessionId,
   initialMessages,
-  token,
   onSessionClosed,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<CoachMessage[]>(initialMessages);
@@ -49,7 +50,6 @@ export default function ChatInterface({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-diq-session': token,
         },
         body: JSON.stringify({ session_id: sessionId, message: text }),
       });

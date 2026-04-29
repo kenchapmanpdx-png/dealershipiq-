@@ -60,7 +60,11 @@ export async function GET(request: NextRequest) {
       );
 
       if (localHour !== 17) continue;
-    } catch {
+    } catch (err) {
+      console.warn(
+        `Failed to determine local hour for dealership ${dealershipId}:`,
+        (err as Error).message ?? err
+      );
       continue;
     }
 

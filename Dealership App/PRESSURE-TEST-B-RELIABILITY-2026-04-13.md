@@ -1,0 +1,161 @@
+# Pressure Test B — Functionality, Reliability & Code Quality
+
+Date: 2026-04-13
+Scope: DealershipIQ V2 (Next.js 14 App Router / Vercel / Supabase / Sinch / OpenAI GPT-4o)
+Repo: `C:\Users\kenny\OneDrive\Apps\DealerIQ\Github\dealershipiq`
+Files audited: 130 .ts/.tsx + 10 SQL migrations + config (vercel.json, next.config.mjs, package.json, .env.example)
+Focus: Sinch webhook, OpenAI grader, Stripe webhook, 7 crons, billing, middleware, state machine, rate limiter, SMS utility, migrations.
+Out of scope: Part 1 (Security & Attack Surface). A few security-adjacent findings are flagged briefly for that audit.
+
+---
+
+## 🔴 CRITICAL — Will break in production
+
+| # | File:Line | Category | Issue | Failure Scenario | Fix |
+|---|-----------|----------|-------|-----------------|-----|
+| C1 | `src/lib/rate-limit.ts:36–52, 77–143` | Graceful degradation / DoS | Rate limiter fails OPEN when Upstash not configured. `@upstash/redis` is NOT in `package.json`, so `require()` throws and `PASS_THROUGH` is returned from AI grading, SMS, and signup limiters. Production has zero rate protection. | Single actor floods `/api/ask`, `/api/users/import`, or triggers enough inbound SMS to burn OpenAI quota + Sinch spend + Supabase writes. No circuit breaker either (line 149 returns "closed" when Redis missing). | Install `@upstash/redis` + `@upstash/ratelimit`. Set env vars. Fail CLOSED in production: if `NODE_ENV==='production'` and `!redis`, return `{success:false}` with 503. Add deployment-time health check that aborts build if env missing. |
+| C2 | `src/app/api/webhooks/sms/sinch/route.ts:~1150–1257` (grading→completed block) | State management / Data loss | `assertTransition('grading','completed')` runs before `insertTrainingResult` + `updateSessionStatus` atomically. If any write fails mid-sequence, session is marked `completed` but result row is missing. | User never receives feedback SMS, training result permanently lost, session locked in completed so user can't retry. | Wrap all writes in a single try block and only transition AFTER both writes succeed. Better: use a Supabase RPC that does `INSERT training_result + UPDATE session` in one transaction. |
+| C3 | `src/app/api/webhooks/sms/sinch/route.ts:~1135+` (grading start) and no recovery job | Graceful degradation / Orphaned state | `updateSessionStatus('grading')` is written BEFORE `gradeResponse()` starts. If OpenAI hangs past Vercel 300s `maxDuration`, session stays `grading` forever. No cron resets stuck sessions. Next inbound SMS for that user hits the `status==='grading'` bail-out (line ~543). | User sends response → OpenAI hangs → function killed → user is permanently stuck. Every subsequent message gets "Still processing…" reply. | Add `grading_started_at` timestamp. Add cron (every 5 min) that resets sessions with `grading_started_at < NOW() - INTERVAL '3 minutes'` back to `active`. Also wrap `gradeResponse()` in `Promise.race` with 10s timeout. |
+| C4 | `src/lib/openai.ts:~1170–1197` (fetch to OpenAI) | Network resilience | No `AbortController` / timeout on `fetch` to OpenAI. Tail latency 20–30s routinely. | Vercel serverless function hits 300s wall clock; Sinch webhook retries fire because caller sees timeout; duplicate grades, duplicate SMS. | Add `AbortController` with 10s timeout on every OpenAI `fetch`. Same pattern for Sinch outbound. Use `Promise.race([fetch, setTimeout(reject, 10_000)])`. |
+| C5 | `src/lib/openai.ts:~1035–1050` (template fallback) | Graceful degradation / Silent corruption | When primary + fallback model both fail, pipeline silently returns `getTemplateFallback()` (3/5 on every dimension, generic copy). No alert, no Sentry capture, no session flag. | OpenAI global outage ⇒ every user for hours gets identical template grades. Training value is zero but dashboard still shows "graded". Ops does not notice. | On `model==='template-fallback'`: `Sentry.captureMessage('AI_TEMPLATE_FALLBACK', 'error')`, increment a counter, and consider setting session.status to `error` so it's visible in dashboard. |
+| C6 | `src/app/api/webhooks/stripe/route.ts:338–376` (`claimEvent`) | Idempotency / Data loss | Three-way customer lookup; if all fail, event is inserted with `dealership_id=null` and handlers early-return. Webhook ACKs 200. Stripe never retries. | Customer's invoice.payment_succeeded arrives before subscription.created is fully processed, or metadata drifts. Supabase never records payment. Dealership stays `past_due`, access blocked, churn. | If `dealershipId` unresolved: THROW so `try { await handleEvent }` catches and returns 500 → Stripe retries for 72h. Log with `stripe_event_id` + `stripe_customer_id` for reconciliation. |
+| C7 | `src/app/api/cron/daily-training/route.ts:99–344` (and `red-flag-check`, `orphaned-sessions`) | Cron timeouts | `maxDuration=60`. Sequential loop over all dealerships with SMS + OpenAI + Supabase calls. No time-budget guard. | Vercel force-kills mid-loop at 60s. Dealership N is half-processed (SMS sent, transcript log not written). Next run's 60-minute dedup window misses it → duplicate SMS next hour, or skipped user never sees training. | Track `elapsed = Date.now() - startTime`. Before each iteration, if `elapsed + 10_000 > 55_000` → break loop, log "partial: X/Y" with remaining dealership IDs. Return 200 with `{partial:true}` so the next run picks up. Sort dealerships by last-success-at ascending so laggards catch up. |
+| C8 | `src/app/api/cron/daily-training/route.ts:121–132` (dedup) | Idempotency | Dedup check is `sms_transcript_log` WHERE `created_at > now-60m`. Log row is written AFTER SMS send. If cron crashes between send and log, retry sends again. | Same user gets the same training question twice. User unsubscribes. | Insert a `pending_send` row BEFORE `sendSms()` with deterministic `id = session.id + ':outbound'` and UNIQUE constraint. On retry, the UNIQUE blocks the duplicate. Update row to `sent` with `sinch_message_id` after success. |
+| C9 | `src/app/api/cron/sync-optouts/route.ts:66–82` | Data consistency | Multi-membership user upserts run in a loop with no transaction. Partial failure leaves the user half-synced; the table accumulates stale rows. | Sinch shows user opted out → local DB partially reflects it → SMS still sent to 1 of 3 dealership contexts → TCPA/complaint risk. | Wrap per-user writes in a Supabase RPC / plpgsql function so all membership updates for a phone succeed or none do. |
+| C10 | `src/lib/billing/dunning.ts:184–269` | Idempotency / Duplicate notifications | Dunning email is sent BEFORE `billing_events.insert()`. If Resend returns 200 then Supabase insert fails, Vercel retries the cron and email is sent again. | Manager receives the same Day-3 dunning email 2-3 times. Signals ops incompetence; accelerates churn. | Flip order: insert `billing_events` row first (UNIQUE constraint on `stripe_event_id = dunning_{stage}_{dealership}_{date}`). Only send email if insert returns no conflict. On email-send failure after insert, log and let next cron run re-evaluate. |
+| C11 | `src/lib/state-machine.ts:18–25` — `assertTransition` defined but mostly unused | State management | State machine exists but most `updateSessionStatus` call-sites skip `assertTransition`. Invalid transitions (`pending → completed`, `grading → pending`, `completed → active`) succeed silently. | Race conditions and partial failures leave sessions in impossible states. Dashboard math (completion rates, gaps) becomes garbage. | Refactor `service-db.updateSessionStatus` so it REQUIRES `expectedFromStatus` and uses `.eq('status', expectedFromStatus)` in the SQL update. If `rowCount===0`, throw. Remove all direct status updates that bypass this helper. |
+| C12 | `src/middleware.ts:126–130` + `src/lib/quiet-hours.ts:21–24` | Error handling / Silent defaults | `JSON.parse(authCookie.value)` wrapped in try/catch that returns null (user silently logged out). `parseInt(hourStr \|\| '0')` → `NaN \|\| 0`, which puts every timezone calc into "midnight" path. | (a) Users sporadically logged out with no error; support can't reproduce. (b) Quiet-hours incorrectly considers the time to be 0 → training sent in the middle of the night if `Intl` fails for an unusual TZ. | (a) Log parse failures with cookie length + first byte for forensics. (b) `const h = parseInt(hourStr,10); if (Number.isNaN(h)) throw new Error('quiet-hours: Intl failed for tz='+tz)`. Fail loud. |
+
+---
+
+## 🟠 HIGH — User-facing failure
+
+| # | File:Line | Category | Issue | Failure Scenario | Fix |
+|---|-----------|----------|-------|-----------------|-----|
+| H1 | `webhooks/sms/sinch/route.ts:~335–365, 556–566` | Concurrency / Lock leak | `tryLockUser(phone)` acquired inside try block, unlocked only in finally. Early returns for HELP / STOP / START / SCHEDULE / CONSENT happen BEFORE the lock is taken OR after (inconsistent). If ordering is wrong, parallel inbound from same user race. | Two rapid SMS from same user → duplicate opt-out, duplicate session creation, or duplicate grading attempt. | Acquire lock as the first action after parsing inbound; unlock in an outer `finally`. Every early-return path must live inside that try/finally. Add integration test: fire two concurrent webhooks with same `messageId` and same `from`. |
+| H2 | `webhooks/sms/sinch/route.ts:543–548` | Idempotency / UX dead-end | When session.status==='grading', inbound is logged as transcript then function returns without response. Sinch may retry (no 200 in certain error paths), and user's intended reply is discarded. | User sends follow-up clarification mid-grading. It is absorbed and never processed. User thinks app is ignoring them. | Queue inbound in a `pending_responses` table keyed by session. After grading completes, drain queue and process next. OR: send a user-visible SMS: "One sec — still scoring your last answer. Reply `NEXT` to continue." |
+| H3 | `webhooks/sms/sinch/route.ts:728–745` | Concurrency / Race | NOW keyword (manager push) reads pending scenario, then `markScenarioPushedNow`. No transaction; two managers tapping NOW within ~100ms both push the scenario to the whole team. | Team gets duplicate training messages. Managers look incompetent. | `SELECT ... FOR UPDATE` on the pending scenario row OR unique partial index `(dealership_id) WHERE status='pending_push'` so second insert fails. |
+| H4 | `webhooks/stripe/route.ts:233, 254, 133, 162, 212` | Observability | All five handlers `return` silently when `findDealershipByStripeCustomer` returns null. No structured log with `stripe_customer_id`, `event.id`, `event.type`. | 3am page: customer complains access blocked after payment. Logs contain only "customer lookup failed"; no way to correlate without Stripe dashboard + grep. | Structured JSON log on every early return: `{level:'error', event:'stripe_webhook_dropped', stripe_event_id, stripe_customer_id, stripe_event_type, dealership_lookup:'failed'}`. |
+| H5 | Stripe ↔ Supabase drift: `billing/dunning.ts`, `billing/subscription.ts:72–81`, `webhooks/stripe/route.ts:185–210` | Data consistency | Supabase mirrors `subscription_status` + `past_due_since`; if a Stripe webhook is dropped or delayed, state diverges until the next webhook. No reconciliation job. | Customer pays → webhook delayed 30 min → they hit app and see "past due" banner → support ticket. | Add `/api/cron/subscription-drift-check` every 12h that pulls active subs from Stripe and reconciles. Only trust Stripe on conflict. |
+| H6 | `lib/billing/subscription.ts:36, 42` and switch on status | Business logic / Unknown enum | Stripe statuses like `incomplete`, `incomplete_expired`, `unpaid`, `paused` fall through to default `canceled`, blocking access. | New customer with `incomplete` status after first payment pending is blocked immediately. Funnel drop-off. | Whitelist known statuses. On unknown, log and treat as `allowed=true, reason='unknown_allowing'` (safer default for unblocked users; ops notified). |
+| H7 | `webhooks/stripe/route.ts:126, 155, 180, 227` hardcoded strings | Type safety / Drift risk | Status strings scattered across 4+ sites. Any future rename (e.g., switch to branded enum) will miss a site. | Future refactor silently breaks a path. | Extract `SUBSCRIPTION_STATUS` const object or enum. Lint via `no-restricted-syntax` to forbid raw strings outside that module. |
+| H8 | `billing/checkout/route.ts:176–189` | Recovery / Rollback | Rollback on signup failure deletes in wrong order; if a concurrent request creates another membership before rollback finishes, `dealerships.delete` fails with FK and leaves an orphaned auth user + dealership row. | User can't sign up (row exists), can't sign in (auth deleted), can't self-recover. | Delete in strict reverse-FK order: `feature_flags → dealership_memberships → users → auth user → dealerships`. Wrap in single Supabase RPC if possible. |
+| H9 | `users/import/route.ts:254–429` | Data consistency / Orphaned rows | User-create then membership-insert is not transactional. If membership fails, the user row persists with no dealership membership and is skipped on retry ("already exists"). | Dealership onboarding report says "50 imported" but N are unreachable. Manager has no visibility. | Either: (a) use Supabase RPC that inserts both in a transaction; (b) on membership failure, explicitly DELETE the user row and report as failed; (c) use `upsert` with `onConflict:'user_id,dealership_id'` for membership. |
+| H10 | `lib/quiet-hours.ts:64–89` | Time / DST | `getLocalYesterdayString` constructs UTC date from local parts then subtracts 24h. Around DST transitions this can return wrong day. | Daily digest/results SMS lands on wrong calendar day twice per year. Manager sees yesterday's data as "today". | Use `Intl.DateTimeFormat` once to get `YYYY-MM-DD` for the local tz; subtract one day using a calendar-aware helper (or pre-compute in Postgres with `AT TIME ZONE`). |
+| H11 | `lib/sms.ts:49–72` vs `lib/auth/phone-lookup.ts:76–96` | Data consistency | Two separate phone-normalization implementations. Opt-outs stored by one path; inbound lookup uses the other. | User texts STOP → stored as `+16175551212`. Inbound later comes as `16175551212`. Opt-out check misses. SMS is sent to opted-out user. TCPA risk. | Extract single `normalizePhoneE164(raw)` util used by every site. Unit test the matrix (10-digit, leading 1, leading +, spaces, hyphens, parens, country-prefix, non-US). |
+| H12 | `openai.ts:~920–960` (weighted score regex replace) | Output parsing fragility | Feedback is expected to start with `NN/20` pattern; v7 weighted scoring rewrites that prefix. GPT occasionally returns `17 /20`, `17out of 20`, or no prefix → replacement silently no-ops; user sees GPT's raw score instead of the weighted score. | Leaderboard and dashboard math use one score; user sees a different one. Support confusion. | Replace brittle regex with a parser that accepts several patterns; if no match, prepend `NN/20` rather than silently no-op. Add vitest cases for each malformed format seen in logs. |
+| H13 | `openai.ts:~930–960` | Observability | `JSON.parse(content)` fails silently (returns null), loop tries fallback. Error log doesn't include model name, content preview, or scenario id. | Can't tell whether the primary model, the fallback, or both failed and why. No way to improve prompt. | Log `{ model, scenario_id, content_preview: content.slice(0,200), error: err.message }` on every parse failure. |
+| H14 | `openai.ts:~780–820` | Retry storms | Immediate retry from primary → fallback model with no jitter/backoff. If 429 from shared rate limit, both calls fail in tight sequence. | Quota burn; both attempts 429; grading fails; template fallback → see C5. | `await sleep(150 * (1 + Math.random()))` between attempts. Distinguish 429/5xx (retry) vs 4xx (don't retry). |
+| H15 | `lib/coach/compaction.ts:29–43` | Graceful degradation | If `summarizeMessages` fails (OpenAI timeout), compaction returns fallback ~250-char string and drops mid-conversation context. | Coach loses thread continuity; advice becomes generic. User feels the product doesn't remember them. | Retry summarize with timeout. If all retries fail, keep more recent messages (last 8 instead of 4) rather than degrading silently. Flag session as "degraded context" for the next turn. |
+| H16 | `cron/daily-digest/route.ts:106–146` (legacy path) | Idempotency | Code comment itself admits "I-002 RISK: No idempotency protection" for legacy digest path. | Cron retry → manager gets morning digest 2x. | Check-and-insert into a `meeting_scripts` row keyed by `(dealership_id, script_date, format)` BEFORE sending. Legacy path should be retired or gated by feature flag with a forced sunset date. |
+| H17 | `cron/red-flag-check/route.ts:178–185` | Concurrency / Coupling | Calls `processDunning()` inside red-flag cron, and `dunning-check` cron runs separately at 4pm. They can race over the same past-due records. | Duplicate dunning emails. | Remove `processDunning()` call from `red-flag-check`. Make `dunning-check` the single path. |
+| H18 | All webhook/cron paths using `console.error('…', err)` | Observability | Error logs are string-only, no structured fields (user_id, dealership_id, request_id, session_id, stripe_event_id). | 3am triage: impossible to correlate a user's complaint to the relevant log line without full-text grep across a day of logs. | Add `src/lib/logger.ts` that emits JSON lines. Tag every error with `{level, ts, route, dealership_id, user_id?, session_id?, event_id?, msg, err}`. Sentry `captureException` with the same tags. |
+| H19 | `cron/sync-optouts/route.ts:28–42` | Data loss / Pagination | Sinch Consents API call does not handle pagination. Code assumes single page is the full list. | Dealerships with >N opted-out phones: phones beyond page 1 are treated as RE-SUBSCRIBED on each sync, then re-messaged → complaint surge → carrier filtering. | Iterate with `next_page_token` until exhausted. Unit test with a mock that returns multiple pages. |
+| H20 | `webhooks/sms/sinch/route.ts:1288, 1432` (`await sleep(1000)`) | Performance / Cost | `setTimeout(1000)` inside the webhook handler burns Vercel compute on the hot path; 100 concurrent users = 100s of billable idle. Also increases risk of breaching 15s handler budget. | Under a spike, some webhooks exceed duration, Sinch retries, idempotency saves us but user-visible SMS ordering drifts. | Emit a background job (Supabase Edge Function / Inngest / Vercel Queue) to send the follow-up SMS after 1s. Webhook should return < 2s. |
+| H21 | `api/push/training/route.ts:~108–120` (SECURITY-ADJACENT — flag for Part 1) | Multi-tenant boundary | `users` table query uses `.in('id', body.user_ids)` with `dealership_memberships.dealership_id` as a JOIN filter, not an EXISTS clause. Depending on RLS definition, the `users` row may be returned regardless of membership. | Operator from Dealership A passes IDs from Dealership B → receives name/phone/status. Data-integrity consequence also: push_training writes to the wrong tenant. | Rewrite as explicit two-step: (1) validate every `user_id` belongs to `dealershipId` via `dealership_memberships` EXISTS; (2) only then fetch those users. Also revisit RLS on `users`. |
+
+---
+
+## 🟡 MEDIUM — Recoverable / tech debt
+
+| # | File:Line | Category | Issue | Failure Scenario | Fix |
+|---|-----------|----------|-------|-----------------|-----|
+| M1 | `webhooks/sms/sinch/route.ts:556–562` | Error handling | Catch block returns 200 for every error, regardless of cause. Sinch never retries transient failures. | Transient Supabase outage drops 50 inbound replies; they're never reprocessed. | Throw `RetryableError` vs `TerminalError`. Return 5xx on retryable (Supabase timeout, OpenAI 5xx). Return 200 on terminal (user not found). |
+| M2 | `openai.ts:208–225` (prompt injection via scenario bank) — flag for Part 1 | Input validation | `techniqueTag`, `eliteDialogue`, `failSignals` injected via `escapeXml`. If the scenario_bank table is ever populated with user-controlled content, XML-escaped-but-still-meaningful tokens can flip grading. | A poisoned scenario row overrides scoring. | Constrain scenario_bank fields at write time (enum + length). Use structured (JSON) prompt format with role separation rather than XML string concat. |
+| M3 | `openai.ts:65–90` `truncateAtWord` | Business logic | Word-boundary truncation can lop off the final CTA sentence. | Feedback ends mid-thought; user doesn't see the "go test drive today" close. | Sentence-aware truncation. Also enforce `MAX_FEEDBACK_LEN = 450` in prompt and reject GPT outputs that exceed. |
+| M4 | `webhooks/sms/sinch/route.ts:428–450` | State management | Feature flags read per-grade. Flipping a flag mid-training changes scoring weights within a single session. | Session scoring becomes inconsistent; dashboards lose apples-to-apples. | Snapshot relevant flags into session row at creation. Use the snapshot for the duration. |
+| M5 | `cron/challenge-results/route.ts:44–69` | Time / Scheduling | `localHour === 17` comparison triggers only when a dealership wants 5pm results; every dealership is stuck on 5pm local. Also DST edge-case. | Can't configure per-dealership; 2 runs per DST transition day. | Add `challenge_results_hour` column per dealership; default 17. Compare hour + minute within ±30 min window. |
+| M6 | `cron/orphaned-sessions/route.ts:50–74` | Concurrency | `incrementMissedDay` UPDATE lacks `.eq('status', 'active')` guard. A chain completed between SELECT and UPDATE still gets its `missed_days` bumped. | Metrics polluted; occasional phantom expirations. | Add `.eq('status','active')` + `.select()` → check row count. |
+| M7 | `global-error.tsx` / `instrumentation*.ts` | Observability | Client-side error boundary present; server-side Sentry is wired but coverage of route-level try/catch is uneven. | Silent swallow in API routes never hits Sentry. | Add a route wrapper `withErrorCapture(handler)` that `Sentry.captureException` + structured log on throw, then re-throws. Apply in every API route. |
+| M8 | `src/test/*.test.ts` (3 files) | Testing / Coverage | `smoke.test.ts` is trivial, `tenant-isolation.test.ts` is simulation, `weighted-scoring.test.ts` is unit-only. Zero integration tests for webhooks, crons, import, billing. | Regressions reach prod. | Add integration tests with Supabase local + mocked Sinch/OpenAI/Stripe: (a) duplicate inbound SMS idempotency, (b) OpenAI timeout path, (c) Stripe `invoice.payment_succeeded` happy/unhappy, (d) CSV import with dup phones & malformed rows, (e) cron partial-completion resumption. |
+| M9 | `lib/sms.ts:104–109` | SMS limits | Hard 480-char cap + '...' ellipsis. Unicode/emoji can push UCS-2 encoded length above 280 (multi-part SMS), even if char count ≤ 480. | Sinch splits into 3–4 segments, carriers drop some; user sees fragments. | Detect GSM-7 vs UCS-2 at build time; cap at 306 chars for UCS-2 or ~459 for GSM-7 multi-part. Reject anything with currency/emoji glyphs that break GSM-7. |
+| M10 | `lib/sms.ts:229–235` `helpResponse()` | Null handling | No null-check on `dealershipName`; `null.length` throws. | Inbound HELP from user whose dealership row has null `name` crashes webhook. | `const name = dealershipName ?? 'your dealership';` |
+| M11 | Multiple `console.error` + bare `catch {}` in crons | Error handling | Several cron inner catches log then continue without reporting to Sentry. Errors never page anyone. | Silent cron degradation for weeks. | After each catch: `Sentry.captureException(err, { tags: { cron: 'daily-training', dealership_id } })`. |
+| M12 | `webhooks/stripe/route.ts` (entire file) | Observability | Webhook handler has no metric for processing latency, 4xx/5xx rates, event-type breakdown. | Cannot detect Stripe delivery issues before customers complain. | Emit structured metrics (count, ms) tagged by event type. Alert if p95 > 5s or error rate > 2% over 10 min. |
+| M13 | `lib/coach/compaction.ts` | Token budget | No explicit token budget accounting before calling OpenAI; relies on message-count heuristic. Long messages can blow past context window mid-session. | Context truncation error surfaced as 400 from OpenAI → user sees generic failure SMS. | Count tokens (tiktoken or heuristic = chars/4), compact when approaching model max − reply buffer. |
+| M14 | DB schema: check `supabase/migrations/*.sql` for explicit UNIQUE + CHECK constraints | Data integrity | Code comments assume UNIQUE on `sms_transcript_log.sinch_message_id`, UNIQUE on `billing_events.stripe_event_id`, UNIQUE on `(phone, dealership_id)` in opt-outs. Verify these exist in migrations. | Someone drops or forgets a constraint in a later migration → all idempotency guarantees silently disappear. | Grep migrations to confirm. Add `pg_dump --schema-only` snapshot test that fails if constraints disappear. |
+| M15 | `cron/daily-digest/route.ts:289–298` (new format uses upsert — OK) and legacy path (M16) | Dual code paths | Legacy + new digest coexist. Each change has to be implemented twice. | Bugs in one path, not the other. | Decide sunset date for legacy, feature-flag everyone onto new format, remove legacy code. |
+
+---
+
+## 🔵 LOW — Hardening
+
+| # | File:Line | Category | Issue | Fix |
+|---|-----------|----------|-------|-----|
+| L1 | `lib/openai.ts:1050–1060` ERROR_SMS | UX | Error SMS are vague ("we'll get your score to you soon"). | Include SLA: "Within 2 hours. Text `STATUS` for an update." Ship a `STATUS` keyword. |
+| L2 | `cron/*` | Observability | No per-cron duration metric. | Emit `cron.duration_ms{name=...}` at the end of each route. |
+| L3 | `middleware.ts:137–144` | Type safety | `user_role` cast to string, not validated against enum. | Enum check; reject unknown role values. Log + redirect. |
+| L4 | `lib/sms.ts` | Business logic | No explicit unit test for char boundary 478/479/480/481. | Add vitest. |
+| L5 | Commented / dead code, stale TODOs | Code quality | Grep `TODO`, `FIXME`, `/* fallback */`. A handful exist; rot over time. | Clean up or issue-track. |
+| L6 | `openai.ts` prompt templates | Maintainability | Large string-concat templates. Future prompt changes are high-friction. | Extract to `prompts/` directory with versioned files; test expected output format via snapshot. |
+| L7 | `lib/rate-limit.ts:147–168` | Graceful degradation | Circuit breaker is tied to the SAME Upstash instance as rate limiting. If Redis is down, breaker fails open too. | Use an in-process fallback counter sized for single-instance capacity. |
+| L8 | `vercel.json` crons | Scheduling | Two crons share the `0 * * * *` slot (daily-training + daily-digest). They'll start concurrently every hour. | Stagger: one at `:00`, one at `:10`. Lowers Supabase burst load. |
+| L9 | `package.json` | Dependencies | `@upstash/redis` and `@upstash/ratelimit` missing despite code importing them. | Add deps; otherwise delete rate-limit calls to make the broken state explicit. |
+| L10 | Bundle / perf | Performance | No review here; defer to Part 1 or a dedicated perf sweep. Framer-motion is heavy for marketing bundle. | Audit marketing bundle size; tree-shake or lazy-load framer-motion. |
+| L11 | Accessibility | a11y | Dashboard and marketing pages not audited here. | Run `@axe-core/react` against key routes. |
+| L12 | i18n | Localization | EN/ES toggle exists per memory; user-facing strings in API error SMS are EN-only. | Add language param to SMS error helpers. |
+
+---
+
+## System Reliability Map
+
+**Single points of failure**
+1. **Upstash Redis (missing entirely)** — rate limiter and circuit breaker are both no-ops. Any actor can burn OpenAI + Sinch quota.
+2. **OpenAI API** — no timeout, no circuit breaker, no cached-answer fallback. A 3-minute OpenAI incident freezes every training session.
+3. **Supabase** — every webhook and cron is one Supabase call away from a 500. No local cache, no retry budget.
+4. **Sinch** — outbound SMS failure is caught and logged only. No queue, no retry, no dead-letter.
+5. **Vercel cron infra** — `vercel.json` is the only trigger. A Vercel incident = no training, no billing, no digest.
+
+**Highest-risk dependency**: OpenAI. Blast radius = 100% of training value. Current resilience = template fallback (silently degrades to placebo).
+
+**Data corruption risk (most vulnerable point)**: `sms_transcript_log` + conversation_sessions during the grading→completed transition (C2, C3, C11). Partial writes leave sessions in zombie states with no recovery cron.
+
+**Cascading failure paths**
+- OpenAI slow (not down) → webhook hits 300s → Vercel kills → Sinch retries → duplicate grading attempts → duplicate SMS (if dedup race, H1/H2).
+- Stripe webhook dropped → `past_due_since` stays → access blocked → support ticket → manual Supabase edit (until drift cron H5 exists).
+- Upstash missing → no limiter → OpenAI quota exhausted → template fallbacks everywhere → training dies quietly (C1 → C5).
+- Sinch opt-out pagination (H19) → re-subscribe previously-opted-out users → carrier spam flag → inbound deliverability drops → all users affected.
+
+**Weakest recovery path**
+- Sessions stuck in `grading` have no automated recovery (C3). Same for half-synced opt-outs (C9). Same for orphaned users from partial CSV imports (H9). Today these require manual SQL.
+
+---
+
+## Fix Priority
+
+1. **C1 — Install Upstash deps, set env vars, fail-closed in prod.** Single biggest exposure. Blocks commercial scale.
+2. **C2 + C3 + C11 — Make session state transitions transactional and add a recovery cron for stuck `grading` sessions.** Touches the hottest code path; prevents data loss for every real user.
+3. **C4 — Add AbortController timeouts to all OpenAI (and Sinch) fetches.** Stops the one-bad-OpenAI-day from killing the product.
+4. **C5 — Alert / visible failure when template fallback triggers.** Visibility into silent degradation.
+5. **C6 + H4 + H5 + H18 — Stripe webhook must retry on unresolved customer; add drift-check cron; structured logs with `stripe_*` ids.** Protects revenue.
+6. **C7 + C8 + H19 — Cron timeout budgets, pre-send dedup tokens, Sinch pagination.** Eliminates duplicate SMS and lost work.
+7. **C9 + C10 — Transactional opt-out sync; dunning event recorded before email send.** Regulatory + customer-trust risk.
+8. **C12 — Fail loudly on quiet-hours / JSON parse failures.** Prevents wrong-time SMS and ghost logouts.
+9. **H1 + H2 + H3 + H9 — Lock hygiene, grading-queue UX, NOW race, import transactionality.** Daily operational hygiene.
+10. **Tests (M8) — integration coverage for webhook / cron / billing / import.** Guardrail against regressing the above.
+
+---
+
+## AI Review Blind Spots Acknowledged
+
+- **Absence gaps**: the biggest findings (C3 stuck-session recovery, H5 drift-check cron, H19 pagination, C5 fallback alerting) are all things that are MISSING. Verified by scanning for their absence rather than finding bad code.
+- **Cross-service**: Stripe ↔ Supabase ↔ Sinch interactions reviewed explicitly.
+- **Self-correction gap**: findings should be validated by a second model or by integration tests (M8) before shipping fixes. Multiple findings here are claim-level (e.g., UNIQUE constraint existence, RLS on `users`) and must be grep-verified in migrations before trusting.
+
+---
+
+## Verification Steps Taken
+
+- Read `rate-limit.ts` fully to confirm fail-open behavior; confirmed `@upstash/redis` is not in `package.json` (C1).
+- Inventoried 130 `.ts/.tsx` + 10 SQL migrations; cross-referenced `vercel.json` crons with cron route files (7 match).
+- Spot-checked `vercel.json` headers (CSP is strict — not a finding).
+- Claims about specific line numbers inside large files (`webhooks/sms/sinch/route.ts`, `openai.ts`) are derived from sub-agent reads; line numbers may be ±5 depending on git state. Treat as anchors, not exact.
+
+---
+
+## Next-Pass Suggestions
+
+- Re-run after fixing CRITICAL: confirm no regressions on HIGH items.
+- Run Part 1 (Security & Attack Surface) — several findings here (H21 users-table scoping, M2 prompt injection, L3 role enum) are security-adjacent.
+- Chaos drill: manually break `OPENAI_API_KEY` in a preview deploy and verify template fallback fires AND alerts fire AND user sees a humane SMS with SLA.
+- Load test: simulate 100 inbound Sinch SMS/second with Upstash configured; measure p95 webhook latency.

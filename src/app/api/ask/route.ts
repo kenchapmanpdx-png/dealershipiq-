@@ -9,6 +9,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { isFeatureEnabled } from '@/lib/service-db';
+import { checkAskLimit } from '@/lib/rate-limit';
+import { requireJsonContentType } from '@/lib/api-helpers';
+
+// 2026-04-18 H-15: Rate limit ported to Upstash-backed `checkAskLimit`
+// (see src/lib/rate-limit.ts). The previous in-memory Map per serverless
+// instance was effectively `60/hr × N instances`, which scales with traffic
+// rather than containing it. checkAskLimit is keyed on userId, shared
+// across every Vercel instance, and fails CLOSED in production if Upstash
+// is unreachable.
 
 interface AskRequest {
   question: string;
@@ -21,23 +30,12 @@ interface AskResponse {
   confidence: number;
 }
 
-// L-015: Simple in-memory rate limit (MVP — replace with Upstash for production)
-const askRateMap = new Map<string, { count: number; resetAt: number }>();
-const MAX_ASK_PER_HOUR = 60;
-
-function checkAskRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const existing = askRateMap.get(userId);
-  if (!existing || existing.resetAt < now) {
-    askRateMap.set(userId, { count: 1, resetAt: now + 60 * 60 * 1000 });
-    return false;
-  }
-  existing.count++;
-  return existing.count > MAX_ASK_PER_HOUR;
-}
-
 export async function POST(request: NextRequest) {
   try {
+    // L-14: content-type gate
+    const ctErr = requireJsonContentType(request);
+    if (ctErr) return ctErr;
+
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -59,11 +57,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // L-015: Rate limit check
-    if (checkAskRateLimit(user.id)) {
+    // H-15: Upstash-backed rate limit — 60/hr/user, global across instances.
+    const rl = await checkAskLimit(user.id);
+    if (!rl.success) {
+      const status = rl.bypass_reason === 'redis_missing' || rl.bypass_reason === 'redis_error' ? 503 : 429;
       return NextResponse.json(
-        { error: 'Too many questions. Try again later.' },
-        { status: 429 }
+        {
+          error: status === 503
+            ? 'Rate limiter unavailable — please try again shortly.'
+            : 'Too many questions. Try again later.',
+        },
+        { status }
       );
     }
 
@@ -123,9 +127,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(response);
   } catch (err) {
     console.error('POST /api/ask error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

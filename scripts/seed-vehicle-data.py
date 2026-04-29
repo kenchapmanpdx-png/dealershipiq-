@@ -13,11 +13,14 @@ from urllib.error import HTTPError
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+# 2026-04-18 H-10: Use canonical SUPABASE_SERVICE_ROLE_KEY (matches the
+# Next.js app). The legacy `SUPABASE_SERVICE_KEY` var is retired to avoid
+# pointing at the deprecated `hbhcwbqxiumfauidtnbz` project by mistake.
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    logger.error("Missing required env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY")
+    logger.error("Missing required env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY")
     sys.exit(1)
 CSV_PATH = os.environ.get("VEHICLES_CSV", "/sessions/epic-ecstatic-mendel/vehicles.csv")
 

@@ -3,7 +3,7 @@
 // EOD: rank responses, text results
 
 import { serviceClient } from '@/lib/supabase/service';
-import { tokenLimitParam } from '@/lib/openai';
+import { tokenLimitParam, OPENAI_MODELS } from '@/lib/openai';
 import type { ChallengeResult } from '@/types/challenges';
 
 /**
@@ -42,84 +42,106 @@ export async function generateDailyChallenge(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
 
-  const model = 'gpt-5.4-2026-03-05';
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+  // H3: fallback chain instead of hardcoded model. Same shape used by
+  // gradeResponse — primary (gpt-5.4) then fallback (gpt-4o-mini). If the
+  // primary snapshot is deprecated, challenges keep working.
+  const modelChain = [OPENAI_MODELS.primary, OPENAI_MODELS.fallback];
+  const CALL_TIMEOUT_MS = parseInt(process.env.OPENAI_TIMEOUT_MS || '10000', 10);
 
-  try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: `Generate a team training challenge scenario for automotive salespeople.
+  let content: { scenario_text?: string; grading_rubric?: Record<string, string> } | null = null;
+  let lastErr: Error | null = null;
+
+  for (const model of modelChain) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: `Generate a team training challenge scenario for automotive salespeople.
 Domain: ${taxonomyDomain.replace(/_/g, ' ')}
 Output JSON: { "scenario_text": "under 300 chars, customer-facing, conversational", "grading_rubric": { "product_accuracy": "...", "tone_rapport": "...", "concern_addressed": "...", "close_attempt": "..." } }
 Rules: Sound like a real customer. No meta-framing. No labels.`,
-          },
-          { role: 'user', content: `Generate a ${taxonomyDomain.replace(/_/g, ' ')} challenge for today.` },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'challenge_scenario',
-            strict: true,
-            schema: {
-              type: 'object',
-              properties: {
-                scenario_text: { type: 'string' },
-                grading_rubric: {
-                  type: 'object',
-                  properties: {
-                    product_accuracy: { type: 'string' },
-                    tone_rapport: { type: 'string' },
-                    concern_addressed: { type: 'string' },
-                    close_attempt: { type: 'string' },
+            },
+            { role: 'user', content: `Generate a ${taxonomyDomain.replace(/_/g, ' ')} challenge for today.` },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'challenge_scenario',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  scenario_text: { type: 'string' },
+                  grading_rubric: {
+                    type: 'object',
+                    properties: {
+                      product_accuracy: { type: 'string' },
+                      tone_rapport: { type: 'string' },
+                      concern_addressed: { type: 'string' },
+                      close_attempt: { type: 'string' },
+                    },
+                    required: ['product_accuracy', 'tone_rapport', 'concern_addressed', 'close_attempt'],
+                    additionalProperties: false,
                   },
-                  required: ['product_accuracy', 'tone_rapport', 'concern_addressed', 'close_attempt'],
-                  additionalProperties: false,
                 },
+                required: ['scenario_text', 'grading_rubric'],
+                additionalProperties: false,
               },
-              required: ['scenario_text', 'grading_rubric'],
-              additionalProperties: false,
             },
           },
-        },
-        temperature: 0.8,
-        ...tokenLimitParam(model, 500),
-      }),
-      signal: controller.signal,
-    });
+          temperature: 0.8,
+          ...tokenLimitParam(model, 500),
+        }),
+        signal: controller.signal,
+      });
 
-    if (!res.ok) throw new Error(`OpenAI ${model}: ${res.status}`);
-
-    const data = await res.json();
-    const content = JSON.parse(data.choices?.[0]?.message?.content ?? '{}');
-
-    const { data: row, error } = await serviceClient
-      .from('daily_challenges')
-      .insert({
-        dealership_id: dealershipId,
-        challenge_date: todayStr,
-        scenario_text: content.scenario_text,
-        grading_rubric: content.grading_rubric,
-        taxonomy_domain: taxonomyDomain,
-        status: 'active',
-      })
-      .select('id')
-      .single();
-
-    if (error) throw error;
-    return { id: row.id as string, scenarioText: content.scenario_text as string };
-  } finally {
-    clearTimeout(timeout);
+      if (!res.ok) {
+        lastErr = new Error(`OpenAI ${model}: ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      content = JSON.parse(data.choices?.[0]?.message?.content ?? '{}');
+      break; // success
+    } catch (err) {
+      lastErr = err as Error;
+      continue;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
+
+  if (!content || !content.scenario_text) {
+    console.error(
+      `[daily-challenge] all models failed for dealership ${dealershipId}: ${lastErr?.message ?? 'unknown'}`
+    );
+    return null; // caller treats null as "no challenge today"
+  }
+
+  const { data: row, error } = await serviceClient
+    .from('daily_challenges')
+    .insert({
+      dealership_id: dealershipId,
+      challenge_date: todayStr,
+      scenario_text: content.scenario_text,
+      grading_rubric: content.grading_rubric,
+      taxonomy_domain: taxonomyDomain,
+      status: 'active',
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return { id: row.id as string, scenarioText: content.scenario_text as string };
 }
 
 /**

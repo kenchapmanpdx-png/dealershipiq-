@@ -10,6 +10,19 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { serviceClient } from '@/lib/supabase/service';
 import { sendSms } from '@/lib/sms';
 import { getDealershipName, insertTranscriptLog } from '@/lib/service-db';
+import { requireAuth } from '@/lib/auth-helpers';
+import { apiError, apiSuccess, requireJsonContentType } from '@/lib/api-helpers';
+import { tryNormalizePhone, isValidE164 } from '@/lib/phone';
+import { log } from '@/lib/logger';
+
+// 2026-04-18 H-6: Removed the local `validateE164Phone` / `normalizePhone`
+// helpers. Those accepted patterns the canonical helper rejects (e.g. bare
+// 8–15 digit international numbers, "+++++1234567890") and unconditionally
+// prepended "+1" to any 10-digit input. That mismatch meant a rep added via
+// this route could be stored with a different format than one added via
+// /api/users/import or /api/onboarding/employees — breaking the exact-match
+// `.eq('phone', ...)` lookup that inbound SMS dispatch relies on. All three
+// routes now funnel through `tryNormalizePhone` + `isValidE164`.
 
 interface CreateUserRequest {
   full_name: string;
@@ -23,59 +36,34 @@ interface CreateUserResponse {
   status: string;
 }
 
-// E.164 validation: +1-10 digits, optional formatting
-function validateE164Phone(phone: string): boolean {
-  const e164Pattern = /^\+?1?\d{10,15}$/;
-  return e164Pattern.test(phone.replace(/\D/g, ''));
-}
-
-// Normalize to E.164 format: +1XXXXXXXXXX
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  // If starts with 1, add +, else add +1
-  return digits.length === 11 && digits.startsWith('1')
-    ? `+${digits}`
-    : `+1${digits}`;
-}
-
 export async function POST(request: NextRequest) {
   try {
+    // L-14: content-type gate
+    const ctErr = requireJsonContentType(request);
+    if (ctErr) return ctErr;
+
     const supabase = await createServerSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
-    if (!dealershipId) {
-      return NextResponse.json({ error: 'No dealership' }, { status: 403 });
-    }
-
-    const userRole = user.app_metadata?.user_role as string | undefined;
-    if (userRole !== 'manager' && userRole !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    // Validate auth and get context
+    const auth = await requireAuth(supabase, ['manager', 'owner']);
+    if (auth instanceof NextResponse) return auth;
+    const { dealershipId } = auth;
 
     const body = await request.json() as CreateUserRequest;
 
     // Validate input
     if (!body.full_name || !body.phone) {
-      return NextResponse.json(
-        { error: 'Missing required fields: full_name, phone' },
-        { status: 400 }
-      );
+      return apiError('Missing required fields: full_name, phone', 400);
     }
 
-    // Validate phone format
-    if (!validateE164Phone(body.phone)) {
-      return NextResponse.json(
-        { error: 'Invalid phone number. Use E.164 format (e.g., +1 2025551234)' },
-        { status: 400 }
+    // H-6: Canonical normalization — same rules as CSV import and onboarding.
+    const normalizedPhone = tryNormalizePhone(body.phone);
+    if (!normalizedPhone || !isValidE164(normalizedPhone)) {
+      return apiError(
+        'Invalid phone number. Use E.164 format (e.g., +1 2025551234)',
+        400
       );
     }
-
-    const normalizedPhone = normalizePhone(body.phone);
 
     // Check for existing user with same phone
     const { data: existingUser, error: existingError } = await serviceClient
@@ -89,10 +77,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (existingUser) {
-      return NextResponse.json(
-        { error: 'User with this phone number already exists' },
-        { status: 409 }
-      );
+      return apiError('User with this phone number already exists', 409);
     }
 
     // C-003: RLS-backed — sms_opt_outs SELECT policy filters by dealership_id from JWT
@@ -107,10 +92,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (optOut) {
-      return NextResponse.json(
-        { error: 'This phone number is opted out. Remove from opt-out list first.' },
-        { status: 409 }
-      );
+      return apiError('This phone number is opted out. Remove from opt-out list first.', 409);
     }
 
     // C-003: RLS-backed — users_insert_manager policy allows manager INSERT
@@ -126,11 +108,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (createError) {
-      console.error('Failed to create user:', (createError as Error).message ?? createError);
-      return NextResponse.json(
-        { error: 'Failed to create user' },
-        { status: 500 }
-      );
+      log.error('users.create.insert_failed', {
+        dealership_id: dealershipId,
+        error: (createError as Error).message ?? String(createError),
+      });
+      return apiError('Failed to create user', 500);
     }
 
     // C-003: RLS-backed — memberships_insert_manager policy allows manager INSERT
@@ -144,13 +126,21 @@ export async function POST(request: NextRequest) {
       });
 
     if (memberError) {
-      console.error('Failed to add dealership membership:', (memberError as Error).message ?? memberError);
+      log.error('users.create.membership_insert_failed', {
+        dealership_id: dealershipId,
+        user_id: newUser.id,
+        error: (memberError as Error).message ?? String(memberError),
+      });
       // Rollback user creation
-      await serviceClient.from('users').delete().eq('id', newUser.id);
-      return NextResponse.json(
-        { error: 'Failed to add user to dealership' },
-        { status: 500 }
-      );
+      try {
+        await serviceClient.from('users').delete().eq('id', newUser.id);
+      } catch (cleanupErr) {
+        log.error('users.create.rollback_failed', {
+          user_id: newUser.id,
+          error: (cleanupErr as Error).message,
+        });
+      }
+      return apiError('Failed to add user to dealership', 500);
     }
 
     // Send consent SMS (non-blocking — don't fail the add if SMS fails)
@@ -168,7 +158,10 @@ export async function POST(request: NextRequest) {
         metadata: { type: 'consent_request' },
       });
     } catch (smsErr) {
-      console.error('Consent SMS failed (user still created):', (smsErr as Error).message ?? smsErr);
+      log.warn('users.create.consent_sms_failed', {
+        user_id: newUser.id,
+        error: (smsErr as Error).message ?? String(smsErr),
+      });
     }
 
     const response: CreateUserResponse = {
@@ -178,12 +171,11 @@ export async function POST(request: NextRequest) {
       status: newUser.status,
     };
 
-    return NextResponse.json(response, { status: 201 });
+    return apiSuccess(response, 201);
   } catch (err) {
-    console.error('POST /api/users error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    log.error('users.create.error', {
+      error: (err as Error).message ?? String(err),
+    });
+    return apiError('Internal server error', 500);
   }
 }

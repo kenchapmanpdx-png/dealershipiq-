@@ -6,6 +6,8 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
+import { requireAuth } from '@/lib/auth-helpers';
+import { apiError, apiSuccess } from '@/lib/api-helpers';
 
 interface KnowledgeGap {
   id: string;
@@ -21,26 +23,14 @@ interface KnowledgeGap {
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
-    if (!dealershipId) {
-      return NextResponse.json({ error: 'No dealership' }, { status: 403 });
-    }
-
-    const userRole = user.app_metadata?.user_role as string | undefined;
-    if (userRole !== 'manager' && userRole !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const auth = await requireAuth(supabase, ['manager', 'owner']);
+    if (auth instanceof NextResponse) return auth;
+    const { dealershipId } = auth;
 
     // H-010: Subscription gating
     const subCheck = await checkSubscriptionAccess(dealershipId);
     if (!subCheck.allowed) {
-      return NextResponse.json({ error: 'Subscription required', reason: subCheck.reason }, { status: 403 });
+      return apiError(`Subscription required: ${subCheck.reason}`, 403);
     }
 
     // Get low-confidence queries from past 30 days
@@ -68,10 +58,7 @@ export async function GET() {
 
     if (gapsError) {
       console.error('Failed to fetch knowledge gaps:', (gapsError as Error).message ?? gapsError);
-      return NextResponse.json(
-        { error: 'Failed to fetch knowledge gaps' },
-        { status: 500 }
-      );
+      return apiError('Failed to fetch knowledge gaps', 500);
     }
 
     // Transform data
@@ -86,12 +73,9 @@ export async function GET() {
       created_at: g.created_at as string,
     }));
 
-    return NextResponse.json({ gaps: transformed });
+    return apiSuccess({ gaps: transformed });
   } catch (err) {
     console.error('GET /api/dashboard/gaps error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return apiError('Internal server error', 500);
   }
 }

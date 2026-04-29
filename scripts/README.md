@@ -13,7 +13,7 @@ python3 scripts/seed-vehicle-data.py
 
 **Environment variables:**
 - `SUPABASE_URL`: Supabase project URL (default: https://nnelylyialhnyytfeoom.supabase.co)
-- `SUPABASE_SERVICE_KEY`: Service role key (default: embedded)
+- `SUPABASE_SERVICE_ROLE_KEY`: Service role key (matches Next.js app var)
 - `VEHICLES_CSV`: Path to vehicles.csv (default: /sessions/epic-ecstatic-mendel/vehicles.csv)
 
 **Logic:**
@@ -39,7 +39,7 @@ python3 scripts/generate-competitive-intel.py
 
 **Environment variables:**
 - `SUPABASE_URL`: Supabase project URL
-- `SUPABASE_SERVICE_KEY`: Service role key
+- `SUPABASE_SERVICE_ROLE_KEY`: Service role key
 - `OPENAI_API_KEY`: OpenAI API key (default: embedded)
 
 **Logic:**
@@ -65,7 +65,7 @@ python3 scripts/export-vehicle-intel.py
 
 **Environment variables:**
 - `SUPABASE_URL`: Supabase project URL
-- `SUPABASE_SERVICE_KEY`: Service role key
+- `SUPABASE_SERVICE_ROLE_KEY`: Service role key
 - `OUTPUT_PATH`: Output CSV file path (default: ./vehicle-intel-export.csv)
 
 **Output columns:**
@@ -84,7 +84,7 @@ python3 scripts/import-vehicle-intel.py
 
 **Environment variables:**
 - `SUPABASE_URL`: Supabase project URL
-- `SUPABASE_SERVICE_KEY`: Service role key
+- `SUPABASE_SERVICE_ROLE_KEY`: Service role key
 - `INPUT_PATH`: Input CSV file path (default: ./vehicle-intel-export.csv)
 
 **Logic:**
