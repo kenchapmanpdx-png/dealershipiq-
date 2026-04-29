@@ -44,8 +44,13 @@ supabase/.temp/
 # but its build artifacts and dependencies should never be committed.
 Dealership App/.next/
 Dealership App/node_modules/
+Dealership App/package.json
 Dealership App/package-lock.json
 Dealership App/.env*
 
 # Scenario bank source spreadsheet — reference data, kept locally
 *.xlsx
+
+# Local debugging tools (Vercel build-log extractors, etc.)
+extract-error.js
+run-extract.bat
