@@ -39,3 +39,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 supabase/.temp/
+
+# Dealership App/ scratch folder — kept for docs and reference data,
+# but its build artifacts and dependencies should never be committed.
+Dealership App/.next/
+Dealership App/node_modules/
+Dealership App/package-lock.json
+Dealership App/.env*
+
+# Scenario bank source spreadsheet — reference data, kept locally
+*.xlsx
