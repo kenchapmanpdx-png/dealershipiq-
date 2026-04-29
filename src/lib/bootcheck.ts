@@ -106,13 +106,23 @@ export function validateBootEnvironment(): void {
     });
   }
 
+  // Dep-resolution check only runs in Node runtime. The Edge runtime
+  // doesn't expose `require`, so calling `require.resolve(name)` throws
+  // a ReferenceError that the try/catch interprets as "dep missing" — a
+  // false positive that would 500 every Edge middleware request even
+  // though the packages ARE installed and the build succeeded. Build
+  // failures already catch genuinely-missing deps, so skipping this in
+  // Edge is safe.
   const missingDeps: string[] = [];
-  for (const { name } of REQUIRED_DEPS_PROD) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require.resolve(name);
-    } catch {
-      missingDeps.push(name);
+  const isEdge = process.env.NEXT_RUNTIME === 'edge';
+  if (!isEdge) {
+    for (const { name } of REQUIRED_DEPS_PROD) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require.resolve(name);
+      } catch {
+        missingDeps.push(name);
+      }
     }
   }
 
@@ -130,5 +140,6 @@ export function validateBootEnvironment(): void {
     optional_future_env_count: OPTIONAL_FUTURE_ENV_PROD.length,
     optional_future_missing: missingFuture.length,
     dep_count: REQUIRED_DEPS_PROD.length,
+    runtime: isEdge ? 'edge' : 'node',
   });
 }
