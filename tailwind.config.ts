@@ -48,6 +48,7 @@ const config: Config = {
         "orb-drift-3": "orb-drift-3 15s ease-in-out infinite alternate",
         "glow-pulse": "glow-pulse 3s ease-in-out infinite",
         "fade-up": "fade-up 0.8s var(--ease-out-cubic) forwards",
+        "shine": "shine 12s infinite linear",
       },
       keyframes: {
         "orb-float": {
@@ -68,6 +69,11 @@ const config: Config = {
             boxShadow:
               "0 0 30px rgba(59,130,246,0.35), 0 0 80px rgba(59,130,246,0.2)",
           },
+        },
+        shine: {
+          "0%": { "background-position": "0% 0%" },
+          "50%": { "background-position": "100% 100%" },
+          "100%": { "background-position": "0% 0%" },
         },
       },
       transitionTimingFunction: {
