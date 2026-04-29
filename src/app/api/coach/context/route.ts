@@ -1,46 +1,21 @@
-// GET /api/coach/context — Load rep training context (internal, service_role)
-// Phase 4.5A: Coach Mode MVP
-// Not exposed directly to client — called internally by session route
-
-import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'crypto';
-import { buildRepContext } from '@/lib/coach/context';
-
-export async function GET(request: NextRequest) {
-  // Internal route — verify admin API key (S-017: timing-safe comparison)
-  // M11-FIX: Pad to equal length before timingSafeEqual to avoid length-based timing leak
-  const adminKey = request.headers.get('x-admin-key') ?? '';
-  const expected = process.env.ADMIN_API_KEY ?? '';
-  if (!expected) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const maxLen = Math.max(adminKey.length, expected.length);
-  const paddedKey = Buffer.alloc(maxLen);
-  const paddedExpected = Buffer.alloc(maxLen);
-  Buffer.from(adminKey).copy(paddedKey);
-  Buffer.from(expected).copy(paddedExpected);
-  if (!timingSafeEqual(paddedKey, paddedExpected) || adminKey.length !== expected.length) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const userId = request.nextUrl.searchParams.get('user_id');
-  const dealershipId = request.nextUrl.searchParams.get('dealership_id');
-
-  if (!userId || !dealershipId) {
-    return NextResponse.json(
-      { error: 'user_id and dealership_id required' },
-      { status: 400 }
-    );
-  }
-
-  try {
-    const context = await buildRepContext(userId, dealershipId);
-    return NextResponse.json({ data: context, error: null });
-  } catch (err) {
-    console.error('Coach context error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Failed to load rep context' },
-      { status: 500 }
-    );
-  }
-}
+// 2026-04-18 C-3: This HTTP route has been removed.
+//
+// Previously exposed `GET /api/coach/context?user_id=X&dealership_id=Y` gated
+// only by a shared ADMIN_API_KEY header. That design trusted the caller to pass
+// a (user, dealership) pair — any valid caller could read any rep's training
+// snapshot across every dealership (massive multi-tenant data leak if the
+// admin key was ever exposed, and the key was weak: see C-5).
+//
+// The function this route wrapped (`buildRepContext`) is already called
+// in-process from `src/app/api/coach/session/route.ts` after verifying that
+// the authenticated rep actually belongs to the dealership. There is no
+// external consumer and no reason to keep the HTTP surface.
+//
+// If you need to reintroduce an admin-only endpoint for support tooling,
+// rebuild it from scratch with:
+//   1. Supabase Auth for a human admin (not a shared static key).
+//   2. An authorization check that the admin has access to that dealership.
+//   3. Structured audit logging of every access (who viewed whose context).
+//
+// This file intentionally exports nothing so Next.js does not create a route.
+export {};

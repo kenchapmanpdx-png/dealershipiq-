@@ -18,10 +18,22 @@ function getLocalTime(timezone: string): TimeInfo {
     weekday: 'short',
   }).formatToParts(now);
 
-  return {
-    hour: parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0'),
-    weekday: parts.find((p) => p.type === 'weekday')?.value ?? '',
-  };
+  // C12: FAIL LOUD on Intl edge cases. Silent default of 0 was sending SMS at
+  // midnight when the timezone string was unexpected.
+  const hourStr = parts.find((p) => p.type === 'hour')?.value;
+  const weekday = parts.find((p) => p.type === 'weekday')?.value;
+  const hourRaw = hourStr === '24' ? '0' : hourStr; // Intl occasionally emits "24" at midnight
+  const hour = parseInt(hourRaw ?? '', 10);
+
+  if (Number.isNaN(hour) || !weekday) {
+    throw new Error(
+      `quiet-hours: Intl formatter produced invalid output for tz="${timezone}" ` +
+      `(hour="${hourStr}", weekday="${weekday}"). ` +
+      `Refusing to silently default — check the dealership timezone value.`
+    );
+  }
+
+  return { hour, weekday };
 }
 
 /** True if current local time is within proactive send window. */
@@ -70,22 +82,28 @@ export function getLocalDateString(timezone: string): string {
  *  M6-FIX: Subtract 1 from local date instead of subtracting 24h from UTC
  *  (avoids DST off-by-one near midnight on spring-forward days). */
 export function getLocalYesterdayString(timezone: string): string {
-  // Get today's local date parts
-  const parts = new Intl.DateTimeFormat('en-CA', {
+  // H10: Use ISO formatter directly with tz, subtract one day in pure calendar
+  // arithmetic. Works across DST transitions because we never touch UTC offsets.
+  const todayStr = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(new Date());
+  }).format(new Date()); // "YYYY-MM-DD"
 
-  const year = parseInt(parts.find((p) => p.type === 'year')?.value ?? '0');
-  const month = parseInt(parts.find((p) => p.type === 'month')?.value ?? '1');
-  const day = parseInt(parts.find((p) => p.type === 'day')?.value ?? '1');
+  const [yearStr, monthStr, dayStr] = todayStr.split('-');
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const day = parseInt(dayStr, 10);
 
-  // Construct a date in UTC using local parts, then subtract 1 day
-  const localToday = new Date(Date.UTC(year, month - 1, day));
-  localToday.setUTCDate(localToday.getUTCDate() - 1);
-  return localToday.toISOString().slice(0, 10);
+  if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
+    throw new Error(`getLocalYesterdayString: invalid date parts for tz="${timezone}" (got "${todayStr}")`);
+  }
+
+  // Use UTC date as a calendar calculator — setUTCDate handles month/year rollover.
+  const d = new Date(Date.UTC(year, month - 1, day));
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 /** C-004: Returns true if today is Monday in the dealership's timezone. */
