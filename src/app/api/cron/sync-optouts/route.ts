@@ -7,8 +7,43 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { getSinchAccessToken } from '@/lib/sinch-auth';
 import { serviceClient } from '@/lib/supabase/service';
+import { log } from '@/lib/logger';
 
 export const maxDuration = 60;
+
+// H19: Sinch Consents API paginates. Previously we only read page 1, so any
+// phone past page 1 was treated as "not opted out" and re-subscribed on the
+// next sync. Fetch all pages before diffing.
+async function fetchAllSinchOptOuts(
+  projectId: string,
+  appId: string,
+  token: string
+): Promise<Array<{ identity: string; channel: string }>> {
+  const all: Array<{ identity: string; channel: string }> = [];
+  let pageToken: string | undefined = undefined;
+  const maxPages = 50; // safety ceiling; 50 * default page = plenty
+  for (let page = 0; page < maxPages; page++) {
+    const params = new URLSearchParams();
+    if (pageToken) params.set('page_token', pageToken);
+    const url =
+      `https://us.conversation.api.sinch.com/v1/projects/${projectId}/apps/${appId}/consents/OPT_OUT_LIST` +
+      (params.toString() ? `?${params.toString()}` : '');
+
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const body = await res.text();
+      log.error('sinch.consents.http_error', { status: res.status, body: body.slice(0, 300), page });
+      throw new Error(`Sinch Consents API ${res.status}`);
+    }
+    const data = await res.json();
+    const batch: Array<{ identity: string; channel: string }> = data.consents ?? [];
+    all.push(...batch);
+
+    pageToken = data.next_page_token || data.nextPageToken;
+    if (!pageToken) break;
+  }
+  return all;
+}
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
@@ -24,22 +59,8 @@ export async function GET(request: NextRequest) {
   try {
     const token = await getSinchAccessToken();
 
-    // Fetch opt-out list from Sinch Consents API
-    const res = await fetch(
-      `https://us.conversation.api.sinch.com/v1/projects/${projectId}/apps/${appId}/consents/OPT_OUT_LIST`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-
-    if (!res.ok) {
-      const body = await res.text();
-      console.error(`Sinch Consents API failed: ${res.status} ${body}`);
-      return NextResponse.json({ error: 'Sinch API error', status: res.status });
-    }
-
-    const data = await res.json();
-    const optOuts: Array<{ identity: string; channel: string }> = data.consents ?? [];
+    // H19: fetch EVERY page so diff against local cache is correct.
+    const optOuts = await fetchAllSinchOptOuts(projectId, appId, token);
 
     // Filter to SMS only
     const smsOptOuts = optOuts
@@ -50,26 +71,34 @@ export async function GET(request: NextRequest) {
     // This is a lightweight sync — just upsert phones that Sinch says are opted out
     let synced = 0;
 
-    for (const phone of smsOptOuts) {
-      // Look up which dealership this phone belongs to
-      const { data: user } = await serviceClient
+    // Process opt-outs in batches of 100 to avoid N+1 query pattern
+    const batchSize = 100;
+    for (let i = 0; i < smsOptOuts.length; i += batchSize) {
+      const batch = smsOptOuts.slice(i, i + batchSize);
+
+      // Fetch all users for this batch in a single query
+      const { data: users } = await serviceClient
         .from('users')
-        .select('dealership_memberships(dealership_id)')
-        .eq('phone', phone)
-        .maybeSingle();
+        .select('phone, dealership_memberships(dealership_id)')
+        .in('phone', batch);
 
-      if (!user?.dealership_memberships) continue;
+      if (!users || users.length === 0) continue;
 
-      const memberships = user.dealership_memberships as Array<{ dealership_id: string }>;
-      for (const m of memberships) {
-        const { error } = await serviceClient
-          .from('sms_opt_outs')
-          .upsert(
-            { phone, dealership_id: m.dealership_id, synced_from_sinch: true },
-            { onConflict: 'phone,dealership_id' }
-          );
+      // Process results in memory
+      for (const user of users) {
+        if (!user?.dealership_memberships) continue;
 
-        if (!error) synced++;
+        const memberships = user.dealership_memberships as Array<{ dealership_id: string }>;
+        for (const m of memberships) {
+          const { error } = await serviceClient
+            .from('sms_opt_outs')
+            .upsert(
+              { phone: user.phone, dealership_id: m.dealership_id, synced_from_sinch: true },
+              { onConflict: 'phone,dealership_id' }
+            );
+
+          if (!error) synced++;
+        }
       }
     }
 

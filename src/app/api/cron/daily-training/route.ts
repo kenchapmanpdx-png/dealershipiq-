@@ -6,6 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
+import { createBudget } from '@/lib/cron-budget';
+import { log } from '@/lib/logger';
 import { isWithinSendWindow, isWeekday } from '@/lib/quiet-hours';
 import { sendSms } from '@/lib/sms';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
@@ -98,9 +100,20 @@ export async function GET(request: NextRequest) {
 
   const dealerships = await getDealershipsReadyForTraining();
 
-  const results: Array<{ dealershipId: string; sent: number; skipped: number; errors: number; contentTypes: Record<string, number> }> = [];
+  // C7: Bail out gracefully when approaching Vercel `maxDuration=60`.
+  // Next hourly run will resume from where we stopped.
+  const budget = createBudget({ cronName: 'daily-training', maxMs: 55_000, safetyBufferMs: 10_000 });
+
+  const results: Array<{ dealershipId: string; sent: number; skipped: number; errors: number; contentTypes: Record<string, number>; note?: string }> = [];
+  let partial = false;
 
   for (const dealership of dealerships) {
+    if (budget.shouldStop()) {
+      partial = true;
+      results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0, contentTypes: {}, note: 'skipped_timeout_budget' });
+      continue;
+    }
+
     // Phase 5: Skip dealerships without active subscription
     const subCheck = await checkSubscriptionAccess(dealership.id);
     if (!subCheck.allowed) {
@@ -108,24 +121,45 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
-    if (!isWeekday(dealership.timezone)) {
+    // C2: guard every quiet-hours call. getLocalTime throws on malformed
+    // dealership.timezone — without this guard, one bad row kills the whole cron.
+    let isWorkday: boolean;
+    let inWindow: boolean;
+    try {
+      isWorkday = isWeekday(dealership.timezone);
+      inWindow = isWithinSendWindow(dealership.timezone);
+    } catch (tzErr) {
+      log.error('cron.daily_training.invalid_timezone', {
+        dealership_id: dealership.id,
+        tz: dealership.timezone,
+        err: (tzErr as Error).message,
+      });
+      results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0, contentTypes: {}, note: 'invalid_timezone' });
+      continue;
+    }
+
+    if (!isWorkday) {
       results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0, contentTypes: {} });
       continue;
     }
 
-    if (!isWithinSendWindow(dealership.timezone)) {
+    if (!inWindow) {
       results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0, contentTypes: {} });
       continue;
     }
 
-    // M-007: Dedup check — skip if cron already processed this dealership recently
+    // C3: Dedup scoped by metadata.kind = 'daily_training' so unrelated
+    // outbound SMS (manager encouragement, HELP reply, consent) don't block
+    // this cron from running. The pre-send transcript row we write further down
+    // also stamps metadata.kind = 'daily_training'.
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { count: recentSends } = await serviceClient
       .from('sms_transcript_log')
       .select('id', { count: 'exact', head: true })
       .eq('dealership_id', dealership.id)
       .eq('direction', 'outbound')
-      .gte('created_at', oneHourAgo);
+      .gte('created_at', oneHourAgo)
+      .contains('metadata', { kind: 'daily_training' });
     if ((recentSends ?? 0) > 0) {
       results.push({ dealershipId: dealership.id, sent: 0, skipped: 0, errors: 0, contentTypes: {} });
       continue;
@@ -302,20 +336,54 @@ export async function GET(request: NextRequest) {
           chainStep,
         });
 
+        // C8: Pre-send dedup token. Insert transcript row BEFORE sendSms so that
+        // if the cron crashes between send and log, the hourly dedup check
+        // (outbound in last 60m, see line ~125) will block the retry from re-sending.
+        // Use a deterministic placeholder sinch_message_id derived from session.id;
+        // we'll update it with the real id after send succeeds.
+        const placeholderMessageId = `pending:${session.id}`;
+        try {
+          await insertTranscriptLog({
+            userId: user.id,
+            dealershipId: dealership.id,
+            direction: 'outbound',
+            messageBody: fullQuestion,
+            sinchMessageId: placeholderMessageId,
+            phone: user.phone,
+            sessionId: session.id,
+            // C3: kind=daily_training so the dedup check can scope to just
+            // this cron's writes (see the recentSends query above).
+            metadata: { status: 'pending_send', kind: 'daily_training' },
+          });
+        } catch (logErr) {
+          // If UNIQUE on sinch_message_id conflicts, another cron already handled this session.
+          log.warn('daily_training.pre_send_log_conflict', {
+            dealership_id: dealership.id,
+            user_id: user.id,
+            session_id: session.id,
+            err: (logErr as Error).message,
+          });
+          continue;
+        }
+
         // Send SMS
         const sinchResponse = await sendSms(user.phone, fullQuestion);
 
-        await updateSessionStatus(session.id, dealership.id, 'active');
+        // Upgrade placeholder to real message id (best-effort)
+        try {
+          await serviceClient
+            .from('sms_transcript_log')
+            .update({ sinch_message_id: sinchResponse.message_id })
+            .eq('sinch_message_id', placeholderMessageId)
+            .eq('dealership_id', dealership.id);
+        } catch (upErr) {
+          log.warn('daily_training.upgrade_message_id_failed', {
+            session_id: session.id,
+            err: (upErr as Error).message,
+          });
+        }
 
-        await insertTranscriptLog({
-          userId: user.id,
-          dealershipId: dealership.id,
-          direction: 'outbound',
-          messageBody: fullQuestion,
-          sinchMessageId: sinchResponse.message_id,
-          phone: user.phone,
-          sessionId: session.id,
-        });
+        await updateSessionStatus(session.id, dealership.id, 'active');
 
         await insertDeliveryLog({
           dealershipId: dealership.id,
@@ -335,10 +403,13 @@ export async function GET(request: NextRequest) {
     }
 
     results.push({ dealershipId: dealership.id, sent, skipped, errors, contentTypes });
+    budget.markProcessed();
   }
 
   return NextResponse.json({
     dealerships: dealerships.length,
+    partial,
+    budget: budget.report(),
     results,
   });
 }

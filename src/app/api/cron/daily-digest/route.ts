@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
     managersNotified: number;
     errors: number;
     format: 'morning_script' | 'legacy_digest';
+    note?: string;
   }> = [];
 
   for (const dealership of dealerships) {
@@ -85,6 +86,8 @@ export async function GET(request: NextRequest) {
 
       if (morningScriptEnabled) {
         // --- Morning Meeting Script (Phase 4.5B) ---
+        // I-001: Idempotency via meeting_scripts UPSERT (unique on dealership_id, script_date)
+        // prevents duplicate sends if cron fires multiple times in same hour
         const { sent, errs } = await generateAndSendMorningScript(
           dealership.id,
           dealership.name,
@@ -103,7 +106,35 @@ export async function GET(request: NextRequest) {
       } else {
         // --- Legacy Daily Digest (backward compatible) ---
         // C-004 fix: Use dealership local timezone for "yesterday"
+        // H16: idempotency via billing_events-like token per (dealership, date).
+        // We reuse sms_transcript_log metadata as the dedup marker: one row per
+        // manager is normal, so we check for ANY legacy_digest row for this
+        // dealership + yesterday-date before sending.
         const yesterdayDateStr = getLocalYesterdayString(dealership.timezone ?? 'America/New_York');
+
+        // C4: Count successful sends only, and compare to expected recipients.
+        // A partial failure (e.g., 2/3 managers got their digest) must NOT
+        // block the remaining managers from getting theirs on the next run.
+        // We only count rows with metadata.sent_successfully=true so that
+        // a failed-mid-send leaves no dedup trace for the successful retry.
+        const { count: successfulDigestRows } = await serviceClient
+          .from('sms_transcript_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('dealership_id', dealership.id)
+          .eq('direction', 'outbound')
+          .contains('metadata', { kind: 'legacy_digest', for_date: yesterdayDateStr, sent_successfully: true });
+
+        if ((successfulDigestRows ?? 0) >= managers.length) {
+          results.push({
+            dealershipId: dealership.id,
+            dealershipName: dealership.name,
+            managersNotified: 0,
+            errors: 0,
+            format: 'legacy_digest',
+            note: 'already_sent_today',
+          });
+          continue;
+        }
 
         const stats = await getDailyDigestStats(
           dealership.id,
@@ -112,6 +143,17 @@ export async function GET(request: NextRequest) {
         const digestMessage = formatDigestMessage(dealership.name, stats);
 
         for (const manager of managers) {
+          // C4: Check per-manager idempotency before sending.
+          const { count: perManagerSent } = await serviceClient
+            .from('sms_transcript_log')
+            .select('id', { count: 'exact', head: true })
+            .eq('dealership_id', dealership.id)
+            .eq('user_id', manager.id)
+            .eq('direction', 'outbound')
+            .contains('metadata', { kind: 'legacy_digest', for_date: yesterdayDateStr, sent_successfully: true });
+
+          if ((perManagerSent ?? 0) > 0) continue;
+
           try {
             const smsResponse = await sendSms(manager.phone, digestMessage);
             await insertTranscriptLog({
@@ -121,6 +163,9 @@ export async function GET(request: NextRequest) {
               messageBody: digestMessage,
               sinchMessageId: smsResponse.message_id,
               phone: manager.phone,
+              // C4: sent_successfully stamped only after Sinch accepts.
+              // A throw from sendSms skips this insert → next cron retries.
+              metadata: { kind: 'legacy_digest', for_date: yesterdayDateStr, sent_successfully: true },
             });
             managersNotified++;
             await new Promise((r) => setTimeout(r, 50));
@@ -514,7 +559,27 @@ async function closeStaleCoachSessions(userId: string, dealershipId?: string): P
 
       await updateQuery;
     }
-  } catch {
+  } catch (err) {
+    console.warn(`Failed to close stale coach sessions for user ${userId}:`, (err as Error).message ?? err);
     // Non-critical
+  }
+}
+
+// Idempotency check helper — prevents duplicate daily digest sends
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function checkDailyDigestAlreadySent(dealershipId: string, todayStr: string): Promise<boolean> {
+  try {
+    const { data: existingScript } = await serviceClient
+      .from('meeting_scripts')
+      .select('id')
+      .eq('dealership_id', dealershipId)
+      .eq('script_date', todayStr)
+      .maybeSingle();
+
+    // If a meeting script already exists for today, digest was sent
+    return !!existingScript;
+  } catch {
+    // On error, assume not sent (safer to retry than skip)
+    return false;
   }
 }
