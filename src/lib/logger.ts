@@ -8,15 +8,23 @@
 //   log.info('billing.dunning.email_sent', { dealership_id, stage });
 //
 // 2026-04-18 M-7: PII scrubber. In production, any value matching
-// recognizable PII patterns (UUIDs, E.164 phones, email) is hashed with a
-// non-reversible sha256 prefix so logs can still be correlated (same value
-// -> same hash) but the raw PII never lands in Sentry / Axiom / Vercel
-// log drains. Keys whose name ends in `_last4` are whitelisted (known-safe
-// tokenized form) and passed through verbatim.
+// recognizable PII patterns (UUIDs, E.164 phones, email) is hashed
+// before logging so logs still correlate (same value -> same hash) but
+// the raw PII never lands in Sentry / Axiom / Vercel log drains. Keys
+// whose name ends in `_last4` are whitelisted (known-safe tokenized
+// form) and passed through verbatim.
+//
+// 2026-04-28: switched from Node `crypto.createHash('sha256')` to a
+// pure-JS deterministic hash (cyrb53) so this module compiles in BOTH
+// Node and Edge runtimes. instrumentation.ts imports bootcheck (which
+// imports this logger) on Edge boot to fail-fast on missing env, and
+// Edge cannot resolve Node's `crypto` module. The previous SHA-256 was
+// already truncated to 64 bits so it offered no real cryptographic
+// guarantee — cyrb53 produces equivalent collision resistance without
+// the runtime dependency. Hash is for log correlation/obfuscation only,
+// not security.
 //
 // Dev/test envs bypass scrubbing so developers see real values.
-
-import crypto from 'crypto';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -31,11 +39,28 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const E164_RE = /^\+?\d{10,15}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// cyrb53 — fast, deterministic, non-cryptographic 64-bit hash.
+// Edge-runtime safe (pure JS, no Node crypto). Returns 16-char hex.
+function cyrb53(str: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const hi = (h2 >>> 0).toString(16).padStart(8, '0');
+  const lo = (h1 >>> 0).toString(16).padStart(8, '0');
+  return hi + lo;
+}
+
 function hashValue(v: string): string {
   // Prefix with `h:` so grep can tell at a glance a value is hashed.
   // Salt-free intentionally -- deterministic hashes so "same user across
   // events" correlates cleanly in log search.
-  return 'h:' + crypto.createHash('sha256').update(v).digest('hex').slice(0, 16);
+  return 'h:' + cyrb53(v);
 }
 
 function scrubValue(key: string, value: unknown): unknown {
