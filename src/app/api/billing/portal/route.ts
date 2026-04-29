@@ -1,8 +1,13 @@
 import { createBillingPortalSession } from '@/lib/stripe';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { requireJsonContentType } from '@/lib/api-helpers';
 
-export async function POST(_request: Request) {
+export async function POST(request: Request) {
   try {
+    // L-14: content-type gate (no-body POST is allowed)
+    const ctErr = requireJsonContentType(request);
+    if (ctErr) return ctErr;
+
     // Get session
     const supabase = await createServerSupabaseClient();
     const {
@@ -37,9 +42,21 @@ export async function POST(_request: Request) {
     );
     const { url } = await Promise.race([portalPromise, timeoutPromise]);
 
-    // L-021: Validate Stripe portal URL before returning
-    if (!url || !url.startsWith('https://billing.stripe.com/')) {
-      console.error('Unexpected Stripe portal URL:', url?.slice(0, 50));
+    // S9: Parse the URL and compare hostname exactly. Previously used
+    // `startsWith('https://billing.stripe.com/')` which accepts deceptive
+    // hostnames like `https://billing.stripe.com.attacker.com/...`.
+    if (!url) {
+      return Response.json({ error: 'Invalid billing portal URL' }, { status: 502 });
+    }
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      console.error('Malformed Stripe portal URL:', url.slice(0, 50));
+      return Response.json({ error: 'Invalid billing portal URL' }, { status: 502 });
+    }
+    if (parsedUrl.protocol !== 'https:' || parsedUrl.hostname !== 'billing.stripe.com') {
+      console.error('Unexpected Stripe portal URL hostname:', parsedUrl.hostname);
       return Response.json({ error: 'Invalid billing portal URL' }, { status: 502 });
     }
 
