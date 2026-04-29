@@ -200,7 +200,6 @@ export async function POST(request: NextRequest) {
 
     const consentMsg = `${dealershipName} uses DealershipIQ for training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
     const BATCH_SIZE = 10;
-    const BATCH_DELAY_MS = 1000;
 
     for (let i = 0; i < usersToNotify.length; i += BATCH_SIZE) {
       const batch = usersToNotify.slice(i, i + BATCH_SIZE);
