@@ -5,6 +5,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
+import { requireAuth } from '@/lib/auth-helpers';
+import { apiError, apiSuccess } from '@/lib/api-helpers';
 
 interface SessionResult {
   id: string;
@@ -23,26 +25,16 @@ interface SessionResult {
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
-    if (!dealershipId) {
-      return NextResponse.json({ error: 'No dealership' }, { status: 403 });
-    }
-
-    const userRole = user.app_metadata?.user_role as string | undefined;
-    if (userRole !== 'manager' && userRole !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    // Validate auth and get context
+    const auth = await requireAuth(supabase, ['manager', 'owner']);
+    if (auth instanceof NextResponse) return auth;
+    const { dealershipId } = auth;
 
     // H-010: Subscription gating
     const subCheck = await checkSubscriptionAccess(dealershipId);
     if (!subCheck.allowed) {
-      return NextResponse.json({ error: 'Subscription required', reason: subCheck.reason }, { status: 403 });
+      return apiError(`Subscription required: ${subCheck.reason}`, 403);
     }
 
     // Parse query params
@@ -63,6 +55,12 @@ export async function GET(request: NextRequest) {
     const cutoffIso = cutoff.toISOString();
 
     // Get training results from past N days
+    // 2026-04-18 L-12: cap result set at 2000 rows. A 365-day query for a
+    // mid-size dealership (30 reps * 3 sessions/day * 365) easily exceeds
+    // 30k rows — streaming that to the dashboard blows the Vercel 4.5 MB
+    // response limit and locks the tab. 2000 is more than any human UI
+    // will render; pagination is a separate story if it ever becomes needed.
+    const MAX_ROWS = 2000;
     const { data: results, error: resultsError } = await supabase
       .from('training_results')
       .select(`
@@ -80,14 +78,12 @@ export async function GET(request: NextRequest) {
       `)
       .eq('dealership_id', dealershipId)
       .gte('created_at', cutoffIso)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(MAX_ROWS);
 
     if (resultsError) {
       console.error('Failed to fetch sessions:', (resultsError as Error).message ?? resultsError);
-      return NextResponse.json(
-        { error: 'Failed to fetch sessions' },
-        { status: 500 }
-      );
+      return apiError('Failed to fetch sessions', 500);
     }
 
     // Transform data
@@ -105,12 +101,9 @@ export async function GET(request: NextRequest) {
       created_at: r.created_at as string,
     }));
 
-    return NextResponse.json({ sessions, days });
+    return apiSuccess({ sessions, days });
   } catch (err) {
     console.error('GET /api/dashboard/sessions error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return apiError('Internal server error', 500);
   }
 }

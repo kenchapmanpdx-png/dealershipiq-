@@ -4,8 +4,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { requireJsonContentType } from '@/lib/api-helpers';
 
 export async function POST(request: NextRequest) {
+  // L-14: content-type gate
+  const ctErr = requireJsonContentType(request);
+  if (ctErr) return ctErr;
+
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 

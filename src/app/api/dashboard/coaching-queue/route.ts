@@ -6,6 +6,8 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
+import { requireAuth } from '@/lib/auth-helpers';
+import { apiError, apiSuccess } from '@/lib/api-helpers';
 
 interface CoachingSession {
   id: string;
@@ -24,26 +26,14 @@ interface CoachingSession {
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
-    if (!dealershipId) {
-      return NextResponse.json({ error: 'No dealership' }, { status: 403 });
-    }
-
-    const userRole = user.app_metadata?.user_role as string | undefined;
-    if (userRole !== 'manager' && userRole !== 'owner') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const auth = await requireAuth(supabase, ['manager', 'owner']);
+    if (auth instanceof NextResponse) return auth;
+    const { dealershipId } = auth;
 
     // H-010: Subscription gating
     const subCheck = await checkSubscriptionAccess(dealershipId);
     if (!subCheck.allowed) {
-      return NextResponse.json({ error: 'Subscription required', reason: subCheck.reason }, { status: 403 });
+      return apiError(`Subscription required: ${subCheck.reason}`, 403);
     }
 
     // Get all training results from past 7 days
@@ -51,6 +41,12 @@ export async function GET() {
     cutoff.setDate(cutoff.getDate() - 7);
     const cutoffIso = cutoff.toISOString();
 
+    // Q-001: Fetch only necessary columns to minimize data transfer
+    // Note: Complex multi-condition filtering (any dimension < 3 OR all = 5) is difficult
+    // to express in Postgres without raw SQL. Could optimize by:
+    // - Adding a computed column for has_low_score / is_perfect in DB
+    // - Or pushing to materialized view with pre-filtered results
+    // For now, accept in-memory filtering as tradeoff for simpler query logic.
     const { data: results, error: resultsError } = await supabase
       .from('training_results')
       .select(`
@@ -71,10 +67,7 @@ export async function GET() {
 
     if (resultsError) {
       console.error('Failed to fetch coaching queue:', (resultsError as Error).message ?? resultsError);
-      return NextResponse.json(
-        { error: 'Failed to fetch coaching queue' },
-        { status: 500 }
-      );
+      return apiError('Failed to fetch coaching queue', 500);
     }
 
     // Filter for coaching candidates
@@ -113,12 +106,9 @@ export async function GET() {
       []
     );
 
-    return NextResponse.json({ queue: coachingQueue });
+    return apiSuccess({ queue: coachingQueue });
   } catch (err) {
     console.error('GET /api/dashboard/coaching-queue error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return apiError('Internal server error', 500);
   }
 }

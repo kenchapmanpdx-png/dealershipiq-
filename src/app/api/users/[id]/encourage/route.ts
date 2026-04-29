@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { sendSms } from '@/lib/sms';
 import { insertTranscriptLog } from '@/lib/service-db';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 
 interface EncourageRequest {
   message?: string;
@@ -35,6 +36,19 @@ export async function PUT(
     const userRole = user.app_metadata?.user_role as string | undefined;
     if (userRole !== 'manager' && userRole !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // M-17 (2026-04-18): encourage sends SMS, which costs real money per send
+    // and binds us to TCPA on an unpaid dealership. Gate explicitly here --
+    // middleware's SUBSCRIPTION_GATED_PREFIXES only covers /api/dashboard,
+    // /api/push, /api/ask; /api/users/* was un-gated which lets canceled/
+    // past-due dealerships continue burning SMS spend.
+    const subGate = await checkSubscriptionAccess(dealershipId);
+    if (!subGate.allowed) {
+      return NextResponse.json(
+        { error: 'Subscription required', reason: subGate.reason, status: subGate.status },
+        { status: 402 }
+      );
     }
 
     const body = await request.json() as EncourageRequest;

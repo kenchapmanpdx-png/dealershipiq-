@@ -8,27 +8,20 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
+import { requireAuth } from '@/lib/auth-helpers';
+import { apiError, apiSuccess } from '@/lib/api-helpers';
 
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const dealershipId = user.app_metadata?.dealership_id as string | undefined;
-    const role = user.app_metadata?.user_role as string | undefined;
-
-    if (!dealershipId || !role || !['manager', 'owner'].includes(role)) {
-      return NextResponse.json({ data: null, error: 'Manager access required' }, { status: 403 });
-    }
+    const auth = await requireAuth(supabase, ['manager', 'owner']);
+    if (auth instanceof NextResponse) return auth;
+    const { dealershipId } = auth;
 
     // H-010: Subscription gating
     const subCheck = await checkSubscriptionAccess(dealershipId);
     if (!subCheck.allowed) {
-      return NextResponse.json({ data: null, error: 'Subscription required' }, { status: 403 });
+      return apiError('Subscription required', 403);
     }
 
     // Calculate date range (last 7 days)
@@ -44,7 +37,7 @@ export async function GET() {
 
     if (fetchError) {
       console.error('Coach themes query error:', (fetchError as Error).message ?? fetchError);
-      return NextResponse.json({ data: null, error: 'Query failed' }, { status: 500 });
+      return apiError('Query failed', 500);
     }
 
     const allSessions = sessions ?? [];
@@ -54,17 +47,14 @@ export async function GET() {
 
     // Privacy check: need >= 3 unique users
     if (uniqueUsers < 3) {
-      return NextResponse.json({
-        data: {
-          period: 'last_7_days',
-          total_sessions: allSessions.length,
-          unique_users: uniqueUsers,
-          themes: [],
-          sentiment_distribution: { positive: 0, neutral: 0, negative: 0, declining: 0 },
-          insufficient_data: true,
-          message: 'Need at least 3 team members using Coach Mode to show themes.',
-        },
-        error: null,
+      return apiSuccess({
+        period: 'last_7_days',
+        total_sessions: allSessions.length,
+        unique_users: uniqueUsers,
+        themes: [],
+        sentiment_distribution: { positive: 0, neutral: 0, negative: 0, declining: 0 },
+        insufficient_data: true,
+        message: 'Need at least 3 team members using Coach Mode to show themes.',
       });
     }
 
@@ -93,18 +83,15 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({
-      data: {
-        period: 'last_7_days',
-        total_sessions: allSessions.length,
-        unique_users: uniqueUsers,
-        themes,
-        sentiment_distribution: sentimentDist,
-      },
-      error: null,
+    return apiSuccess({
+      period: 'last_7_days',
+      total_sessions: allSessions.length,
+      unique_users: uniqueUsers,
+      themes,
+      sentiment_distribution: sentimentDist,
     });
   } catch (err) {
     console.error('Coach themes error:', (err as Error).message ?? err);
-    return NextResponse.json({ data: null, error: 'Internal error' }, { status: 500 });
+    return apiError('Internal error', 500);
   }
 }
