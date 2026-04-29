@@ -11,6 +11,8 @@
 // v2: Raised SMS hard cap from 320 (2 segments) to 480 (3 segments) to
 //     accommodate richer grading feedback with word tracks + example responses.
 
+import { log } from '@/lib/logger';
+
 export interface SmsSendResult {
   id: string;
   message_id: string; // alias for id -- compatibility with callers expecting Conversation API format
@@ -19,6 +21,30 @@ export interface SmsSendResult {
 }
 
 // --- GSM-7 Sanitization ---
+//
+// 2026-04-18 L-17: INVARIANT — `sanitizeGsm7` and `escapeXml` operate in
+// DIFFERENT layers and must not be combined:
+//
+//   * `escapeXml` is used BEFORE the LLM call, inside XML/prompt construction
+//     (see `src/lib/openai.ts`, `src/lib/coach/prompts.ts`). It escapes
+//     `& < > " '` so user text cannot break out of `<tag>...</tag>` framing
+//     in the system/user message. Its job is prompt-injection defense, not
+//     GSM-7 safety.
+//
+//   * `sanitizeGsm7` is used AFTER the LLM call, immediately before
+//     `sendSms`. Its job is to ensure the outbound body uses only the
+//     GSM-7 alphabet so Sinch encodes the message as a single-segment SMS
+//     (not UCS-2, which doubles billing cost and halves the character
+//     budget).
+//
+// Applying them in the wrong order breaks both goals:
+//   - `sanitizeGsm7(escapeXml(x))` would strip `&amp;` down to `amp` because
+//     the `;` sneaks through but the `&` is stripped, corrupting the SMS.
+//   - `escapeXml(sanitizeGsm7(x))` would re-escape an already-cleaned
+//     string and leak `&amp;` literals into the user's SMS.
+//
+// Keep the two layers separate. The prompt pipeline escapes on the way IN;
+// the SMS pipeline sanitizes on the way OUT. No callsite should chain them.
 export function sanitizeGsm7(text: string): string {
   let result = text;
 
@@ -46,6 +72,12 @@ export function sanitizeGsm7(text: string): string {
 // S-006 + C-010: Real-time opt-out check before any SMS send (TCPA compliance)
 // FAIL-CLOSED: returns true (block SMS) on ANY error. TCPA fine: $500-$1,500/message.
 // CF-M-001: Uses shared serviceClient instead of creating a new client per call.
+//
+// 2026-04-18 L-11: console.error replaced with structured log events. Every
+// failure path now emits `tcpa.opt_out_check_failed` with a `reason` tag so
+// a DB outage that forces every SMS into fail-closed mode lights up in
+// observability instead of drowning in generic stderr. Operators need to
+// react fast here — fail-closed means the product is effectively offline.
 async function isOptedOut(phone: string): Promise<boolean> {
   try {
     const { serviceClient } = await import('@/lib/supabase/service');
@@ -60,25 +92,94 @@ async function isOptedOut(phone: string): Promise<boolean> {
       .maybeSingle();
 
     if (error) {
-      console.error('[TCPA] isOptedOut: DB query error -- blocking SMS send:', error.message);
+      log.error('tcpa.opt_out_check_failed', {
+        reason: 'db_query_error',
+        error: error.message,
+      });
       return true; // Fail-closed on query error
     }
 
     return !!data;
   } catch (err) {
-    console.error('[TCPA] isOptedOut: unexpected error -- blocking SMS send:', err);
+    log.error('tcpa.opt_out_check_failed', {
+      reason: 'exception',
+      error: (err as Error).message ?? String(err),
+    });
     return true; // Fail-closed on any exception
+  }
+}
+
+// M-3 (2026-04-18): Rate-limit error for SMS send failures with retry-after.
+export class SmsRateLimitedError extends Error {
+  retryAfterMs: number;
+  constructor(retryAfterMs: number) {
+    super(`SMS rate limited; retry in ${retryAfterMs}ms`);
+    this.name = 'SmsRateLimitedError';
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+// M-3 (2026-04-18): Quiet-hours violation for proactive sends.
+// Reactive replies (grading, keyword responses) are NEVER blocked by this --
+// the caller must pass `{ proactive: true }` to opt in to quiet-hours checking.
+export class SmsQuietHoursError extends Error {
+  constructor() {
+    super('SMS blocked by quiet hours policy');
+    this.name = 'SmsQuietHoursError';
+  }
+}
+
+export interface SendSmsOptions {
+  // When true, this send is proactive (peer-challenge ping, onboarding reminder,
+  // scheduled training question, etc.) and MUST respect the recipient's local
+  // quiet-hours window. Reactive replies (grading, HELP, STOP ack) must leave
+  // this unset or false -- we always reply to a user-initiated message.
+  proactive?: boolean;
+  // IANA timezone override. When omitted, sendSms looks up the dealership tz
+  // via `getUserByPhone`. If that lookup fails we fall back to America/Los_Angeles
+  // so the call still gates (fail-closed for quiet hours).
+  timezone?: string;
+}
+
+async function resolveDealershipTimezone(phone: string): Promise<string> {
+  try {
+    const { getUserByPhone } = await import('@/lib/service-db');
+    const user = await getUserByPhone(phone);
+    return user?.dealershipTimezone ?? 'America/Los_Angeles';
+  } catch {
+    return 'America/Los_Angeles';
   }
 }
 
 export async function sendSms(
   phone: string,
   text: string,
-  _metadata?: string
+  _metadata?: string,
+  options?: SendSmsOptions
 ): Promise<SmsSendResult> {
-  // F4-H-001: Global SMS kill switch. Set ENABLE_SMS_SEND=false to disable all outbound.
-  if (process.env.ENABLE_SMS_SEND === 'false') {
-    console.log(`[SMS] Send disabled via ENABLE_SMS_SEND. Would have sent to ***${phone.slice(-4)}`);
+  // M-3: proactive sends must pass through the quiet-hours gate.
+  if (options?.proactive === true) {
+    const { isWithinSendWindow } = await import('@/lib/quiet-hours');
+    const tz = options.timezone ?? await resolveDealershipTimezone(phone);
+    let inWindow: boolean;
+    try {
+      inWindow = isWithinSendWindow(tz);
+    } catch {
+      // isWithinSendWindow throws on invalid tz. Fail-closed: block the send.
+      throw new SmsQuietHoursError();
+    }
+    if (!inWindow) {
+      throw new SmsQuietHoursError();
+    }
+  }
+
+  // F4-H-001: Global SMS kill switch.
+  // 2026-04-28: flipped to FAIL-CLOSED. Sends only proceed when
+  // ENABLE_SMS_SEND === 'true'. Any other value (unset, typo, 'TRUE', 'yes',
+  // empty string) blocks the send. Previously a typoed env in Vercel could
+  // silently re-enable sends after a kill-switch deploy.
+  if (process.env.ENABLE_SMS_SEND !== 'true') {
+    console.log(`[SMS] Send disabled via ENABLE_SMS_SEND (value=${JSON.stringify(process.env.ENABLE_SMS_SEND ?? null)}). Would have sent to ***${phone.slice(-4)}`);
     return { id: 'disabled', message_id: 'disabled', to: [phone], from: process.env.SINCH_PHONE_NUMBER ?? '' };
   }
 
@@ -92,7 +193,9 @@ export async function sendSms(
 
   // S-006: TCPA real-time opt-out check before every outbound SMS
   if (await isOptedOut(phone)) {
-    console.warn(`Blocked SMS to opted-out number: ${phone.slice(-4)}`);
+    // L-16: Use the same `***` prefix as every other phone-fragment log so
+    // log grep / dashboards match on a consistent format.
+    console.warn(`Blocked SMS to opted-out number: ***${phone.slice(-4)}`);
     return { id: 'blocked-opt-out', message_id: 'blocked-opt-out', to: [phone], from: fromNumber };
   }
 

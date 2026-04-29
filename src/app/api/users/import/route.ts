@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { sendSms, isValidE164 } from '@/lib/sms';
+import { sendSms } from '@/lib/sms';
 import { getDealershipName, insertTranscriptLog } from '@/lib/service-db';
 
 interface ImportRow {
@@ -29,17 +29,14 @@ interface ImportResult {
 }
 
 // E.164 validation
-function validateE164Phone(phone: string): boolean {
-  const e164Pattern = /^\+?1?\d{10,15}$/;
-  return e164Pattern.test(phone.replace(/\D/g, ''));
-}
+// C7: phone normalization delegated to canonical `@/lib/phone` util.
+// Rejecting invalid input via the shared util prevents the +!@#$ garbage-row
+// class of bugs and keeps opt-out semantics consistent across writers.
+import { normalizePhone, isValidE164, tryNormalizePhone } from '@/lib/phone';
 
-// Normalize to E.164 format: +1XXXXXXXXXX
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  return digits.length === 11 && digits.startsWith('1')
-    ? `+${digits}`
-    : `+1${digits}`;
+function validateE164Phone(phone: string): boolean {
+  const n = tryNormalizePhone(phone);
+  return n !== null && isValidE164(n);
 }
 
 // Parse a single CSV line respecting quoted fields (RFC 4180)
@@ -335,6 +332,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      let createdUserId: string | null = null;
       try {
         // C-003: RLS-backed — users_insert_manager + memberships_insert_manager policies
         const { data: newUser, error: createError } = await supabase
@@ -349,6 +347,7 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (createError) throw createError;
+        createdUserId = newUser.id as string;
 
         // C-003: RLS-backed
         const { error: memberError } = await supabase
@@ -380,6 +379,18 @@ export async function POST(request: NextRequest) {
       } catch (rowErr) {
         // V4-M-004: Log error instead of silently swallowing
         console.error(`Import row ${rowNumber} DB error:`, (rowErr as Error).message ?? rowErr);
+
+        // H9: If we successfully created the user row but failed on membership,
+        // roll back the user so retry of the same CSV doesn't see
+        // "phone already exists" and strand the user with no dealership.
+        if (createdUserId) {
+          try {
+            await supabase.from('users').delete().eq('id', createdUserId);
+          } catch (cleanupErr) {
+            console.error(`Import row ${rowNumber} cleanup failed — orphaned user ${createdUserId}:`, (cleanupErr as Error).message);
+          }
+        }
+
         result.errors++;
         result.rows.push({
           row_number: rowNumber,
@@ -414,9 +425,13 @@ export async function POST(request: NextRequest) {
               metadata: { type: 'consent_request' },
             }, supabase);
           } catch (smsErr) {
-            console.error(
-              `Consent SMS failed for ${user.phone.slice(0, 6)}****:`,
-              (smsErr as Error).message ?? smsErr
+            // H1: sendSms now fails with SmsRateLimitedError when the global
+            // 15/sec Sinch budget is exhausted. Log and continue — the user
+            // was still imported, just didn't get the consent SMS this round.
+            const err = smsErr as Error;
+            const kind = err?.name === 'SmsRateLimitedError' ? 'rate_limited' : 'send_failed';
+            console.warn(
+              `Consent SMS ${kind} for ${user.phone.slice(0, 6)}****: ${err?.message ?? smsErr}`
             );
           }
         })

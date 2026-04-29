@@ -1,11 +1,33 @@
 // POST /api/app/auth — Phone-based authentication for employee PWA
-// Verifies phone + last 4 digits, returns session token
+// Verifies phone + last 4 digits, sets HttpOnly session cookie
 // Phase 4.5A
 // C-003: Phone token auth — no JWT, creates session token for PWA
+// 2026-04-18 C-2: Cookie is now set server-side with HttpOnly; Secure; SameSite=Lax.
+//   Max-Age aligned with the 7-day token expiresAt. Previously the cookie was
+//   set from client JS (document.cookie), so any XSS in the PWA meant a 7-day
+//   token-theft window.
+// 2026-04-18 H-17: Error messages normalized — both "no user" and "bad last-4"
+//   return "Invalid credentials" to prevent username enumeration across tenants.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { serviceClient } from '@/lib/supabase/service';
+import { isValidE164 } from '@/lib/sms';
+import { checkAuthAttemptLimit } from '@/lib/rate-limit';
+import { log } from '@/lib/logger';
+import { requireJsonContentType } from '@/lib/api-helpers';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const SESSION_COOKIE_NAME = 'diq_session';
+const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days — matches token expiresAt
+
+/** S3: constant-time equality for fixed-length last-4 digit auth. */
+function constantTimeEqualLast4(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== 4 || b.length !== 4) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 // D2-M-002: Dedicated secret for coach tokens. No CRON_SECRET fallback.
 function getAuthSecret(): string {
@@ -16,58 +38,26 @@ function getAuthSecret(): string {
   return secret;
 }
 
-// S-002: In-memory rate limit for PWA auth (brute-force protection)
-const authAttempts = new Map<string, { count: number; blockedUntil: number }>();
-const AUTH_MAX_ATTEMPTS = 5;
-const _AUTH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-const AUTH_BLOCK_MS = 15 * 60 * 1000; // 15 minute lockout
+// 2026-04-18 L-15: Removed in-memory `authAttempts` Map + helpers. Upstash
+// `checkAuthAttemptLimit` is the shared-state primary limiter across every
+// Vercel instance (see src/lib/rate-limit.ts). The in-memory belt was
+// per-lambda and scaled with fleet size rather than containing it, plus it
+// only fired AFTER the Upstash gate already passed — so it added no defense
+// in depth, only cleanup cost at 10k entries. A single source of truth is
+// easier to reason about and fails closed in production if Upstash is down.
 
-function checkAuthRateLimit(phone: string): boolean {
-  const now = Date.now();
-  const entry = authAttempts.get(phone);
-
-  if (entry && entry.blockedUntil > now) {
-    return false; // Still blocked
-  }
-
-  if (!entry || entry.blockedUntil <= now) {
-    // Reset if block expired
-    if (entry && entry.blockedUntil <= now) {
-      authAttempts.set(phone, { count: 1, blockedUntil: 0 });
-    }
-    return true;
-  }
-
-  return true;
-}
-
-function recordAuthAttempt(phone: string, success: boolean): void {
-  const now = Date.now();
-  if (success) {
-    authAttempts.delete(phone);
-    return;
-  }
-
-  const entry = authAttempts.get(phone) || { count: 0, blockedUntil: 0 };
-  entry.count += 1;
-
-  if (entry.count >= AUTH_MAX_ATTEMPTS) {
-    entry.blockedUntil = now + AUTH_BLOCK_MS;
-    entry.count = 0;
-  }
-
-  authAttempts.set(phone, entry);
-
-  // Cleanup old entries periodically
-  if (authAttempts.size > 10000) {
-    authAttempts.forEach((val, key) => {
-      if (val.blockedUntil < now && val.count === 0) authAttempts.delete(key);
-    });
-  }
+// H-17: Generic error response used for every "bad credentials" outcome so
+// attackers can't distinguish "user exists, wrong last-4" from "no such user".
+function invalidCredentialsResponse(): NextResponse {
+  return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // L-14: content-type gate
+    const ctErr = requireJsonContentType(request);
+    if (ctErr) return ctErr;
+
     const { phone, last_four, dealership_slug } = await request.json();
 
     if (!phone || !last_four || last_four.length !== 4) {
@@ -89,21 +79,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // S-002: Rate limit by phone number
-    if (!checkAuthRateLimit(normalized)) {
+    // Validate E.164 format after normalization
+    if (!isValidE164(normalized)) {
+      return NextResponse.json(
+        { error: 'Invalid phone number format' },
+        { status: 400 }
+      );
+    }
+
+    // S6 / L-15: Rate limit by phone via Upstash. Single source of truth —
+    // shared across every Vercel instance, fails closed in production if
+    // Upstash is unreachable (see `checkAuthAttemptLimit`).
+    const upstashGate = await checkAuthAttemptLimit(normalized);
+    if (!upstashGate.success) {
       return NextResponse.json(
         { error: 'Too many attempts. Try again in 15 minutes.' },
         { status: 429 }
       );
     }
 
-    // Verify last 4 digits match
-    if (!normalized.endsWith(last_four)) {
-      recordAuthAttempt(normalized, false);
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    // S3: constant-time comparison. Previously used `endsWith`, which leaks
+    // information via per-character timing differences under statistical
+    // sampling. The helper enforces 4-digit length on both sides.
+    const expectedLast4 = normalized.slice(-4);
+    if (!constantTimeEqualLast4(expectedLast4, String(last_four ?? ''))) {
+      return invalidCredentialsResponse();
     }
 
-    // Look up user by phone
+    // H6: Look up user by canonical E.164 phone only. Previously this
+    // retried without the "+" prefix to paper over write-time normalization
+    // drift; that masked the real bug instead of fixing it. After the C7
+    // consolidation every writer stores `+E164`, so the retry is obsolete.
     const { data: user, error: userError } = await serviceClient
       .from('users')
       .select('id, full_name, language, status')
@@ -111,27 +117,19 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (userError || !user) {
-      // Try alternate format without +
-      const alt = normalized.replace(/^\+/, '');
-      const { data: user2 } = await serviceClient
-        .from('users')
-        .select('id, full_name, language, status')
-        .eq('phone', alt)
-        .single();
-
-      if (!user2) {
-        recordAuthAttempt(normalized, false);
-        return NextResponse.json({ error: 'User not found' }, { status: 401 });
-      }
-
-      recordAuthAttempt(normalized, true);
-      return await createSessionResponse(user2, dealership_slug);
+      return invalidCredentialsResponse();
     }
 
-    recordAuthAttempt(normalized, true);
+    // H-16 component: reject deactivated users at auth time (defense in depth —
+    // authenticateRep also re-checks on each request).
+    if (user.status !== 'active' && user.status !== 'pending_consent') {
+      log.warn('app.auth.inactive_user', { user_id: user.id, status: user.status });
+      return invalidCredentialsResponse();
+    }
+
     return await createSessionResponse(user, dealership_slug);
   } catch (err) {
-    console.error('Auth error:', (err as Error).message ?? err);
+    log.error('app.auth.unexpected_error', { error: (err as Error).message });
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
@@ -152,7 +150,8 @@ async function createSessionResponse(
     .single();
 
   if (!dealership) {
-    return NextResponse.json({ error: 'Dealership not found' }, { status: 404 });
+    // H-17: Normalize — don't leak "dealership not found" vs "no membership".
+    return invalidCredentialsResponse();
   }
 
   const { data: membership } = await serviceClient
@@ -163,13 +162,14 @@ async function createSessionResponse(
     .maybeSingle();
 
   if (!membership) {
-    return NextResponse.json({ error: 'Not a member of this dealership' }, { status: 403 });
+    // H-17: Normalize — don't leak "exists but not a member".
+    return invalidCredentialsResponse();
   }
 
   const dealershipId = dealership.id as string;
 
   // Create HMAC-signed session token
-  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+  const expiresAt = Date.now() + SESSION_TTL_SECONDS * 1000; // 7 days
   const secret = getAuthSecret();
 
   const payload = {
@@ -190,7 +190,23 @@ async function createSessionResponse(
 
   const token = Buffer.from(JSON.stringify(tokenData)).toString('base64');
 
-  return NextResponse.json({ token, first_name: firstName });
-}
+  // C-2: Session info returned to client in body for immediate hydration;
+  // the bearer token itself is stored ONLY in the HttpOnly cookie so XSS
+  // cannot exfiltrate it via document.cookie.
+  const res = NextResponse.json({
+    userId,
+    dealershipId,
+    firstName,
+    language,
+    first_name: firstName, // backward-compat for existing callers
+  });
+  res.cookies.set(SESSION_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: SESSION_TTL_SECONDS,
+  });
 
-// verifyAppToken moved to @/lib/app-auth to avoid invalid Next.js route exports
+  return res;
+}
