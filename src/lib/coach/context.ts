@@ -46,7 +46,7 @@ export async function buildRepContext(
     getUserStreak(userId, dealershipId),
     getEmployeePriorityVector(userId, dealershipId).catch(() => null),
     getRecentGaps(userId, dealershipId),
-    getPreviousCoachSessions(userId),
+    getPreviousCoachSessions(userId, dealershipId),
     getDomainScores(userId, dealershipId),
   ]);
 
@@ -161,13 +161,17 @@ async function getRecentGaps(
 }
 
 async function getPreviousCoachSessions(
-  userId: string
+  userId: string,
+  dealershipId: string
 ): Promise<RepContextSnapshot['previous_coach_sessions']> {
   try {
+    // C5: scope by dealership so a user with memberships in multiple
+    // dealerships can't have their other tenant's coach history feed in.
     const { data } = await serviceClient
       .from('coach_sessions')
       .select('session_topic, sentiment_trend, created_at')
       .eq('user_id', userId)
+      .eq('dealership_id', dealershipId)
       .not('ended_at', 'is', null)
       .order('created_at', { ascending: false })
       .limit(3);

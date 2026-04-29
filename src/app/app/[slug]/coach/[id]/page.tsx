@@ -25,10 +25,8 @@ export default function ContinueSessionPage() {
 
     async function loadSession() {
       try {
-        // Load session data
-        const res = await fetch('/api/coach/session', {
-          headers: { 'x-diq-session': session!.token },
-        });
+        // 2026-04-18 C-2: HttpOnly cookie auto-sent on same-origin requests.
+        const res = await fetch('/api/coach/session');
         const data = await res.json();
         const sessions = data.data?.sessions ?? [];
         const current = sessions.find((s: { id: string }) => s.id === sessionId);
@@ -46,7 +44,6 @@ export default function ContinueSessionPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-diq-session': session!.token,
           },
           body: JSON.stringify({ session_id: sessionId }),
         });
@@ -115,7 +112,6 @@ export default function ContinueSessionPage() {
         <ChatInterface
           sessionId={sessionId}
           initialMessages={messages}
-          token={session.token}
           onSessionClosed={() => router.push(`/app/${slug}/coach`)}
         />
       </div>

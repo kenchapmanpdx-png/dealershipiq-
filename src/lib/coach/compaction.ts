@@ -34,10 +34,20 @@ export async function compactMessages(
   }
 
   const earlyMessages = messages.slice(0, 8);
-  const recentMessages = messages.slice(-4);
+  let recentMessages = messages.slice(-4);
 
-  // Summarize early messages via GPT-4o-mini
-  const synopsis = await summarizeMessages(earlyMessages);
+  // H15: If summarizer fails (OpenAI timeout, rate limit, parse error),
+  // keep MORE recent messages rather than silently degrading to only the
+  // last 4 + weak fallback string. Coach sessions depend heavily on
+  // mid-conversation context; a generic fallback makes advice feel generic.
+  let synopsis: string | null = null;
+  try {
+    synopsis = await summarizeMessages(earlyMessages);
+  } catch (err) {
+    synopsis = null;
+    recentMessages = messages.slice(-8); // keep twice as much raw history
+    console.warn('[coach.compaction] summarizer failed, falling back to last-8 raw:', (err as Error).message);
+  }
 
   return { synopsis, recentMessages };
 }

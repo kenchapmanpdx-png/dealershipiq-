@@ -14,8 +14,39 @@
 //     scenario-matched examples, grading calibration. Objection Master v1.1 integrated.
 
 import { z } from 'zod';
+import * as Sentry from '@sentry/nextjs';
 import type { TranscriptEntry } from '@/lib/service-db';
 import { escapeXml } from '@/lib/sms';
+import { log } from '@/lib/logger';
+
+// =============================================================================
+// FETCH WITH TIMEOUT — bounds every OpenAI call so a slow API doesn't burn
+// the Vercel webhook budget. 10s default leaves headroom under 15s webhook timeout.
+// =============================================================================
+
+const OPENAI_TIMEOUT_MS = parseInt(process.env.OPENAI_TIMEOUT_MS || '10000', 10);
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = OPENAI_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Jittered backoff between retry attempts (avoid thundering-herd on 429).
+async function jitterSleep(attemptIndex: number): Promise<void> {
+  const base = 150; // ms
+  const jitter = Math.random() * base;
+  const delay = base * Math.pow(2, attemptIndex) + jitter;
+  await new Promise((resolve) => setTimeout(resolve, Math.min(delay, 1500)));
+}
 
 // =============================================================================
 // GRADING SCHEMAS (Structured Outputs)
@@ -146,16 +177,26 @@ export function replaceScoreInFeedback(
   feedback: string,
   weightedTotal: number
 ): string {
-  // Anchored to start — prompt says "Start with X/20"
-  // Handles optional spaces around slash
-  const result = feedback.replace(/^\d+\s*\/\s*20/, `${weightedTotal}/20`);
+  // H12: Accept several score formats GPT occasionally emits — "17/20", "17 / 20",
+  // "17 out of 20", "17-of-20", or sentence-initial "Score: 17/20". Trim leading
+  // whitespace first. If no match, prepend the authoritative weighted score.
+  const trimmed = feedback.replace(/^\s+/, '');
+  const patterns: RegExp[] = [
+    /^\d{1,2}\s*\/\s*20/,                          // 17/20, 17 / 20
+    /^\d{1,2}\s*(?:out\s*of|of|-\s*of\s*-)\s*20/i, // 17 out of 20, 17-of-20
+    /^score\s*[:=]\s*\d{1,2}\s*\/\s*20/i,          // Score: 17/20
+  ];
 
-  // If no match (GPT violated prompt contract), prepend the weighted score
-  if (result === feedback && feedback.length > 0 && !/^\d+\s*\/\s*20/.test(feedback)) {
-    return `${weightedTotal}/20. ${feedback}`;
+  for (const re of patterns) {
+    if (re.test(trimmed)) {
+      return trimmed.replace(re, `${weightedTotal}/20`);
+    }
   }
 
-  return result;
+  if (trimmed.length > 0) {
+    return `${weightedTotal}/20. ${trimmed}`;
+  }
+  return `${weightedTotal}/20`;
 }
 
 const CALIBRATION_ANCHORS: Record<string, { mediocre: string; poor: string }> = {
@@ -705,7 +746,7 @@ void _OBJECTION_COACHING_PROMPT;
 // MODEL CONFIG & HELPERS
 // =============================================================================
 
-const OPENAI_MODELS = {
+export const OPENAI_MODELS = {
   primary: 'gpt-5.4-2026-03-05',
   fallback: 'gpt-4o-mini-2024-07-18',
 } as const;
@@ -736,6 +777,15 @@ interface GradeOptions {
   failSignals?: string;
   scenarioDomain?: string;
   weightClass?: string;
+  // C1: required for rate-limit + circuit-breaker bookkeeping
+  dealershipId?: string;
+}
+
+export class AiGradingRateLimitedError extends Error {
+  constructor(public reason: string) {
+    super(`ai grading rate limited: ${reason}`);
+    this.name = 'AiGradingRateLimitedError';
+  }
 }
 
 interface FollowUpOptions {
@@ -745,6 +795,7 @@ interface FollowUpOptions {
   mode?: 'roleplay' | 'quiz' | 'objection';
   currentResponse?: string;
   stepIndex?: number;
+  dealershipId?: string;
 }
 
 // =============================================================================
@@ -777,7 +828,7 @@ async function callOpenAIGrading(
   requiredFields: string[]
 ): Promise<Record<string, unknown> | null> {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -808,17 +859,39 @@ async function callOpenAIGrading(
     });
 
     if (!response.ok) {
-      console.error(`OpenAI grading error (${model}): ${response.status}`);
+      const body = await response.text().catch(() => '');
+      log.error('openai.grading.http_error', {
+        model,
+        status: response.status,
+        body_preview: body.slice(0, 200),
+      });
       return null;
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
-    if (!content) return null;
+    if (!content) {
+      log.error('openai.grading.empty_content', { model });
+      return null;
+    }
 
-    return JSON.parse(content);
+    try {
+      return JSON.parse(content);
+    } catch (parseErr) {
+      log.error('openai.grading.parse_failed', {
+        model,
+        content_preview: String(content).slice(0, 200),
+        err: (parseErr as Error).message,
+      });
+      return null;
+    }
   } catch (error) {
-    console.error(`OpenAI grading failed (${model}):`, (error as Error).message ?? error);
+    // AbortError = timeout; everything else = network/unknown
+    const isTimeout = (error as Error).name === 'AbortError';
+    log.error(isTimeout ? 'openai.grading.timeout' : 'openai.grading.failed', {
+      model,
+      err: (error as Error).message ?? String(error),
+    });
     return null;
   }
 }
@@ -960,6 +1033,22 @@ export async function gradeResponse(opts: GradeOptions): Promise<GradingResult &
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
 
+  // C1: Per-dealership AI grading rate limit + circuit breaker.
+  // If breaker is open (3 consecutive failures), fail fast with template fallback.
+  // If the limit is exceeded, throw so the caller can notify the user / requeue.
+  if (opts.dealershipId) {
+    const { checkAiGradingLimit, checkCircuitBreaker } = await import('@/lib/rate-limit');
+    const breakerOk = await checkCircuitBreaker();
+    if (!breakerOk) {
+      log.error('openai.grading.circuit_breaker_open', { dealership_id: opts.dealershipId });
+      return getTemplateFallback(opts.mode);
+    }
+    const gate = await checkAiGradingLimit(opts.dealershipId);
+    if (!gate.success) {
+      throw new AiGradingRateLimitedError(gate.bypass_reason ?? 'limit');
+    }
+  }
+
   // ─── v7 PATH: scenario-specific grading ─────────────────────────────────────
   // When grader_v7_enabled AND we have scenario bank data, use v7 templates
   if (opts.techniqueTag && opts.eliteDialogue && opts.failSignals) {
@@ -1019,7 +1108,10 @@ Grade the salesperson's overall performance across all exchanges.`;
     requiredFields.push('competitive_positioning');
   }
 
-  for (const model of [OPENAI_MODELS.primary, OPENAI_MODELS.fallback]) {
+  const modelChain = [OPENAI_MODELS.primary, OPENAI_MODELS.fallback];
+  for (let attemptIndex = 0; attemptIndex < modelChain.length; attemptIndex++) {
+    const model = modelChain[attemptIndex];
+    if (attemptIndex > 0) await jitterSleep(attemptIndex - 1);
     try {
       const result = await callOpenAIGrading(
         apiKey, model, systemPrompt, userPrompt, schemaProperties, requiredFields
@@ -1042,6 +1134,29 @@ Grade the salesperson's overall performance across all exchanges.`;
   }
 
   // All models failed -- return template fallback
+  // CRITICAL: this is a silent-degradation path. Alert ops so OpenAI outages
+  // don't quietly produce placebo grades for hours.
+  log.error('openai.grading.template_fallback_used', {
+    mode: opts.mode,
+    prompt_version_id: opts.promptVersionId,
+    dealership_id: (opts as { dealershipId?: string }).dealershipId,
+  });
+  try {
+    Sentry.captureMessage('openai.grading.template_fallback_used', {
+      level: 'error',
+      tags: { mode: opts.mode, prompt_version: opts.promptVersionId ?? 'unknown' },
+    });
+  } catch {
+    // Sentry optional; log is authoritative
+  }
+  // C1: record failure in circuit-breaker counter. After 3 failures in 5 min
+  // the breaker opens and future grading requests short-circuit for 5 min.
+  try {
+    const { recordCircuitBreakerFailure } = await import('@/lib/rate-limit');
+    await recordCircuitBreakerFailure();
+  } catch {
+    // best effort
+  }
   return getTemplateFallback(opts.mode);
 }
 
@@ -1052,6 +1167,20 @@ Grade the salesperson's overall performance across all exchanges.`;
 export async function generateFollowUp(opts: FollowUpOptions): Promise<FollowUpResult & { model: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
+
+  // C1: Same per-dealership gate as gradeResponse.
+  if (opts.dealershipId) {
+    const { checkAiGradingLimit, checkCircuitBreaker } = await import('@/lib/rate-limit');
+    const breakerOk = await checkCircuitBreaker();
+    if (!breakerOk) {
+      log.error('openai.followup.circuit_breaker_open', { dealership_id: opts.dealershipId });
+      return { customerMessage: "Alright, let me think about that for a moment.", model: 'circuit-open' };
+    }
+    const gate = await checkAiGradingLimit(opts.dealershipId);
+    if (!gate.success) {
+      throw new AiGradingRateLimitedError(gate.bypass_reason ?? 'limit');
+    }
+  }
 
   const conversationText = opts.conversationHistory
     .map((entry) => {
@@ -1079,9 +1208,12 @@ ${conversationText}
 
 ${stepLabel}`;
 
-  for (const model of [OPENAI_MODELS.primary, OPENAI_MODELS.fallback]) {
+  const followUpModelChain = [OPENAI_MODELS.primary, OPENAI_MODELS.fallback];
+  for (let followUpAttempt = 0; followUpAttempt < followUpModelChain.length; followUpAttempt++) {
+    const model = followUpModelChain[followUpAttempt];
+    if (followUpAttempt > 0) await jitterSleep(followUpAttempt - 1);
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1172,7 +1304,7 @@ export async function getOpenAICompletion(
   const modelId = model === 'gpt-4o-mini' ? 'gpt-4o-mini-2024-07-18' : 'gpt-5.4-2026-03-05';
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

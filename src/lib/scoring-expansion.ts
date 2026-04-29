@@ -1,5 +1,6 @@
 // Behavioral Scoring Expansion
 // Adds urgency and competitive_positioning dimensions to grading.
+// TODO: This file appears unused — verify and remove if confirmed
 
 import { TrainingResult } from '@/types/database';
 
