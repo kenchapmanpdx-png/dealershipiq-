@@ -14,11 +14,6 @@ interface RequiredEnv {
   purpose: string;
 }
 
-interface OptionalDep {
-  name: string;
-  purpose: string;
-}
-
 // MUST be set in production. Missing any of these is an immediate abort.
 //
 // 2026-04-29: Split into REQUIRED (features actively serving users) and
@@ -65,12 +60,6 @@ const OPTIONAL_FUTURE_ENV_PROD: RequiredEnv[] = [
   { name: 'INTERNAL_WORKER_SECRET', purpose: 'Off-thread Sinch worker auth (route exists at /api/internal/sinch-process but webhook does not yet dispatch to it)' },
 ];
 
-// Must be requireable from node_modules in production.
-const REQUIRED_DEPS_PROD: OptionalDep[] = [
-  { name: '@upstash/redis', purpose: 'Rate limiting + circuit breaker' },
-  { name: '@upstash/ratelimit', purpose: 'Rate limiting' },
-];
-
 let _hasRun = false;
 
 export function validateBootEnvironment(): void {
@@ -107,40 +96,24 @@ export function validateBootEnvironment(): void {
     });
   }
 
-  // Dep-resolution check only runs in Node runtime. The Edge runtime
-  // doesn't expose `require`, so calling `require.resolve(name)` throws
-  // a ReferenceError that the try/catch interprets as "dep missing" — a
-  // false positive that would 500 every Edge middleware request even
-  // though the packages ARE installed and the build succeeded. Build
-  // failures already catch genuinely-missing deps, so skipping this in
-  // Edge is safe.
-  const missingDeps: string[] = [];
-  const isEdge = process.env.NEXT_RUNTIME === 'edge';
-  if (!isEdge) {
-    for (const { name } of REQUIRED_DEPS_PROD) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require.resolve(name);
-      } catch {
-        missingDeps.push(name);
-      }
-    }
-  }
+  // 2026-04-29: Removed REQUIRED_DEPS_PROD `require.resolve` check.
+  // Next.js bundles each lambda with only the modules statically imported
+  // by that route, so `require.resolve('@upstash/redis')` throws in any
+  // lambda that does not directly import it — a false-positive that 500'd
+  // every dynamic request via the instrumentation hook. If a package is
+  // genuinely missing, the actual code that imports it will fail at the
+  // call site; that's a more honest signal than this defense-in-depth
+  // check ever was.
 
-  if (missing.length > 0 || missingDeps.length > 0) {
-    const detail = [
-      missing.length > 0 ? `env: ${missing.join(', ')}` : '',
-      missingDeps.length > 0 ? `deps: ${missingDeps.join(', ')}` : '',
-    ].filter(Boolean).join(' | ');
-    log.error('bootcheck.failed', { missing_env: missing, missing_deps: missingDeps });
-    throw new Error(`bootcheck: production requires ${detail}. Refusing to start.`);
+  if (missing.length > 0) {
+    log.error('bootcheck.failed', { missing_env: missing });
+    throw new Error(`bootcheck: production requires env: ${missing.join(', ')}. Refusing to start.`);
   }
 
   log.info('bootcheck.ok', {
     required_env_count: REQUIRED_ENV_PROD.length,
     optional_future_env_count: OPTIONAL_FUTURE_ENV_PROD.length,
     optional_future_missing: missingFuture.length,
-    dep_count: REQUIRED_DEPS_PROD.length,
-    runtime: isEdge ? 'edge' : 'node',
+    runtime: process.env.NEXT_RUNTIME ?? 'unknown',
   });
 }
