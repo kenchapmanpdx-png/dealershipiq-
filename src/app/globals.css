@@ -81,16 +81,17 @@ body {
 }
 
 /* ── Animated hero background ──
-   2026-04-30 (v3): Warm Stripe-style mesh per Ken's preference.
-   Pulled the violet/indigo cool tones out and shifted into a coral
-   → magenta → amber → deep rose cycle. Stops still anchor low on
-   the value scale (so the orbs read as bright accents) but the
-   undertone is warm: burgundy, plum-with-pink, amber-tinted brown,
-   warm-black instead of indigo/violet/teal/plum. */
-@property --hero-hue1 { syntax: '<color>'; inherits: false; initial-value: #3d0b1f; }
-@property --hero-hue2 { syntax: '<color>'; inherits: false; initial-value: #5a1640; }
-@property --hero-hue3 { syntax: '<color>'; inherits: false; initial-value: #5a2410; }
-@property --hero-hue4 { syntax: '<color>'; inherits: false; initial-value: #1a0810; }
+   2026-04-30 (v4): Stripe indigo/violet base with WARM accent swap.
+   Keeps stops 1, 2, 4 in the Stripe indigo/violet/dark-base range
+   so the page still reads as a Stripe-style mesh, but stop 3 — which
+   was cool teal/blue in v2 — is now rose-plum/burgundy. Net effect:
+   purple-leaning Stripe gradient warmed by a rose accent band rather
+   than a full sunset palette. Tunes between v2 (too cool/purple) and
+   v3 (too warm/sunset). */
+@property --hero-hue1 { syntax: '<color>'; inherits: false; initial-value: #1a0b3d; }
+@property --hero-hue2 { syntax: '<color>'; inherits: false; initial-value: #2a1268; }
+@property --hero-hue3 { syntax: '<color>'; inherits: false; initial-value: #4a1845; }
+@property --hero-hue4 { syntax: '<color>'; inherits: false; initial-value: #0a0820; }
 
 .hero-gradient {
   background: linear-gradient(160deg, var(--hero-hue1) 0%, var(--hero-hue2) 35%, var(--hero-hue3) 65%, var(--hero-hue4) 100%);
@@ -99,10 +100,10 @@ body {
 }
 
 @keyframes heroShift {
-  0%   { --hero-hue1: #3d0b1f; --hero-hue2: #5a1640; --hero-hue3: #5a2410; --hero-hue4: #1a0810; }
-  33%  { --hero-hue1: #581030; --hero-hue2: #781e58; --hero-hue3: #783218; --hero-hue4: #200a14; }
-  66%  { --hero-hue1: #4a0e28; --hero-hue2: #962472; --hero-hue3: #8a3a1a; --hero-hue4: #1c0812; }
-  100% { --hero-hue1: #6a1238; --hero-hue2: #a82a85; --hero-hue3: #6e2c14; --hero-hue4: #240a18; }
+  0%   { --hero-hue1: #1a0b3d; --hero-hue2: #2a1268; --hero-hue3: #4a1845; --hero-hue4: #0a0820; }
+  33%  { --hero-hue1: #2a0e55; --hero-hue2: #3d1888; --hero-hue3: #6a1f5a; --hero-hue4: #10092e; }
+  66%  { --hero-hue1: #1f0d4a; --hero-hue2: #4a1c98; --hero-hue3: #5e1a52; --hero-hue4: #0c0828; }
+  100% { --hero-hue1: #38104f; --hero-hue2: #561ca8; --hero-hue3: #781e60; --hero-hue4: #14093a; }
 }
 
 @keyframes heroPan {
@@ -132,28 +133,29 @@ body {
   will-change: transform;
 }
 
-/* 2026-04-30 (v3): Warm Stripe-style accent orbs. Class names kept
-   for backwards compat with .orb-blue / .orb-purple / .orb-cyan /
-   .orb-indigo references in the JSX, but the colors shifted fully
-   warm: coral, hot pink, amber/orange, peach. No more cool tones. */
+/* 2026-04-30 (v4): Stripe palette with a warm accent. Keeps two of
+   the cool Stripe brand orbs (indigo + violet) and swaps the cyan
+   for coral + the secondary-violet for hot pink. Reads as Stripe
+   indigo/violet with warm pink/coral highlights — purple presence
+   reduced from v2, no full sunset flip like v3. */
 .orb-blue {
-  /* Coral / rose. */
-  background: radial-gradient(circle, rgba(251, 113, 133, 0.36) 0%, transparent 70%);
+  /* Stripe indigo #635bff — kept (signature). */
+  background: radial-gradient(circle, rgba(99, 91, 255, 0.32) 0%, transparent 70%);
 }
 
 .orb-purple {
-  /* Hot pink / magenta — kept (already warm, signature accent). */
+  /* Hot pink / magenta — Stripe's signature warm accent. */
   background: radial-gradient(circle, rgba(236, 72, 153, 0.34) 0%, transparent 70%);
 }
 
 .orb-cyan {
-  /* Amber / orange — replaces electric cyan, fully warms the palette. */
-  background: radial-gradient(circle, rgba(251, 146, 60, 0.32) 0%, transparent 70%);
+  /* Coral / rose — replaces electric cyan to add warmth without going amber. */
+  background: radial-gradient(circle, rgba(251, 113, 133, 0.32) 0%, transparent 70%);
 }
 
 .orb-indigo {
-  /* Peach. */
-  background: radial-gradient(circle, rgba(252, 165, 165, 0.32) 0%, transparent 70%);
+  /* Bright violet — kept (still part of the Stripe mesh). */
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.28) 0%, transparent 70%);
 }
 
 /* ── Section divider — gradient fade line ── */
