@@ -34,18 +34,27 @@ function generateCspNonce(): string {
 }
 
 /**
- * Build the nonce-based CSP header. Mirrors vercel.json's policy but replaces
- * script-src's `'unsafe-inline'` with a per-request nonce + `strict-dynamic`.
- * style-src keeps `'unsafe-inline'` for now — Tailwind's critical CSS is
- * inlined and migrating it to nonce-based styling is a larger change than H-11.
+ * Build the CSP header.
+ *
+ * 2026-04-30: Reverted from the H-11 nonce + strict-dynamic setup to a
+ * permissive CSP matching vercel.json. The nonce was generated and
+ * forwarded via the x-nonce request header, but Next.js's automatic
+ * nonce propagation never attached the attribute to any of the framework
+ * script tags (verified in browser: 0/18 scripts had the nonce attr).
+ * Result: strict-dynamic blocked every Next.js bundle, the marketing
+ * page failed to hydrate, framer-motion components stayed at opacity:0,
+ * and the site looked broken to anyone visiting.
+ *
+ * Tradeoff: defense against XSS via inline script injection drops from
+ * "perfect nonce gating" back to the browser auditor + host allowlist.
+ * Mitigation: still no 'unsafe-eval', no wildcard hosts, frame-ancestors
+ * locked, all script sources explicit. When time permits, debug why
+ * Next.js drops the x-nonce attribute and revive nonce-based CSP.
  */
-function buildCspHeader(nonce: string): string {
+function buildCspHeader(_nonce: string): string {
   return [
     `default-src 'self'`,
-    // strict-dynamic + nonce: browsers that understand strict-dynamic will
-    // ignore 'self' / host allowlists and ONLY trust scripts carrying the
-    // nonce (or loaded by one that does). Legacy fallbacks kept for older UAs.
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com https://browser.sentry-cdn.com`,
+    `script-src 'self' 'unsafe-inline' https://js.stripe.com https://browser.sentry-cdn.com`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data: https:`,
     `font-src 'self' data:`,
