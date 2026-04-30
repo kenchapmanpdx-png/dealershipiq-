@@ -1,9 +1,14 @@
 // Shared authentication helpers for API routes
 // Eliminates repeated user/role/dealership_id validation across 15+ routes
+//
+// 2026-04-29: Removed `requireSubscription()` and the `x-subscription-required`
+// header pattern. The header was set on the response (so route handlers could
+// not read it) and `requireSubscription()` was never actually called by any
+// route. Dashboard routes call `checkSubscriptionAccess(dealershipId)` directly
+// — that is the real subscription gate. Don't reintroduce the header pattern.
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { SupabaseClient, User } from '@supabase/supabase-js';
-import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 
 export interface AuthContext {
   userId: string;
@@ -63,34 +68,3 @@ export async function requireAuth(
   };
 }
 
-/**
- * H8: Defense-in-depth subscription gate. Middleware stamps
- * `x-subscription-required=1` on dashboard/push/ask routes. Dashboard routes
- * should call this helper after `requireAuth` so a forgetful author doesn't
- * accidentally ship a route that serves paid data to an unpaid dealership.
- *
- * Returns NextResponse(402) when subscription is not active. Returns null
- * when either (a) the route isn't gated or (b) the subscription is active.
- *
- * Usage:
- * ```
- * const gate = await requireSubscription(request, dealershipId);
- * if (gate) return gate;
- * ```
- */
-export async function requireSubscription(
-  request: NextRequest,
-  dealershipId: string
-): Promise<NextResponse | null> {
-  if (request.headers.get('x-subscription-required') !== '1') {
-    return null; // middleware didn't mark this path as gated
-  }
-  const sub = await checkSubscriptionAccess(dealershipId);
-  if (!sub.allowed) {
-    return NextResponse.json(
-      { error: 'Subscription required', reason: sub.reason, status: sub.status },
-      { status: 402 }
-    );
-  }
-  return null;
-}

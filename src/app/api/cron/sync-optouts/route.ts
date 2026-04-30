@@ -9,6 +9,8 @@ import { getSinchAccessToken } from '@/lib/sinch-auth';
 import { serviceClient } from '@/lib/supabase/service';
 import { log } from '@/lib/logger';
 
+// 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 // H19: Sinch Consents API paginates. Previously we only read page 1, so any
@@ -124,7 +126,4 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ synced, resubscribed, sinchOptOuts: smsOptOuts.length });
   } catch (err) {
-    console.error('Opt-out sync error:', (err as Error).message ?? err);
-    return NextResponse.json({ error: 'Sync failed' }, { status: 500 });
-  }
-}
+    console.error('Opt-out sync error:', (

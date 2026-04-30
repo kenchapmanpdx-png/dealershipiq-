@@ -15,6 +15,8 @@ import { serviceClient } from '@/lib/supabase/service';
 import { insertTranscriptLog, getOutboundCountToday } from '@/lib/service-db';
 import { rankChallengeResponses, buildResultsSMS } from '@/lib/challenges/daily';
 
+// 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
@@ -129,8 +131,4 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    results.push({ dealershipId, participationCount, resultsSent });
-  }
-
-  return NextResponse.json({ processed: challenges.length, results });
-}
+    results.push({ dealershipId, parti

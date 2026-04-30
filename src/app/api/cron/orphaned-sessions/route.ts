@@ -10,6 +10,8 @@ import { incrementMissedDay } from '@/lib/chains/lifecycle';
 import { isScheduledOff } from '@/lib/schedule-awareness';
 import { serviceClient } from '@/lib/supabase/service';
 
+// 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
@@ -84,10 +86,4 @@ export async function GET(request: NextRequest) {
     console.error('Peer challenge expiry error:', (err as Error).message ?? err);
   }
 
-  return NextResponse.json({
-    found: orphaned.length,
-    cleaned,
-    chainsExpired,
-    peerChallenges: peerExpiry,
-  });
-}
+  return NextResponse.

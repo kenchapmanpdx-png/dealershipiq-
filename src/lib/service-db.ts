@@ -188,9 +188,22 @@ export async function getSessionTranscript(sessionId: string, dealershipId: stri
 }
 
 export async function updateSessionStatus(sessionId: string, dealershipId: string, status: string) {
+  // 2026-04-29 C4b: write `grading_started_at` on transition to 'grading' so
+  // the grading-recovery cron can detect orphaned sessions. Clear it when
+  // exiting 'grading' so a session isn't re-recovered after a normal finish.
+  const update: Record<string, unknown> = {
+    status,
+    updated_at: new Date().toISOString(),
+  };
+  if (status === 'grading') {
+    update.grading_started_at = new Date().toISOString();
+  } else if (status === 'completed' || status === 'error' || status === 'active') {
+    update.grading_started_at = null;
+  }
+
   const { error } = await serviceClient
     .from('conversation_sessions')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update(update)
     .eq('id', sessionId)
     .eq('dealership_id', dealershipId);
 
@@ -1734,21 +1747,4 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
       scenarioId: fuzzyData.scenario_id as string,
       techniqueTag: fuzzyData.technique_tag as string,
       eliteDialogue: fuzzyData.elite_dialogue as string,
-      failSignals: fuzzyData.fail_signals as string,
-      mode: fuzzyData.mode as string,
-      domain: fuzzyData.domain as string,
-      weightClass: (fuzzyData.weight_class as string) || 'hybrid',
-    };
-  }
-
-  return {
-    scenarioId: data.scenario_id as string,
-    techniqueTag: data.technique_tag as string,
-    eliteDialogue: data.elite_dialogue as string,
-    failSignals: data.fail_signals as string,
-    mode: data.mode as string,
-    domain: data.domain as string,
-    weightClass: (data.weight_class as string) || 'hybrid',
-  };
-}
-
+      failSignals: fuzzyData.fail_signals a

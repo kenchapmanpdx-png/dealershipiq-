@@ -5,6 +5,8 @@ import { getPastDueDealerships, updateDealershipBilling } from '@/lib/service-db
 import { getDunningStage, shouldCancel, shouldSuspend, processDunning } from '@/lib/billing/dunning';
 import { log } from '@/lib/logger';
 
+// 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
@@ -62,7 +64,4 @@ export async function GET(request: NextRequest) {
       dunning: dunningResults,
     });
   } catch (error) {
-    log.error('dunning_check.fatal', { err: (error as Error).message ?? String(error) });
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
+    log.error('dunning_check.fatal', { err: (error as Error).message 

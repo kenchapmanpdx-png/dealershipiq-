@@ -12,6 +12,11 @@ import { verifyCronSecret } from '@/lib/cron-auth';
 import { serviceClient } from '@/lib/supabase/service';
 import { log } from '@/lib/logger';
 
+// 2026-04-29: pin to Node runtime. cron-auth.ts imports `crypto` (Node-only).
+// Without this directive Vercel can occasionally auto-detect Edge for routes
+// lacking Node-specific imports at the top level, which would crash at
+// module load when crypto resolves.
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const GRADING_TIMEOUT_MIN = parseInt(process.env.GRADING_TIMEOUT_MIN || '3', 10);
@@ -60,18 +65,4 @@ export async function GET(request: NextRequest) {
       reset++;
       ids.push(row.id as string);
       log.warn('grading_recovery.session_reset', {
-        session_id: row.id,
-        dealership_id: row.dealership_id,
-        user_id: row.user_id,
-        grading_started_at: row.grading_started_at,
-      });
-    }
-  }
-
-  return NextResponse.json({
-    cutoff,
-    candidates: stuck?.length ?? 0,
-    reset,
-    session_ids: ids,
-  });
-}
+  

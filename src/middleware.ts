@@ -1,8 +1,11 @@
 // Phase 1J: Next.js Middleware
-// JWT verification using jose (stateless, no outbound HTTP to Supabase Auth).
-// Extracts dealership_id and role from token claims.
-// Protects dashboard routes (manager+ role required).
-// Protects API routes (appropriate role checks).
+// Reads dealership_id + user_role from the authenticated user object that
+// `updateSession` already validated via supabase.auth.getUser(). No local
+// JWT signature verification — that path was incompatible with Supabase's
+// 2026-Q1 migration to ECC P-256 asymmetric signing (legacy HS256 secret
+// can't verify P-256-signed user tokens). Trusting getUser()'s validated
+// user is correct because Supabase Auth Server is the only thing that
+// can mint a real session anyway.
 //
 // 2026-04-18 H-11: Nonce-based CSP. The previous CSP in vercel.json used
 // `script-src 'self' 'unsafe-inline' ...` which negates the primary XSS
@@ -14,7 +17,6 @@
 // assets served directly by the CDN).
 
 import { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify } from 'jose';
 import { updateSession } from '@/lib/supabase/middleware';
 
 /**
@@ -59,13 +61,11 @@ function buildCspHeader(nonce: string): string {
 // Routes that require authentication
 const PROTECTED_ROUTES = ['/dashboard'];
 const PROTECTED_API_ROUTES = ['/api/dashboard', '/api/users', '/api/push', '/api/ask', '/api/admin'];
-// H8: Subscription-gated API prefixes. Middleware injects an
-// `x-subscription-required=1` header; dashboard route handlers read it via
-// `requireSubscription()` helper (see `@/lib/auth-helpers`). This keeps the
-// enforcement centralized so a new `/api/dashboard/*` route that forgets the
-// explicit `checkSubscriptionAccess` call still gets gated at the route
-// helper level rather than silently serving data to an unpaid dealership.
-const SUBSCRIPTION_GATED_PREFIXES = ['/api/dashboard', '/api/push', '/api/ask'];
+// 2026-04-29: removed SUBSCRIPTION_GATED_PREFIXES + x-subscription-required
+// header pattern. The header was set on the *response* (so route handlers
+// could not read it) and `requireSubscription()` was never actually called
+// from any route. Every dashboard route already calls
+// `checkSubscriptionAccess(dealershipId)` directly, which is the real gate.
 const AUTH_ROUTES = ['/login', '/reset-password', '/update-password'];
 // 2026-04-18 H-1: `/api/internal/*` is the off-thread dispatch target for
 // the Sinch webhook. It authenticates via a shared `x-worker-secret` header
@@ -134,14 +134,20 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
 
-    // Stateless JWT verification with jose — extract custom claims
-    const claims = await verifyAndExtractClaims(request);
-    if (!claims) {
+    // 2026-04-29: read role/dealership from the user object that
+    // updateSession already validated via supabase.auth.getUser().
+    // app_metadata is set server-side at signup/role-change and cannot be
+    // tampered with by the client.
+    const userRole = (user.app_metadata?.user_role ?? null) as string | null;
+    const dealershipId = (user.app_metadata?.dealership_id ?? null) as string | null;
+
+    if (!userRole || !dealershipId) {
+      // Authenticated but no app_metadata — orphaned account.
       return NextResponse.redirect(new URL('/login', request.url));
     }
 
     // Dashboard requires manager or owner role
-    if (claims.userRole !== 'manager' && claims.userRole !== 'owner') {
+    if (userRole !== 'manager' && userRole !== 'owner') {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -154,92 +160,25 @@ export async function middleware(request: NextRequest) {
     return addSecurityHeaders(supabaseResponse);
   }
 
-  // Protected API routes — require auth + inject headers
+  // Protected API routes — require auth
   if (PROTECTED_API_ROUTES.some((route) => pathname.startsWith(route))) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const claims = await verifyAndExtractClaims(request);
-    if (!claims) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    // Validate that the authenticated user actually has app_metadata claims.
+    // Routes themselves enforce role/dealership via requireAuth(), but bouncing
+    // here keeps an orphaned auth user from hitting protected routes at all.
+    const userRole = user.app_metadata?.user_role;
+    const dealershipId = user.app_metadata?.dealership_id;
+    if (!userRole || !dealershipId) {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    // L-1: identity headers removed — same reasoning as above.
-    const response = supabaseResponse;
-    void claims; // claims validity already enforced above
-
-    // H8: mark the route as subscription-gated so any route handler that
-    // uses `requireSubscription()` knows to enforce the check. Having the
-    // marker here means "forgot to call requireSubscription" is a per-route
-    // bug rather than a cross-cutting security hole.
-    if (SUBSCRIPTION_GATED_PREFIXES.some((p) => pathname.startsWith(p))) {
-      response.headers.set('x-subscription-required', '1');
-    }
-
-    return addSecurityHeaders(response);
+    return addSecurityHeaders(supabaseResponse);
   }
 
   return addSecurityHeaders(supabaseResponse);
-}
-
-/**
- * Verify JWT using jose and extract custom claims (dealership_id, user_role).
- * Stateless — no outbound HTTP to Supabase Auth.
- * Uses SUPABASE_JWT_SECRET (HS256).
- */
-// S15: fail loudly at module-load time if the secret is missing. Previously
-// we logged-and-returned-null, which resulted in "everything 401s" in prod
-// with the actual cause buried in logs. A module-level assertion trips Vercel's
-// deploy health check and prevents a broken version from serving traffic.
-if (process.env.NODE_ENV === 'production' && !process.env.SUPABASE_JWT_SECRET) {
-  throw new Error('SUPABASE_JWT_SECRET must be set in production. Deploy aborted.');
-}
-
-async function verifyAndExtractClaims(
-  request: NextRequest
-): Promise<{ dealershipId: string | null; userRole: string | null } | null> {
-  try {
-    const jwtSecret = process.env.SUPABASE_JWT_SECRET;
-    if (!jwtSecret) {
-      // In non-production envs we still want the middleware to degrade
-      // gracefully so `npm run dev` works without the secret set.
-      console.error('[AUTH] SUPABASE_JWT_SECRET is not set — all JWT verification will fail');
-      return null;
-    }
-
-    // Extract token from Supabase auth cookie
-    const authCookie = request.cookies.getAll().find(
-      (c) => c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
-    );
-
-    if (!authCookie) return null;
-
-    // Supabase stores the token as a JSON array — parse it
-    let tokenValue: string;
-    try {
-      const parsed = JSON.parse(authCookie.value) as string[];
-      tokenValue = parsed[0]; // access token is first element
-    } catch {
-      tokenValue = authCookie.value;
-    }
-
-    if (!tokenValue) return null;
-
-    const secret = new TextEncoder().encode(jwtSecret);
-    const { payload } = await jwtVerify(tokenValue, secret);
-
-    const appMetadata = payload.app_metadata as
-      | { dealership_id?: string; user_role?: string }
-      | undefined;
-
-    return {
-      dealershipId: appMetadata?.dealership_id ?? null,
-      userRole: appMetadata?.user_role ?? null,
-    };
-  } catch {
-    return null;
-  }
 }
 
 export const config = {

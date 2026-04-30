@@ -62,6 +62,7 @@ const OPTIONAL_FUTURE_ENV_PROD: RequiredEnv[] = [
   { name: 'APP_TOKEN_SECRET', purpose: 'PWA session token signing (PWA login not in critical path yet)' },
   { name: 'UPSTASH_REDIS_REST_URL', purpose: 'Rate limiter (rate limiting not yet enforced in prod)' },
   { name: 'UPSTASH_REDIS_REST_TOKEN', purpose: 'Rate limiter (rate limiting not yet enforced in prod)' },
+  { name: 'INTERNAL_WORKER_SECRET', purpose: 'Off-thread Sinch worker auth (route exists at /api/internal/sinch-process but webhook does not yet dispatch to it)' },
 ];
 
 // Must be requireable from node_modules in production.

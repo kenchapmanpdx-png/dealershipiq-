@@ -15,6 +15,8 @@ import {
   insertTranscriptLog,
 } from '@/lib/service-db';
 
+// 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
@@ -211,7 +213,4 @@ function formatAlertMessage(dealershipName: string, flaggedUsers: FlaggedUser[])
 
   const names = flaggedUsers.slice(0, 2).map((u) => u.fullName);
   const remaining = flaggedUsers.length - 2;
-  const suffix = remaining > 0 ? ` +${remaining} more` : '';
-
-  return `${dealershipName}: ${names.join(', ')}${suffix} flagged. Review dashboard.`;
-}
+  const suffix = remaining > 0 ? ` +${rem

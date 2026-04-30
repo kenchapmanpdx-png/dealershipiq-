@@ -31,10 +31,6 @@
     {
       "path": "/api/cron/grading-recovery",
       "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/subscription-drift",
-      "schedule": "0 */12 * * *"
     }
   ],
   "headers": [

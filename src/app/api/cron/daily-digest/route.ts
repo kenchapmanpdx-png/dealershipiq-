@@ -28,6 +28,8 @@ import { getBenchmark } from '@/lib/meeting-script/benchmark';
 import { buildMeetingSMS, buildFullScript } from '@/lib/meeting-script/assemble';
 import type { MeetingScriptData } from '@/types/meeting-script';
 
+// 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
@@ -577,9 +579,4 @@ async function checkDailyDigestAlreadySent(dealershipId: string, todayStr: strin
       .maybeSingle();
 
     // If a meeting script already exists for today, digest was sent
-    return !!existingScript;
-  } catch {
-    // On error, assume not sent (safer to retry than skip)
-    return false;
-  }
-}
+    return !!exis

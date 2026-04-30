@@ -12,11 +12,24 @@ import { getSubscriptionStatus } from '@/lib/stripe';
 import { createBudget } from '@/lib/cron-budget';
 import { log } from '@/lib/logger';
 
+// 2026-04-29: pin Node runtime — cron-auth.ts + Stripe SDK both Node-only.
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // 2026-04-29 C7: short-circuit if Stripe is not configured. The cron is
+  // disabled in vercel.json until billing ships, but a manual cron-trigger
+  // would otherwise 500 on `new Stripe(undefined!)`. Return 200 so the
+  // caller knows the noop is intentional.
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return NextResponse.json(
+      { skipped: true, reason: 'STRIPE_SECRET_KEY not set; subscription-drift disabled' },
+      { status: 200 }
+    );
   }
 
   const budget = createBudget({ cronName: 'subscription-drift', maxMs: 55_000, safetyBufferMs: 10_000 });
@@ -69,31 +82,4 @@ export async function GET(request: NextRequest) {
           .eq('id', d.id);
 
         if (upErr) {
-          log.error('subscription_drift.update_failed', {
-            dealership_id: d.id,
-            err: upErr.message,
-          });
-          errors++;
-        } else {
-          corrected++;
-        }
-      }
-    } catch (err) {
-      errors++;
-      log.error('subscription_drift.stripe_call_failed', {
-        dealership_id: d.id,
-        stripe_customer_id: customerId,
-        err: (err as Error).message,
-      });
-    }
-    budget.markProcessed();
-  }
-
-  return NextResponse.json({
-    candidates: dealerships?.length ?? 0,
-    drifts,
-    corrected,
-    errors,
-    budget: budget.report(),
-  });
-}
+          log.error('subscription_drift.update_failed',

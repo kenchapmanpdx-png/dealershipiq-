@@ -42,6 +42,8 @@ import {
 import { serviceClient } from '@/lib/supabase/service';
 import type { PersonaMood } from '@/lib/persona-moods';
 
+// 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 // =============================================================================
@@ -426,8 +428,4 @@ function selectTrainingMode(): string {
   return MODES[weekdayCount % MODES.length];
 }
 
-function extractFirstName(fullName: string | null | undefined): string {
-  if (!fullName) return '';
-  const parts = fullName.trim().split(/\s+/);
-  return parts[0] || '';
-}
+function extractFirstName(fullName: string | null | undefined):

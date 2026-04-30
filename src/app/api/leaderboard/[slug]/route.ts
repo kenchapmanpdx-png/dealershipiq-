@@ -8,6 +8,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { serviceClient } from '@/lib/supabase/service';
 import { publicDisplayName } from '@/lib/privacy';
 
+// 2026-04-29: pin Node runtime; serviceClient construction reads env vars at
+// module init and we want predictable runtime behavior on cold-start.
+export const runtime = 'nodejs';
+
 // 2026-04-18 H-7: This endpoint is unauthenticated (public TV-display
 // leaderboard). We no longer return `full_name` to the internet — only the
 // privacy-preserving `publicDisplayName` form ("First L."). Identity is
@@ -65,94 +69,81 @@ export async function GET(
     // D3-M-001: Bound training_results to 90 days. Public endpoint — prevents unbounded scans.
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: users, error: usersError } = await serviceClient
+    // 2026-04-29 C5a: split into two queries instead of nested embed with a
+    // .gte() filter on the related table. PostgREST does not pre-filter the
+    // 1:N nested rows reliably and certain shapes return ambiguous parser
+    // errors → 500. Two separate queries are also faster (no big payload
+    // shape to traverse) and let us aggregate cleanly in JS.
+
+    // Query 1: active members of this dealership.
+    const { data: members, error: membersError } = await serviceClient
       .from('users')
       .select(`
         id,
         full_name,
         dealership_memberships!inner (
           dealership_id
-        ),
-        training_results (
-          id,
-          product_accuracy,
-          tone_rapport,
-          addressed_concern,
-          close_attempt,
-          created_at
         )
       `)
       .eq('dealership_memberships.dealership_id', dealership.id)
       .eq('status', 'active')
-      .gte('training_results.created_at', ninetyDaysAgo)
       .limit(500);
 
-    if (usersError) {
-      console.error('Failed to fetch users:', (usersError as Error).message ?? usersError);
+    if (membersError) {
+      console.error('Failed to fetch members:', (membersError as Error).message ?? membersError);
       return NextResponse.json(
         { error: 'Failed to fetch leaderboard' },
         { status: 500 }
       );
     }
 
-    // Calculate scores and sort
-    const entries: Array<{ user: Record<string, unknown>; score: number }> = (users ?? [])
-      .map((user: Record<string, unknown>) => {
-        const results = (user.training_results ?? []) as Array<Record<string, unknown>>;
-        const avgScore = results.length > 0
-          ? results.reduce((sum: number, r: Record<string, unknown>) =>
-              sum + ((r.product_accuracy as number) + (r.tone_rapport as number) + (r.addressed_concern as number) + (r.close_attempt as number)) / 4,
-              0
-            ) / results.length
-          : 0;
+    const memberMap = new Map<string, string>(); // user_id → full_name
+    for (const m of members ?? []) {
+      const mu = m as { id: string; full_name: string | null };
+      memberMap.set(mu.id, mu.full_name ?? '');
+    }
 
-        // V4-H-004: Math.max() safe — guarded by results.length > 0
-        const lastTraining = results.length > 0
-          ? new Date(Math.max(...results.map((r: Record<string, unknown>) => new Date(r.created_at as string).getTime())))
-              .toISOString()
-          : null;
-
-        return {
-          user: {
-            user_id: user.id as string,
-            // H-7: mask PII on public endpoint — "First L." not "First Last".
-            user_name: publicDisplayName(user.full_name as string),
-            total_sessions: results.length,
-            average_score: Math.round(avgScore * 10) / 10,
-            last_training_at: lastTraining,
-          },
-          score: avgScore,
-        };
-      })
-      .sort((a, b) => b.score - a.score); // Descending
-
-    // Assign ranks
-    const leaderboard: LeaderboardEntry[] = entries.map((entry, index) => {
-      const user = entry.user as Record<string, unknown>;
-      return {
-        user_id: user.user_id as string,
-        user_name: user.user_name as string,
-        total_sessions: user.total_sessions as number,
-        average_score: user.average_score as number,
-        last_training_at: user.last_training_at as string | null,
-        rank: index + 1,
-      };
-    });
-
-    const response: LeaderboardResponse = {
-      dealership: {
-        name: dealership.name,
-        slug: dealership.slug,
-      },
-      leaderboard,
+    // Query 2: training_results for those members, last 90 days.
+    type TrainingRow = {
+      user_id: string;
+      product_accuracy: number;
+      tone_rapport: number;
+      addressed_concern: number;
+      close_attempt: number;
+      created_at: string;
     };
 
-    return NextResponse.json(response);
-  } catch (err) {
-    console.error('GET /api/leaderboard/[slug] error:', (err as Error).message ?? err);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
+    let results: TrainingRow[] = [];
+    if (memberMap.size > 0) {
+      const { data: trainingResults, error: trainingError } = await serviceClient
+        .from('training_results')
+        .select('user_id, product_accuracy, tone_rapport, addressed_concern, close_attempt, created_at')
+        .in('user_id', Array.from(memberMap.keys()))
+        .gte('created_at', ninetyDaysAgo)
+        .limit(10000);
+
+      if (trainingError) {
+        console.error('Failed to fetch training_results:', (trainingError as Error).message ?? trainingError);
+        return NextResponse.json(
+          { error: 'Failed to fetch leaderboard' },
+          { status: 500 }
+        );
+      }
+      results = (trainingResults ?? []) as TrainingRow[];
+    }
+
+    // Aggregate per user.
+    const perUser = new Map<string, { sum: number; count: number; lastTs: number }>();
+    for (const r of results) {
+      const score = (r.product_accuracy + r.tone_rapport + r.addressed_concern + r.close_attempt) / 4;
+      const ts = new Date(r.created_at).getTime();
+      const acc = perUser.get(r.user_id) ?? { sum: 0, count: 0, lastTs: 0 };
+      acc.sum += score;
+      acc.count += 1;
+      if (ts > acc.lastTs) acc.lastTs = ts;
+      perUser.set(r.user_id, acc);
+    }
+
+    // Build entries for every member (zero-result users included with 0 score).
+    const entries = Array.from(memberMap.entries())
+      

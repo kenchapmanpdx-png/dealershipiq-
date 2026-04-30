@@ -22,6 +22,12 @@ import type {
   ExchangeClassification,
 } from '@/types/coach';
 
+// 2026-04-29 H9: long-running OpenAI call (gpt-4o, ~30s) plus DB fetches plus
+// a second gpt-4o-mini classify call. Vercel default is 10s on Hobby, 60s on
+// Pro — we need the 60s budget to avoid 504-mid-OpenAI on slow generations.
+export const maxDuration = 60;
+export const runtime = 'nodejs';
+
 const COACH_MODEL = 'gpt-4o-2024-11-20';
 const CLASSIFY_MODEL = 'gpt-4o-mini-2024-07-18';
 const MAX_MESSAGES_PER_HOUR = 30;
@@ -723,14 +729,4 @@ async function checkRateLimit(
       userMessageCount += msgs.filter((m) => m.role === 'user').length;
     }
 
-    return userMessageCount >= MAX_MESSAGES_PER_HOUR;
-  } catch (err) {
-    log.error('coach.rate_limit.exception', {
-      user_id: userId,
-      dealership_id: dealershipId,
-      error: (err as Error).message ?? String(err),
-      fail_mode: failClosed ? 'closed' : 'open',
-    });
-    return failClosed;
-  }
-}
+    return userMes
