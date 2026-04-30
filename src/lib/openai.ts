@@ -1268,8 +1268,9 @@ ${stepLabel}`;
   // it fires consistently it indicates an OpenAI outage or quota issue
   // that prod should know about.
   log.warn('openai.generate_follow_up.fallback', {
-    mode: opts.mode,
-    customerLine_len: opts.customerLine.length,
+    mode: opts.mode ?? null,
+    step_index: opts.stepIndex ?? null,
+    history_len: opts.conversationHistory?.length ?? 0,
     note: 'All OpenAI follow-up attempts failed; serving generic template line.',
   });
   return {

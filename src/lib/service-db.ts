@@ -871,7 +871,12 @@ export interface FlaggedUser {
 export async function getRedFlagUsers(
   dealershipId: string
 ): Promise<FlaggedUser[]> {
-  // Get all active users in dealership
+  // 2026-04-29 M8: rewritten from O(4 × N users) N+1 to O(4) bulk queries.
+  // Previously a 100-rep dealership ran 400 round-trips and the cron blew
+  // past Vercel's 60s budget; now it's 4 queries plus in-memory aggregation.
+  // Flag semantics unchanged.
+
+  // Step 1: active users in this dealership.
   const { data: users, error: usersError } = await serviceClient
     .from('users')
     .select(`
@@ -886,103 +891,101 @@ export async function getRedFlagUsers(
 
   if (usersError) throw usersError;
 
+  const userList = (users ?? []) as Array<{ id: string; full_name: string; phone: string }>;
+  if (userList.length === 0) return [];
+  const userIds = userList.map((u) => u.id);
+
+  const now = Date.now();
+  const threeDaysAgoIso = new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const sevenDaysAgoIso = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const twoWeeksAgoIso = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const weekAgoIso = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Step 2: all conversation_sessions in past 7 days for these users.
+  // We use the 7-day window (covers both the 3-day no-response check and
+  // the 7-day completion-rate check) in a single query.
+  const { data: sessions, error: sessionsError } = await serviceClient
+    .from('conversation_sessions')
+    .select('user_id, status, updated_at, created_at')
+    .eq('dealership_id', dealershipId)
+    .in('user_id', userIds)
+    .gte('created_at', sevenDaysAgoIso);
+  if (sessionsError) throw sessionsError;
+
+  // Step 3: all training_results in past 14 days for these users (covers
+  // both current-week and previous-week buckets in one query).
+  const { data: results, error: resultsError } = await serviceClient
+    .from('training_results')
+    .select('user_id, product_accuracy, tone_rapport, addressed_concern, close_attempt, created_at')
+    .eq('dealership_id', dealershipId)
+    .in('user_id', userIds)
+    .gte('created_at', twoWeeksAgoIso);
+  if (resultsError) throw resultsError;
+
+  // Aggregate per user.
+  type SessionRow = { user_id: string; status: string; updated_at: string; created_at: string };
+  type ResultRow = {
+    user_id: string;
+    product_accuracy: number;
+    tone_rapport: number;
+    addressed_concern: number;
+    close_attempt: number;
+    created_at: string;
+  };
+
+  const sessionsByUser = new Map<string, SessionRow[]>();
+  for (const s of (sessions ?? []) as SessionRow[]) {
+    const arr = sessionsByUser.get(s.user_id) ?? [];
+    arr.push(s);
+    sessionsByUser.set(s.user_id, arr);
+  }
+
+  const resultsByUser = new Map<string, ResultRow[]>();
+  for (const r of (results ?? []) as ResultRow[]) {
+    const arr = resultsByUser.get(r.user_id) ?? [];
+    arr.push(r);
+    resultsByUser.set(r.user_id, arr);
+  }
+
+  const avgScore = (rows: ResultRow[]) => {
+    if (rows.length === 0) return 0;
+    const sum = rows.reduce(
+      (acc, r) => acc + (r.product_accuracy + r.tone_rapport + r.addressed_concern + r.close_attempt) / 4,
+      0
+    );
+    return sum / rows.length;
+  };
+
   const flaggedList: FlaggedUser[] = [];
-
-  for (const user of users ?? []) {
+  for (const user of userList) {
     const flags: string[] = [];
+    const userSessions = sessionsByUser.get(user.id) ?? [];
+    const userResults = resultsByUser.get(user.id) ?? [];
 
-    // Check: no response in 3+ days
-    const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-
-    const { data: recentSessions, error: sessionsError } = await serviceClient
-      .from('conversation_sessions')
-      .select('id, updated_at')
-      .eq('dealership_id', dealershipId)
-      .eq('user_id', user.id)
-      .gte('updated_at', threeDaysAgo.toISOString())
-      .limit(1);
-
-    if (!sessionsError && (!recentSessions || recentSessions.length === 0)) {
+    // Flag 1: no response in past 3 days (no session updated_at >= cutoff).
+    const recent = userSessions.filter((s) => s.updated_at >= threeDaysAgoIso);
+    if (recent.length === 0) {
       flags.push('no_response_3d');
     }
 
-    // Check: completion rate <30% (last 7 days)
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-    const { data: sevenDaySessions, error: sevenDayError } =
-      await serviceClient
-        .from('conversation_sessions')
-        .select('id, status')
-        .eq('dealership_id', dealershipId)
-        .eq('user_id', user.id)
-        .gte('created_at', sevenDaysAgo.toISOString());
-
-    if (!sevenDayError) {
-      const sessions = sevenDaySessions ?? [];
-      const completed = sessions.filter((s: Record<string, unknown>) => s.status === 'completed').length;
-      const completionRate = sessions.length > 0 ? completed / sessions.length : 0;
-
-      if (sessions.length > 0 && completionRate < 0.3) {
+    // Flag 2: completion rate <30% over past 7 days.
+    if (userSessions.length > 0) {
+      const completed = userSessions.filter((s) => s.status === 'completed').length;
+      if (completed / userSessions.length < 0.3) {
         flags.push('low_completion');
       }
     }
 
-    // Check: score decline >40% vs previous week
-    const twoWeeksAgo = new Date();
-    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const { data: previousWeek, error: prevWeekError } = await serviceClient
-      .from('training_results')
-      .select('product_accuracy, tone_rapport, addressed_concern, close_attempt')
-      .eq('dealership_id', dealershipId)
-      .eq('user_id', user.id)
-      .gte('created_at', twoWeeksAgo.toISOString())
-      .lt('created_at', weekAgo.toISOString());
-
-    const { data: currentWeek, error: currWeekError } = await serviceClient
-      .from('training_results')
-      .select('product_accuracy, tone_rapport, addressed_concern, close_attempt')
-      .eq('dealership_id', dealershipId)
-      .eq('user_id', user.id)
-      .gte('created_at', weekAgo.toISOString());
-
-    if (!prevWeekError && !currWeekError) {
-      const prevScores = previousWeek ?? [];
-      const currScores = currentWeek ?? [];
-
-      if (prevScores.length > 0 && currScores.length > 0) {
-        const prevAvg =
-          prevScores.reduce(
-            (sum: number, r: Record<string, unknown>) =>
-              sum +
-              ((r.product_accuracy as number) +
-                (r.tone_rapport as number) +
-                (r.addressed_concern as number) +
-                (r.close_attempt as number)) /
-                4,
-            0
-          ) / prevScores.length;
-
-        const currAvg =
-          currScores.reduce(
-            (sum: number, r: Record<string, unknown>) =>
-              sum +
-              ((r.product_accuracy as number) +
-                (r.tone_rapport as number) +
-                (r.addressed_concern as number) +
-                (r.close_attempt as number)) /
-                4,
-            0
-          ) / currScores.length;
-
-        const decline = (prevAvg - currAvg) / prevAvg;
-        if (decline > 0.4) {
-          flags.push('score_decline');
-        }
+    // Flag 3: avg score decline >40% week-over-week.
+    const prevWeekResults = userResults.filter(
+      (r) => r.created_at >= twoWeeksAgoIso && r.created_at < weekAgoIso
+    );
+    const currWeekResults = userResults.filter((r) => r.created_at >= weekAgoIso);
+    if (prevWeekResults.length > 0 && currWeekResults.length > 0) {
+      const prevAvg = avgScore(prevWeekResults);
+      const currAvg = avgScore(currWeekResults);
+      if (prevAvg > 0 && (prevAvg - currAvg) / prevAvg > 0.4) {
+        flags.push('score_decline');
       }
     }
 
