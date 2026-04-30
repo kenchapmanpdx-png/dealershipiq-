@@ -1747,4 +1747,21 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
       scenarioId: fuzzyData.scenario_id as string,
       techniqueTag: fuzzyData.technique_tag as string,
       eliteDialogue: fuzzyData.elite_dialogue as string,
-      failSignals: fuzzyData.fail_signals a
+      failSignals: fuzzyData.fail_signals as string,
+      mode: fuzzyData.mode as string,
+      domain: fuzzyData.domain as string,
+      weightClass: (fuzzyData.weight_class as string) || 'hybrid',
+    };
+  }
+
+  return {
+    scenarioId: data.scenario_id as string,
+    techniqueTag: data.technique_tag as string,
+    eliteDialogue: data.elite_dialogue as string,
+    failSignals: data.fail_signals as string,
+    mode: data.mode as string,
+    domain: data.domain as string,
+    weightClass: (data.weight_class as string) || 'hybrid',
+  };
+}
+

@@ -86,4 +86,10 @@ export async function GET(request: NextRequest) {
     console.error('Peer challenge expiry error:', (err as Error).message ?? err);
   }
 
-  return NextResponse.
+  return NextResponse.json({
+    found: orphaned.length,
+    cleaned,
+    chainsExpired,
+    peerChallenges: peerExpiry,
+  });
+}

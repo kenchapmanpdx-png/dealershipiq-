@@ -64,4 +64,7 @@ export async function GET(request: NextRequest) {
       dunning: dunningResults,
     });
   } catch (error) {
-    log.error('dunning_check.fatal', { err: (error as Error).message 
+    log.error('dunning_check.fatal', { err: (error as Error).message ?? String(error) });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}

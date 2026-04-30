@@ -579,4 +579,9 @@ async function checkDailyDigestAlreadySent(dealershipId: string, todayStr: strin
       .maybeSingle();
 
     // If a meeting script already exists for today, digest was sent
-    return !!exis
+    return !!existingScript;
+  } catch {
+    // On error, assume not sent (safer to retry than skip)
+    return false;
+  }
+}

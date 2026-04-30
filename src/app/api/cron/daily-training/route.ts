@@ -428,4 +428,8 @@ function selectTrainingMode(): string {
   return MODES[weekdayCount % MODES.length];
 }
 
-function extractFirstName(fullName: string | null | undefined):
+function extractFirstName(fullName: string | null | undefined): string {
+  if (!fullName) return '';
+  const parts = fullName.trim().split(/\s+/);
+  return parts[0] || '';
+}

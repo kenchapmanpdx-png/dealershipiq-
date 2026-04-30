@@ -146,4 +146,50 @@ export async function GET(
 
     // Build entries for every member (zero-result users included with 0 score).
     const entries = Array.from(memberMap.entries())
-      
+      .map(([userId, fullName]) => {
+        const acc = perUser.get(userId);
+        const avgScore = acc && acc.count > 0 ? acc.sum / acc.count : 0;
+        const lastTraining = acc && acc.lastTs > 0 ? new Date(acc.lastTs).toISOString() : null;
+        return {
+          user: {
+            user_id: userId,
+            user_name: publicDisplayName(fullName),
+            total_sessions: acc?.count ?? 0,
+            average_score: Math.round(avgScore * 10) / 10,
+            last_training_at: lastTraining,
+          },
+          score: avgScore,
+        };
+      })
+      .sort((a, b) => b.score - a.score); // Descending
+
+    // Assign ranks
+    const leaderboard: LeaderboardEntry[] = entries.map((entry, index) => {
+      const user = entry.user as Record<string, unknown>;
+      return {
+        user_id: user.user_id as string,
+        user_name: user.user_name as string,
+        total_sessions: user.total_sessions as number,
+        average_score: user.average_score as number,
+        last_training_at: user.last_training_at as string | null,
+        rank: index + 1,
+      };
+    });
+
+    const response: LeaderboardResponse = {
+      dealership: {
+        name: dealership.name,
+        slug: dealership.slug,
+      },
+      leaderboard,
+    };
+
+    return NextResponse.json(response);
+  } catch (err) {
+    console.error('GET /api/leaderboard/[slug] error:', (err as Error).message ?? err);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}

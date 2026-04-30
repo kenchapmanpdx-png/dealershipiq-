@@ -82,4 +82,31 @@ export async function GET(request: NextRequest) {
           .eq('id', d.id);
 
         if (upErr) {
-          log.error('subscription_drift.update_failed',
+          log.error('subscription_drift.update_failed', {
+            dealership_id: d.id,
+            err: upErr.message,
+          });
+          errors++;
+        } else {
+          corrected++;
+        }
+      }
+    } catch (err) {
+      errors++;
+      log.error('subscription_drift.stripe_call_failed', {
+        dealership_id: d.id,
+        stripe_customer_id: customerId,
+        err: (err as Error).message,
+      });
+    }
+    budget.markProcessed();
+  }
+
+  return NextResponse.json({
+    candidates: dealerships?.length ?? 0,
+    drifts,
+    corrected,
+    errors,
+    budget: budget.report(),
+  });
+}

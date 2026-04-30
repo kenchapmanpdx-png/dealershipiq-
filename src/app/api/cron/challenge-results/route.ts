@@ -131,4 +131,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    results.push({ dealershipId, parti
+    results.push({ dealershipId, participationCount, resultsSent });
+  }
+
+  return NextResponse.json({ processed: challenges.length, results });
+}

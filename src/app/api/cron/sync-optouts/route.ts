@@ -126,4 +126,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ synced, resubscribed, sinchOptOuts: smsOptOuts.length });
   } catch (err) {
-    console.error('Opt-out sync error:', (
+    console.error('Opt-out sync error:', (err as Error).message ?? err);
+    return NextResponse.json({ error: 'Sync failed' }, { status: 500 });
+  }
+}

@@ -729,4 +729,14 @@ async function checkRateLimit(
       userMessageCount += msgs.filter((m) => m.role === 'user').length;
     }
 
-    return userMes
+    return userMessageCount >= MAX_MESSAGES_PER_HOUR;
+  } catch (err) {
+    log.error('coach.rate_limit.exception', {
+      user_id: userId,
+      dealership_id: dealershipId,
+      error: (err as Error).message ?? String(err),
+      fail_mode: failClosed ? 'closed' : 'open',
+    });
+    return failClosed;
+  }
+}

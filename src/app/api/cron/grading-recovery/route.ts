@@ -65,4 +65,18 @@ export async function GET(request: NextRequest) {
       reset++;
       ids.push(row.id as string);
       log.warn('grading_recovery.session_reset', {
-  
+        session_id: row.id,
+        dealership_id: row.dealership_id,
+        user_id: row.user_id,
+        grading_started_at: row.grading_started_at,
+      });
+    }
+  }
+
+  return NextResponse.json({
+    cutoff,
+    candidates: stuck?.length ?? 0,
+    reset,
+    session_ids: ids,
+  });
+}

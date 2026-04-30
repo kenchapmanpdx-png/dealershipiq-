@@ -146,17 +146,10 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
 
-    // Dashboard requires manager or owner role
     if (userRole !== 'manager' && userRole !== 'owner') {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    // 2026-04-18 L-1: Removed x-user-id / x-dealership-id / x-user-role response
-    // headers. They were set on the *response* (not the request), meaning the
-    // client received them — a minor info disclosure. And no downstream route
-    // read them: every route re-derives identity server-side from
-    // supabase.auth.getUser() + app_metadata. Don't reintroduce — if a route
-    // needs identity, read it from the session directly.
     return addSecurityHeaders(supabaseResponse);
   }
 
@@ -166,9 +159,6 @@ export async function middleware(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Validate that the authenticated user actually has app_metadata claims.
-    // Routes themselves enforce role/dealership via requireAuth(), but bouncing
-    // here keeps an orphaned auth user from hitting protected routes at all.
     const userRole = user.app_metadata?.user_role;
     const dealershipId = user.app_metadata?.dealership_id;
     if (!userRole || !dealershipId) {

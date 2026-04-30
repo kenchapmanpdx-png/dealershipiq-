@@ -213,4 +213,7 @@ function formatAlertMessage(dealershipName: string, flaggedUsers: FlaggedUser[])
 
   const names = flaggedUsers.slice(0, 2).map((u) => u.fullName);
   const remaining = flaggedUsers.length - 2;
-  const suffix = remaining > 0 ? ` +${rem
+  const suffix = remaining > 0 ? ` +${remaining} more` : '';
+
+  return `${dealershipName}: ${names.join(', ')}${suffix} flagged. Review dashboard.`;
+}
