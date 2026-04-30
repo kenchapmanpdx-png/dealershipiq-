@@ -173,6 +173,20 @@ export function computeWeightedTotal(
   return Math.max(1, Math.round(weightedSum / 5));
 }
 
+// TEMP DEMO — 2026-04-30: prepend a tier emoji to the score and a 💡
+// before "Try:" in the final grading SMS so the demo looks more polished.
+// Flip DEMO_EMOJIS to false (or just delete this block + the two call sites
+// below) to revert after the demo. No env var on purpose — keeps it
+// dead-obvious what's running in prod.
+const DEMO_EMOJIS = true;
+
+function scoreEmoji(score: number): string {
+  if (score >= 17) return '🔥';
+  if (score >= 13) return '💪';
+  if (score >= 9)  return '📈';
+  return '🎯';
+}
+
 export function replaceScoreInFeedback(
   feedback: string,
   weightedTotal: number
@@ -187,16 +201,28 @@ export function replaceScoreInFeedback(
     /^score\s*[:=]\s*\d{1,2}\s*\/\s*20/i,          // Score: 17/20
   ];
 
+  const scorePrefix = DEMO_EMOJIS
+    ? `${scoreEmoji(weightedTotal)} ${weightedTotal}/20`
+    : `${weightedTotal}/20`;
+
+  // Default to the prepend-prefix fallback, then upgrade to in-place
+  // replacement if any of the score patterns match.
+  let out = trimmed.length > 0 ? `${scorePrefix}. ${trimmed}` : scorePrefix;
   for (const re of patterns) {
     if (re.test(trimmed)) {
-      return trimmed.replace(re, `${weightedTotal}/20`);
+      out = trimmed.replace(re, scorePrefix);
+      break;
     }
   }
 
-  if (trimmed.length > 0) {
-    return `${weightedTotal}/20. ${trimmed}`;
+  // TEMP DEMO: add 💡 before the coaching "Try:" line. Match "Try:" only
+  // when it's preceded by whitespace or sits at the start of a sentence,
+  // and only the first occurrence (avoids adding it to user-quoted text).
+  if (DEMO_EMOJIS) {
+    out = out.replace(/(^|\s)Try:/, '$1💡 Try:');
   }
-  return `${weightedTotal}/20`;
+
+  return out;
 }
 
 const CALIBRATION_ANCHORS: Record<string, { mediocre: string; poor: string }> = {
