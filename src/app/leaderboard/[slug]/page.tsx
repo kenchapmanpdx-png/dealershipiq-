@@ -2,6 +2,11 @@
 // Server component — SSR, no auth required
 // Shows top performers for a dealership by slug
 // Build Master: Phase 3
+//
+// 2026-04-29 C5a: Use 2-query pattern (training_results, then users by id)
+// instead of PostgREST nested embed `users (full_name)`. The embed required
+// a specific FK alias resolution that 500'd on certain edge cases. Two
+// independent queries are predictable and slightly faster.
 
 import { notFound } from 'next/navigation';
 import { serviceClient } from '@/lib/supabase/service';
@@ -41,24 +46,44 @@ export default async function LeaderboardPage({
   // D3-M-001: Bound to 90 days + limit 1000 as safety valve. Public page.
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
+  // Query 1: training_results in window for this dealership.
   const { data: results, error: resultsError } = await serviceClient
     .from('training_results')
-    .select(`
-      user_id,
-      users (full_name),
-      product_accuracy,
-      tone_rapport,
-      addressed_concern,
-      close_attempt
-    `)
+    .select('user_id, product_accuracy, tone_rapport, addressed_concern, close_attempt')
     .eq('dealership_id', dealership.id)
     .gte('created_at', ninetyDaysAgo)
     .order('created_at', { ascending: false })
     .limit(1000);
 
   if (resultsError) {
-    console.error('Failed to fetch leaderboard:', (resultsError as Error).message ?? resultsError);
+    console.error('Failed to fetch leaderboard results:', (resultsError as Error).message ?? resultsError);
     notFound();
+  }
+
+  const rows = (results ?? []) as Array<{
+    user_id: string;
+    product_accuracy: number;
+    tone_rapport: number;
+    addressed_concern: number;
+    close_attempt: number;
+  }>;
+
+  // Query 2: user names for the unique user_ids that appeared.
+  const userIds = Array.from(new Set(rows.map((r) => r.user_id)));
+  const userNameMap = new Map<string, string>();
+  if (userIds.length > 0) {
+    const { data: users, error: usersError } = await serviceClient
+      .from('users')
+      .select('id, full_name')
+      .in('id', userIds);
+
+    if (usersError) {
+      console.error('Failed to fetch users:', (usersError as Error).message ?? usersError);
+      notFound();
+    }
+    for (const u of (users ?? []) as Array<{ id: string; full_name: string | null }>) {
+      userNameMap.set(u.id, u.full_name ?? '');
+    }
   }
 
   // Aggregate scores by user
@@ -71,17 +96,12 @@ export default async function LeaderboardPage({
     }
   > = {};
 
-  (results ?? []).forEach((result: Record<string, unknown>) => {
-    const userId = result.user_id as string;
+  for (const result of rows) {
+    const userId = result.user_id;
     // H-7: mask PII — "Jane S." rather than "Jane Smith" on the public TV view.
-    const rawName = ((result.users as Record<string, unknown>)?.full_name ?? null) as string | null;
-    const userName = publicDisplayName(rawName);
+    const userName = publicDisplayName(userNameMap.get(userId) ?? '');
     const avgScore =
-      ((result.product_accuracy as number) +
-        (result.tone_rapport as number) +
-        (result.addressed_concern as number) +
-        (result.close_attempt as number)) /
-      4;
+      (result.product_accuracy + result.tone_rapport + result.addressed_concern + result.close_attempt) / 4;
 
     if (!userScores[userId]) {
       userScores[userId] = {
@@ -93,7 +113,7 @@ export default async function LeaderboardPage({
 
     userScores[userId].scores.push(avgScore);
     userScores[userId].sessionCount += 1;
-  });
+  }
 
   // Calculate averages and rank
   const leaderboard: LeaderboardEntry[] = Object.entries(userScores)
