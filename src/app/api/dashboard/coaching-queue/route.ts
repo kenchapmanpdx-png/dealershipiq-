@@ -63,7 +63,12 @@ export async function GET() {
       `)
       .eq('dealership_id', dealershipId)
       .gte('created_at', cutoffIso)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      // 2026-04-29 M9: cap response at 2000 results. Per-dealership volume
+      // is normally <1000 even for enterprise accounts; this cap protects
+      // against multi-location accounts pushing 10k+ rows through serverless
+      // and inflating both response time and Vercel function payload.
+      .limit(2000);
 
     if (resultsError) {
       console.error('Failed to fetch coaching queue:', (resultsError as Error).message ?? resultsError);

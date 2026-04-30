@@ -97,7 +97,9 @@ export async function middleware(request: NextRequest) {
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set('X-Content-Type-Options', 'nosniff');
     response.headers.set('X-Frame-Options', 'DENY');
-    response.headers.set('X-XSS-Protection', '1; mode=block');
+    // 2026-04-29 M12: removed X-XSS-Protection — modern browsers ignore it
+    // and it has historically introduced vulnerabilities (XS-Leaks via the
+    // legacy auditor). CSP is the real defense.
     response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
     response.headers.set('Content-Security-Policy', cspHeader);
     return response;
@@ -111,7 +113,7 @@ export async function middleware(request: NextRequest) {
   const addSecurityHeaders = (response: NextResponse): NextResponse => {
     response.headers.set('X-Content-Type-Options', 'nosniff');
     response.headers.set('X-Frame-Options', 'DENY');
-    response.headers.set('X-XSS-Protection', '1; mode=block');
+    // M12: X-XSS-Protection intentionally not set (modern browsers ignore + historical XS-Leak vector).
     response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
     // H-11: override the vercel.json unsafe-inline CSP with a strict
     // nonce-based one. Middleware headers take precedence over vercel.json

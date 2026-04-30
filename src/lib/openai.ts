@@ -1262,7 +1262,16 @@ ${stepLabel}`;
     }
   }
 
-  // Fallback: generic customer response
+  // Fallback: generic customer response.
+  // 2026-04-29 M19: log a structured warn so this silent degradation is
+  // observable in Sentry. The fallback is fine as user-facing UX, but if
+  // it fires consistently it indicates an OpenAI outage or quota issue
+  // that prod should know about.
+  log.warn('openai.generate_follow_up.fallback', {
+    mode: opts.mode,
+    customerLine_len: opts.customerLine.length,
+    note: 'All OpenAI follow-up attempts failed; serving generic template line.',
+  });
   return {
     customerMessage: "I appreciate that, but I'm still not sure. What else can you tell me?",
     model: 'template-fallback',

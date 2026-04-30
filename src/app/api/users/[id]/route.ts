@@ -55,7 +55,20 @@ export async function DELETE(
       );
     }
 
-    const mode = (new URL(request.url).searchParams.get('mode') ?? 'deactivate').toLowerCase();
+    const rawMode = (new URL(request.url).searchParams.get('mode') ?? 'deactivate').toLowerCase();
+
+    // 2026-04-29 M16: validate mode enum. Previously a typo (e.g. ?mode=erse)
+    // silently fell through to deactivate, which violates least-surprise for
+    // a destructive operation. Reject unknown modes with 400.
+    const ALLOWED_MODES = ['deactivate', 'erase'] as const;
+    type Mode = typeof ALLOWED_MODES[number];
+    if (!ALLOWED_MODES.includes(rawMode as Mode)) {
+      return NextResponse.json(
+        { error: `Invalid mode '${rawMode}'. Must be one of: ${ALLOWED_MODES.join(', ')}` },
+        { status: 400 }
+      );
+    }
+    const mode: Mode = rawMode as Mode;
 
     if (mode === 'erase') {
       // S4: full GDPR-style erasure. Requires owner role (stricter than deactivate).
