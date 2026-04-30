@@ -173,20 +173,6 @@ export function computeWeightedTotal(
   return Math.max(1, Math.round(weightedSum / 5));
 }
 
-// TEMP DEMO — 2026-04-30: prepend a tier emoji to the score and a 💡
-// before "Try:" in the final grading SMS so the demo looks more polished.
-// Flip DEMO_EMOJIS to false (or just delete this block + the two call sites
-// below) to revert after the demo. No env var on purpose — keeps it
-// dead-obvious what's running in prod.
-const DEMO_EMOJIS = true;
-
-function scoreEmoji(score: number): string {
-  if (score >= 17) return '🔥';
-  if (score >= 13) return '💪';
-  if (score >= 9)  return '📈';
-  return '🎯';
-}
-
 export function replaceScoreInFeedback(
   feedback: string,
   weightedTotal: number
@@ -201,26 +187,47 @@ export function replaceScoreInFeedback(
     /^score\s*[:=]\s*\d{1,2}\s*\/\s*20/i,          // Score: 17/20
   ];
 
-  const scorePrefix = DEMO_EMOJIS
-    ? `${scoreEmoji(weightedTotal)} ${weightedTotal}/20`
-    : `${weightedTotal}/20`;
-
-  // Default to the prepend-prefix fallback, then upgrade to in-place
-  // replacement if any of the score patterns match.
-  let out = trimmed.length > 0 ? `${scorePrefix}. ${trimmed}` : scorePrefix;
   for (const re of patterns) {
     if (re.test(trimmed)) {
-      out = trimmed.replace(re, scorePrefix);
-      break;
+      return trimmed.replace(re, `${weightedTotal}/20`);
     }
   }
 
-  // TEMP DEMO: add 💡 before the coaching "Try:" line. Match "Try:" only
-  // when it's preceded by whitespace or sits at the start of a sentence,
-  // and only the first occurrence (avoids adding it to user-quoted text).
-  if (DEMO_EMOJIS) {
-    out = out.replace(/(^|\s)Try:/, '$1💡 Try:');
+  if (trimmed.length > 0) {
+    return `${weightedTotal}/20. ${trimmed}`;
   }
+  return `${weightedTotal}/20`;
+}
+
+// TEMP DEMO — 2026-04-30: tier emoji on the score + 💡 before "Try:".
+// Applied AFTER sanitizeGsm7() in the v7 pipeline because GSM-7 strips
+// non-ASCII chars; sticking these in earlier makes them disappear.
+// Sinch auto-switches to UCS-2 encoding when it sees emoji, so the SMS
+// still delivers fine — segments shrink from 160 to 70 chars per part.
+// Flip DEMO_EMOJIS to false (or remove the call site below in the v7
+// pipeline) to revert after the demo.
+export const DEMO_EMOJIS = true;
+
+function scoreEmoji(score: number): string {
+  if (score >= 17) return '🔥';
+  if (score >= 13) return '💪';
+  if (score >= 9)  return '📈';
+  return '🎯';
+}
+
+export function applyDemoEmojis(text: string, weightedTotal: number): string {
+  if (!DEMO_EMOJIS) return text;
+  let out = text;
+
+  // Prepend tier emoji to the leading "X/20". Match the score pattern at
+  // the start of the string (after sanitization, leading whitespace is
+  // already gone or harmless).
+  const emoji = scoreEmoji(weightedTotal);
+  out = out.replace(/^(\s*)(\d{1,2}\s*\/\s*20)/, `$1${emoji} $2`);
+
+  // 💡 before the coaching "Try:" — only the first occurrence so it
+  // doesn't decorate any user-quoted text further down.
+  out = out.replace(/(^|\s)Try:/, '$1💡 Try:');
 
   return out;
 }
@@ -1023,7 +1030,12 @@ async function gradeResponseV7(
 
       // Pipeline step 4: Sanitize + truncate feedback (GPT writes complete SMS into feedback)
       // Prompt targets 460 chars. App truncation catches overflow at 480.
-      const finalSms = truncateAtWord(sanitizeGsm7(adjustedFeedback), 480);
+      // TEMP DEMO: applyDemoEmojis runs AFTER sanitizeGsm7 because the
+      // sanitizer strips non-GSM-7 chars (incl. emoji). The carrier path
+      // auto-switches to UCS-2 when it sees them.
+      const sanitized = sanitizeGsm7(adjustedFeedback);
+      const decorated = applyDemoEmojis(sanitized, weightedTotal);
+      const finalSms = truncateAtWord(decorated, 480);
 
       // Build result compatible with existing GradingResult type
       const gradingResult: GradingResult & { model: string; promptVersionId?: string; assembledSms: string; weightClass: string; rawTotal: number; weightedTotal: number } = {
