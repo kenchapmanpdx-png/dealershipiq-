@@ -23,6 +23,18 @@ export async function POST(request: NextRequest) {
     const ctErr = requireJsonContentType(request);
     if (ctErr) return ctErr;
 
+    // 2026-04-29 H3: Short-circuit if Stripe is not configured. Without
+    // this, signup creates auth user + dealership rows + feature flags, then
+    // fails on createCheckoutSession() and triggers the rollback flow. That
+    // wastes Supabase Auth quota and risks orphaned rows when rollback hits
+    // a transient Supabase error. Fail fast with a 503 instead.
+    if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_PRICE_ID) {
+      return NextResponse.json(
+        { error: 'Signup is temporarily unavailable. Billing is being configured. Please try again later.' },
+        { status: 503 }
+      );
+    }
+
     // C2-FIX: Rate limit public signup endpoint (5/hour per IP)
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       ?? request.headers.get('x-real-ip')

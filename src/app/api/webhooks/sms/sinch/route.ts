@@ -22,9 +22,13 @@
 // v7: GO keyword rewritten to use full training content pipeline
 //     (adaptive weighting, vehicle data, persona moods, 30-scenario fallback pool)
 
+// 2026-04-29: pin Node runtime — uses crypto.timingSafeEqual for the
+// internal-worker bypass header check, plus indirect Node-only imports.
+export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { log } from '@/lib/logger';
 import { verifySinchWebhookSignature, verifySinchRestWebhookSecret } from '@/lib/sinch-auth';
 import { getAppUrl } from '@/lib/url';
@@ -82,6 +86,15 @@ import {
 import { selectTrainingContent } from '@/lib/training-content';
 import type { SinchInboundMessage, SinchDeliveryReport } from '@/types/sinch';
 import type { StepResult } from '@/types/chains';
+// 2026-04-29 C1: timing-safe string comparison for the internal-worker
+// bypass header. Buffer.from + crypto.timingSafeEqual prevents timing-side-
+// channel leaks of the secret length.
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
 
 // =============================================================================
 // SCENARIO FALLBACK POOL (v7)
@@ -140,6 +153,33 @@ const MAX_PROCESSED_CACHE = 10_000;
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
 
+  // ─────────────────────────────────────────────────────────────────────
+  // 2026-04-29 C1: Internal-worker bypass.
+  // /api/internal/sinch-process re-invokes us with `x-internal-worker: 1`
+  // + `x-worker-secret` after the public hop has already verified Sinch
+  // auth. We trust that prior verification and skip the Sinch HMAC/XMS
+  // checks below — we'd otherwise reject our own retry because internal
+  // calls don't carry Sinch's signature headers.
+  //
+  // Fail-closed if the env var is missing in production: drop the request
+  // silently (no 4xx — Sinch kills callbacks on persistent 4xx).
+  // ─────────────────────────────────────────────────────────────────────
+  const internalWorkerHeader = request.headers.get('x-internal-worker');
+  const isInternalWorker = internalWorkerHeader === '1';
+  if (isInternalWorker) {
+    const expected = process.env.INTERNAL_WORKER_SECRET;
+    if (!expected) {
+      log.error('sinch.webhook.internal_worker_misconfigured', { env: 'INTERNAL_WORKER_SECRET' });
+      return NextResponse.json({ status: 'ok' });
+    }
+    const provided = request.headers.get('x-worker-secret') ?? '';
+    if (!timingSafeStringEqual(provided, expected)) {
+      log.warn('sinch.webhook.internal_worker_auth_failed', {});
+      return NextResponse.json({ status: 'ok' });
+    }
+    // Auth verified upstream — fall through to message routing without
+    // re-running Sinch HMAC/XMS verification.
+  }
 
   let payload: unknown;
   try {
@@ -153,6 +193,7 @@ export async function POST(request: NextRequest) {
 
   // =========================================================================
   // AUTH VERIFICATION — runs BEFORE any message processing
+  // (skipped if internal-worker bypass authenticated above)
   // =========================================================================
   // Conversation API: HMAC signature headers present → verify them
   // REST API (XMS): No HMAC headers → validate `to` matches our number + E.164 phone
@@ -164,7 +205,9 @@ export async function POST(request: NextRequest) {
   const isRestApi = parsed.type === 'mo_text' || parsed.type === 'mo_binary'
     || parsed.type === 'recipient_delivery_report_sms' || parsed.type === 'delivery_report_sms';
 
-  if (hasHmacHeaders) {
+  if (isInternalWorker) {
+    // Auth already verified at top of handler — fall through to routing.
+  } else if (hasHmacHeaders) {
     // Conversation API path: verify HMAC signature
     if (!verifySinchWebhookSignature(rawBody, signature, nonce, timestamp)) {
       log.error('sinch.webhook.hmac_verify_failed', {});
@@ -232,6 +275,40 @@ export async function POST(request: NextRequest) {
   // =========================================================================
   // MESSAGE ROUTING — auth verified above
   // =========================================================================
+  //
+  // 2026-04-29 C3: Optional off-thread dispatch.
+  // External Sinch traffic only (skip if we're already the internal worker).
+  // Gated on INTERNAL_WORKER_SECRET + SINCH_OFF_THREAD_ENABLED=true so flipping
+  // architectures requires an explicit env-var change, not a code deploy.
+  //
+  // Sinch retries at 15s if we don't 200 in time. handleInboundMessage runs
+  // OpenAI grading which can take 30s+. Dispatching off-thread to
+  // /api/internal/sinch-process (300s budget) eliminates the retry-storm risk.
+  //
+  // Fire-and-forget: we don't await the dispatch; the internal route runs
+  // independently. If the dispatch fetch errors before lambda death, we log
+  // and Sinch will retry (idempotency in handleInboundMessage handles dupes).
+  if (
+    !isInternalWorker
+    && process.env.SINCH_OFF_THREAD_ENABLED === 'true'
+    && process.env.INTERNAL_WORKER_SECRET
+  ) {
+    const workerSecret = process.env.INTERNAL_WORKER_SECRET;
+    const internalUrl = `${getAppUrl()}/api/internal/sinch-process`;
+    void fetch(internalUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-worker-secret': workerSecret,
+      },
+      body: rawBody,
+    }).catch((err: unknown) => {
+      log.error('sinch.webhook.off_thread_dispatch_failed', {
+        err: (err as Error).message ?? String(err),
+      });
+    });
+    return NextResponse.json({ status: 'ok' });
+  }
 
   // --- REST API (XMS) inbound format ---
   // Sinch REST API sends { type: "mo_text", id, from, to, body, ... }

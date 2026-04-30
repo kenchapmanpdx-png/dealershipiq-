@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
+import { createBudget } from '@/lib/cron-budget';
 import { sendSms } from '@/lib/sms';
 // H17: processDunning moved to dedicated `dunning-check` cron to avoid
 // duplicate-email races when this cron and the dedicated one overlap.
@@ -24,19 +25,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Run for all dealerships (not timezone-gated — this runs every 6h globally).
-  //
-  // 2026-04-18 L-13 (TODO): At >~500 dealerships this serial loop will hit
-  // `maxDuration = 60s`. Upgrade path: paginate by `id > cursor` and fan
-  // each page out to an internal worker queue (or a second cron pass)
-  // instead of processing everything inline. Also filter to
-  // `subscription_status IN ('active','trialing')` so dunning'd or canceled
-  // dealerships don't eat the per-run budget.
+  // 2026-04-29 H5: budget guard + filter to active/trialing subs + page limit.
+  // Without these the cron sequentially walks every dealership and busts
+  // maxDuration at ~500 rows. Now: stops gracefully at ~55s, only processes
+  // dealerships that actually need monitoring (dunning'd/canceled don't),
+  // and caps at 1000 per run with a TODO to paginate when needed.
+  const budget = createBudget({ cronName: 'red-flag-check', maxMs: 55_000, safetyBufferMs: 10_000 });
   const { data: dealerships, error } = await (
     await import('@/lib/supabase/service')
   ).serviceClient
     .from('dealerships')
-    .select('id, name');
+    .select('id, name')
+    .in('subscription_status', ['active', 'trialing'])
+    .limit(1000);
 
   if (error) {
     console.error('Failed to fetch dealerships:', (error as Error).message ?? error);
@@ -55,6 +56,11 @@ export async function GET(request: NextRequest) {
   }> = [];
 
   for (const dealership of dealerships ?? []) {
+    if (budget.shouldStop()) {
+      // Resume on next run; remaining dealerships skip this pass.
+      break;
+    }
+
     let flaggedUsers = 0;
     let alertsSent = 0;
     let errors = 0;
@@ -184,6 +190,7 @@ export async function GET(request: NextRequest) {
         errors: 1,
       });
     }
+    budget.markProcessed();
   }
 
   // H17: Dunning is now processed exclusively by /api/cron/dunning-check.

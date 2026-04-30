@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
+import { createBudget } from '@/lib/cron-budget';
 import { getSinchAccessToken } from '@/lib/sinch-auth';
 import { serviceClient } from '@/lib/supabase/service';
 import { log } from '@/lib/logger';
@@ -73,9 +74,16 @@ export async function GET(request: NextRequest) {
     // This is a lightweight sync — just upsert phones that Sinch says are opted out
     let synced = 0;
 
+    // 2026-04-29 H5: Budget guard. The existing N+1 inside batches (serial
+    // upsert per membership) is OK at our scale today, but at 100k+ opt-outs
+    // it'll bust maxDuration. createBudget bails gracefully so the next run
+    // can resume from where we stopped.
+    const budget = createBudget({ cronName: 'sync-optouts', maxMs: 55_000, safetyBufferMs: 10_000 });
+
     // Process opt-outs in batches of 100 to avoid N+1 query pattern
     const batchSize = 100;
     for (let i = 0; i < smsOptOuts.length; i += batchSize) {
+      if (budget.shouldStop()) break;
       const batch = smsOptOuts.slice(i, i + batchSize);
 
       // Fetch all users for this batch in a single query

@@ -176,6 +176,10 @@ export async function GET(request: NextRequest) {
     const contentTypes: Record<string, number> = {};
 
     for (const user of eligible) {
+      // 2026-04-29 H5: Inner-loop budget check. Outer dealership loop has
+      // its own check (line 113) but a slow dealership with 50+ eligible
+      // users could exceed maxDuration without this break.
+      if (budget.shouldStop()) break;
       try {
         // X-001: Skip if user already has an active session (e.g. from ACCEPT)
         const existingSession = await getActiveSession(user.id, dealership.id);

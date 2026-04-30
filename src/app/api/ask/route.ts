@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { isFeatureEnabled } from '@/lib/service-db';
+import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { checkAskLimit } from '@/lib/rate-limit';
 import { requireJsonContentType } from '@/lib/api-helpers';
 
@@ -46,6 +47,17 @@ export async function POST(request: NextRequest) {
     const dealershipId = user.app_metadata?.dealership_id as string | undefined;
     if (!dealershipId) {
       return NextResponse.json({ error: 'No dealership' }, { status: 403 });
+    }
+
+    // 2026-04-29 H6: Phase 5 subscription gate. Previously /api/ask only
+    // checked `ask_iq_enabled` — an unpaid dealership with the flag on
+    // could use Ask IQ. Now requires active subscription.
+    const subCheck = await checkSubscriptionAccess(dealershipId);
+    if (!subCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Subscription required', reason: subCheck.reason, status: subCheck.status },
+        { status: 402 }
+      );
     }
 
     // RT-006: Feature flag gate
