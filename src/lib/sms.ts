@@ -45,6 +45,13 @@ export interface SmsSendResult {
 //
 // Keep the two layers separate. The prompt pipeline escapes on the way IN;
 // the SMS pipeline sanitizes on the way OUT. No callsite should chain them.
+// TEMP DEMO \u2014 2026-04-30: allow these specific emojis through the
+// sanitizer so the demo grading SMS keeps its tier emoji + lightbulb.
+// Sinch auto-switches to UCS-2 encoding when it sees them, so delivery
+// works (segments shrink from 160 to 70 chars). Remove this set after
+// the demo to fully restore the GSM-7-only invariant.
+const DEMO_EMOJI_ALLOWLIST = new Set(['\uD83D\uDD25', '\uD83D\uDCAA', '\uD83D\uDCC8', '\uD83C\uDFAF', '\uD83D\uDCA1']);
+
 export function sanitizeGsm7(text: string): string {
   let result = text;
 
@@ -64,7 +71,12 @@ export function sanitizeGsm7(text: string): string {
     '\u00C4\u00D6\u00D1\u00DC\u00A7abcdefghijklmnopqrstuvwxyz\u00E4\u00F6\u00F1\u00FC\u00E0'
   );
 
-  result = result.split('').filter(char => gsm7Chars.has(char)).join('');
+  // Iterate by Unicode code points (Array.from on a string yields full
+  // surrogate-pair characters as one element \u2014 required for emoji which
+  // are outside the BMP).
+  result = Array.from(result)
+    .filter(char => gsm7Chars.has(char) || DEMO_EMOJI_ALLOWLIST.has(char))
+    .join('');
 
   return result;
 }
