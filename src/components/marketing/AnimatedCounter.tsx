@@ -10,6 +10,7 @@ interface AnimatedCounterProps {
 export default function AnimatedCounter({ value, label }: AnimatedCounterProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [hasAnimated, setHasAnimated] = useState(false);
+  const [done, setDone] = useState(false);
   const [displayValue, setDisplayValue] = useState('0');
 
   // Extract numeric part and prefix/suffix
@@ -35,6 +36,7 @@ export default function AnimatedCounter({ value, label }: AnimatedCounterProps) 
           requestAnimationFrame(update);
         } else {
           setDisplayValue(value);
+          setDone(true);
         }
       }
 
@@ -51,6 +53,7 @@ export default function AnimatedCounter({ value, label }: AnimatedCounterProps) 
     if (prefersReduced) {
       setDisplayValue(value);
       setHasAnimated(true);
+      setDone(true);
       return;
     }
 
@@ -71,10 +74,12 @@ export default function AnimatedCounter({ value, label }: AnimatedCounterProps) 
 
   return (
     <div ref={ref} className="text-center">
-      <p className="text-4xl md:text-5xl font-bold tracking-tight text-white mb-1.5">
-        {hasAnimated ? displayValue : <span className="opacity-0">{value}</span>}
+      <p className={`text-5xl md:text-6xl font-extrabold tracking-[-0.03em] mb-2.5 ${done ? 'stat-pop' : ''}`}>
+        <span className="stat-value">
+          {hasAnimated ? displayValue : <span className="opacity-0">{value}</span>}
+        </span>
       </p>
-      <p className="text-sm text-[var(--text-muted)]">{label}</p>
+      <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-white/40">{label}</p>
     </div>
   );
 }

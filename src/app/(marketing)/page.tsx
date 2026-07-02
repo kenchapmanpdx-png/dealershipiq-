@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import { Metadata } from 'next';
 import PhoneMockup from '@/components/marketing/PhoneMockup';
 import PhoneScrollAnimation from '@/components/marketing/PhoneScrollAnimation';
@@ -8,6 +9,7 @@ import { StaggerReveal } from '@/components/marketing/ScrollReveal';
 import FAQ from '@/components/marketing/FAQ';
 import MagneticButton from '@/components/marketing/MagneticButton';
 import KineticUnderline from '@/components/marketing/KineticUnderline';
+import InView from '@/components/marketing/InView';
 
 export const metadata: Metadata = {
   title: 'SMS-Powered Sales Training for Auto Dealers | DealershipIQ',
@@ -315,9 +317,14 @@ export default function LandingPage() {
       {/* ══════════ METRICS BAR ══════════ */}
       <section className="relative border-y border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-10 md:gap-12">
-            {metrics.map((m) => (
-              <AnimatedCounter key={m.label} value={m.value} label={m.label} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-10 md:gap-0">
+            {metrics.map((m, i) => (
+              <div
+                key={m.label}
+                className={`md:px-6 ${i > 0 ? 'md:border-l md:border-[var(--border-subtle)]' : ''}`}
+              >
+                <AnimatedCounter value={m.value} label={m.label} />
+              </div>
             ))}
           </div>
         </div>
@@ -431,16 +438,21 @@ export default function LandingPage() {
             </div>
           </ScrollReveal>
 
+          <InView className="steps-flow">
           <StaggerReveal className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6" staggerMs={120}>
             {steps.map((s, i) => (
-              <div key={s.num} className="relative text-center lg:text-left">
-                {/* Connector line between steps on desktop */}
+              <div
+                key={s.num}
+                className="relative text-center lg:text-left"
+                style={{ '--step-delay': `${i * 320}ms` } as CSSProperties}
+              >
+                {/* Connector line draws toward the next step on desktop */}
                 {i < steps.length - 1 && (
-                  <div className="hidden lg:block absolute top-10 left-[calc(100%+4px)] w-[calc(100%-20px)] h-px bg-gradient-to-r from-[var(--accent)]/20 via-[var(--accent)]/10 to-transparent" />
+                  <div className="step-connector hidden lg:block absolute top-10 left-[calc(100%+4px)] w-[calc(100%-20px)] h-px bg-gradient-to-r from-[var(--accent)]/20 via-[var(--accent)]/10 to-transparent" />
                 )}
 
                 {/* Icon circle */}
-                <div className="w-14 h-14 rounded-2xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] mb-5 mx-auto lg:mx-0">
+                <div className="step-icon w-14 h-14 rounded-2xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] mb-5 mx-auto lg:mx-0">
                   {s.icon}
                 </div>
 
@@ -454,6 +466,7 @@ export default function LandingPage() {
               </div>
             ))}
           </StaggerReveal>
+          </InView>
         </div>
       </section>
 
