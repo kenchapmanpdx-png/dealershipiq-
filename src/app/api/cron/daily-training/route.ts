@@ -180,6 +180,11 @@ export async function GET(request: NextRequest) {
       // its own check (line 113) but a slow dealership with 50+ eligible
       // users could exceed maxDuration without this break.
       if (budget.shouldStop()) break;
+      // 2026-07-02 AUDIT H3: track session + send success so a failed send
+      // doesn't strand a 'pending' session (blocks the rep's next training
+      // via the getActiveSession open-status filter until the 2h sweep).
+      let createdSession: { id: string } | null = null;
+      let smsSent = false;
       try {
         // X-001: Skip if user already has an active session (e.g. from ACCEPT)
         const existingSession = await getActiveSession(user.id, dealership.id);
@@ -341,6 +346,7 @@ export async function GET(request: NextRequest) {
           scenarioChainId: chainId,
           chainStep,
         });
+        createdSession = session;
 
         // C8: Pre-send dedup token. Insert transcript row BEFORE sendSms so that
         // if the cron crashes between send and log, the hourly dedup check
@@ -374,6 +380,7 @@ export async function GET(request: NextRequest) {
 
         // Send SMS
         const sinchResponse = await sendSms(user.phone, fullQuestion);
+        smsSent = true;
 
         // Upgrade placeholder to real message id (best-effort)
         try {
@@ -405,6 +412,19 @@ export async function GET(request: NextRequest) {
       } catch (err) {
         console.error(`Failed to send training to ${user.id}:`, (err as Error).message ?? err);
         errors++;
+        // H3: compensating abandon — ONLY when the SMS never went out. If it
+        // was delivered, the rep holds a live prompt; abandoning would make
+        // their reply unroutable.
+        if (createdSession && !smsSent) {
+          try {
+            await updateSessionStatus(createdSession.id, dealership.id, 'abandoned');
+          } catch (cleanupErr) {
+            log.warn('daily_training.session_cleanup_failed', {
+              session_id: createdSession.id,
+              err: (cleanupErr as Error).message,
+            });
+          }
+        }
       }
     }
 

@@ -154,11 +154,25 @@ export interface SendSmsOptions {
 }
 
 async function resolveDealershipTimezone(phone: string): Promise<string> {
+  // 2026-07-02 AUDIT M8: fallback is intentional (quiet-hours gating must not
+  // hard-fail a send), but it must be LOUD — a dealership silently gated on
+  // Pacific quiet hours is a misconfiguration, not a normal path.
   try {
     const { getUserByPhone } = await import('@/lib/service-db');
     const user = await getUserByPhone(phone);
+    if (!user?.dealershipTimezone) {
+      log.error('sms.timezone_fallback', {
+        phone_last4: phone.slice(-4),
+        reason: 'no_dealership_timezone',
+      });
+    }
     return user?.dealershipTimezone ?? 'America/Los_Angeles';
-  } catch {
+  } catch (err) {
+    log.error('sms.timezone_fallback', {
+      phone_last4: phone.slice(-4),
+      reason: 'lookup_threw',
+      err: (err as Error).message ?? String(err),
+    });
     return 'America/Los_Angeles';
   }
 }

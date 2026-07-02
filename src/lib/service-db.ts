@@ -548,7 +548,11 @@ export async function getOrphanedSessions(hoursThreshold: number = 2) {
     .select('id, user_id, dealership_id, status, created_at')
     // X-006 + X-016: Include error and pending sessions in cleanup
     .in('status', ['active', 'grading', 'error', 'pending'])
-    .lt('updated_at', cutoff);
+    .lt('updated_at', cutoff)
+    // 2026-07-02 AUDIT H2: bound the sweep — oldest first, rerun every 2h
+    // picks up the remainder.
+    .order('updated_at', { ascending: true })
+    .limit(500);
 
   if (error) throw error;
   return data ?? [];

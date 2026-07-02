@@ -206,7 +206,9 @@ export function replaceScoreInFeedback(
 // still delivers fine — segments shrink from 160 to 70 chars per part.
 // Flip DEMO_EMOJIS to false (or remove the call site below in the v7
 // pipeline) to revert after the demo.
-export const DEMO_EMOJIS = true;
+// 2026-07-02 AUDIT C1: demo over — flipped off. Emoji forced UCS-2 encoding
+// (70-char segments vs 160), ~2-3x segment cost on every graded SMS.
+export const DEMO_EMOJIS = false;
 
 function scoreEmoji(score: number): string {
   if (score >= 17) return '🔥';
@@ -1388,9 +1390,14 @@ export async function getOpenAICompletion(
 // ERROR UX MESSAGES (Build Master 2D table)
 // =============================================================================
 
+// 2026-07-02 AUDIT H5: copy rewritten to match what the system actually does.
+// Old copy promised "we'll get your score to you soon" but nothing re-graded
+// an errored session. Now: grading-recovery resets the session to 'active'
+// after ~3 min, and the rep's NEXT text becomes the answer that gets graded —
+// so the honest instruction is to resend their answer in a few minutes.
 export const ERROR_SMS: Record<string, string> = {
-  ai_timeout: "Having trouble grading right now. Your response was saved - we'll get your score to you soon!",
-  ai_down: "Having trouble grading right now. Your response was saved - we'll get your score to you soon!",
+  ai_timeout: "Having trouble grading right now. Give it a few minutes, then text your answer again and we'll grade it.",
+  ai_down: "Having trouble grading right now. Give it a few minutes, then text your answer again and we'll grade it.",
   invalid_response: 'Hmm, can you give me a fuller answer? Try again!',
   system_error: 'Something went wrong. Our team is on it.',
 };

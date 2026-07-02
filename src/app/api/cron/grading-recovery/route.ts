@@ -4,6 +4,13 @@
 // OpenAI returned) and is reset to 'active'. Next inbound SMS from the user
 // will then succeed instead of hitting the "Still processing..." dead-end.
 //
+// 2026-07-02 AUDIT H5: also rescues status='error' sessions (grading threw —
+// OpenAI failure, etc). Previously these dead-ended: the rep was told "we'll
+// get your score to you soon" but nothing ever re-graded; the orphan sweeper
+// just abandoned them after 2h. Resetting error → active gives the rep's
+// next inbound text a live session to grade against, same as the 'grading'
+// rescue. Filter uses updated_at (error rows have grading_started_at cleared).
+//
 // Recommended schedule: every 5 minutes.
 //   { "path": "/api/cron/grading-recovery", "schedule": "*/5 * * * *" }
 
@@ -73,10 +80,59 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // H5 (2026-07-02): rescue 'error' sessions the same way. Uses updated_at
+  // because updateSessionStatus clears grading_started_at on 'error'.
+  // Window: older than the grading timeout (avoid racing the webhook's own
+  // error handler) but younger than 2h (past that, orphaned-sessions owns
+  // the abandon; don't resurrect what it's about to sweep).
+  const errorCutoffNewest = cutoff; // > GRADING_TIMEOUT_MIN old
+  const errorCutoffOldest = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+  const { data: errored, error: errSelectErr } = await serviceClient
+    .from('conversation_sessions')
+    .select('id, dealership_id, user_id, updated_at')
+    .eq('status', 'error')
+    .lt('updated_at', errorCutoffNewest)
+    .gt('updated_at', errorCutoffOldest)
+    .limit(200);
+
+  let errorReset = 0;
+  if (errSelectErr) {
+    log.error('grading_recovery.error_select_failed', { err: errSelectErr.message });
+  } else {
+    for (const row of errored ?? []) {
+      const { data: updated, error: upErr } = await serviceClient
+        .from('conversation_sessions')
+        .update({
+          status: 'active',
+          grading_started_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', row.id)
+        .eq('status', 'error')
+        .select('id');
+
+      if (upErr) {
+        log.error('grading_recovery.error_update_failed', { session_id: row.id, err: upErr.message });
+        continue;
+      }
+      if (Array.isArray(updated) && updated.length > 0) {
+        errorReset++;
+        ids.push(row.id as string);
+        log.warn('grading_recovery.error_session_reset', {
+          session_id: row.id,
+          dealership_id: row.dealership_id,
+          user_id: row.user_id,
+        });
+      }
+    }
+  }
+
   return NextResponse.json({
     cutoff,
-    candidates: stuck?.length ?? 0,
+    candidates: (stuck?.length ?? 0) + (errored?.length ?? 0),
     reset,
+    error_reset: errorReset,
     session_ids: ids,
   });
 }

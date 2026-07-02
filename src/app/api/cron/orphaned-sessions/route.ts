@@ -9,6 +9,7 @@ import { expirePeerChallenges } from '@/lib/challenges/peer';
 import { incrementMissedDay } from '@/lib/chains/lifecycle';
 import { isScheduledOff } from '@/lib/schedule-awareness';
 import { serviceClient } from '@/lib/supabase/service';
+import { createBudget } from '@/lib/cron-budget';
 
 // 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
 export const runtime = 'nodejs';
@@ -19,14 +20,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // 2026-07-02 AUDIT H2: budget guard — this route runs three unbounded
+  // loops (orphans, stale chains, peer expiry). Without a guard, Vercel
+  // hard-kills at maxDuration=60 mid-loop; with it, we stop gracefully and
+  // the every-2h rerun picks up the remainder (all operations idempotent).
+  const budget = createBudget({ maxMs: 55_000, cronName: 'orphaned-sessions' });
+
   // --- Orphaned sessions ---
   const orphaned = await getOrphanedSessions(2);
   let cleaned = 0;
 
   for (const session of orphaned) {
+    if (budget.shouldStop()) break;
     try {
       await updateSessionStatus(session.id, session.dealership_id as string, 'abandoned');
       cleaned++;
+      budget.markProcessed();
       console.warn(
         `Orphaned session ${session.id} (${session.status}) for user ${session.user_id} — marked abandoned`
       );
@@ -48,6 +57,7 @@ export async function GET(request: NextRequest) {
 
     if (staleChains) {
       for (const chain of staleChains) {
+        if (budget.shouldStop()) break;
         try {
           // F13-M-001: Look up dealership timezone for schedule check
           const { data: dealershipData } = await serviceClient
@@ -80,10 +90,12 @@ export async function GET(request: NextRequest) {
 
   // --- Phase 6D: Expire peer challenges ---
   let peerExpiry = { expired: 0, defaultWins: 0 };
-  try {
-    peerExpiry = await expirePeerChallenges();
-  } catch (err) {
-    console.error('Peer challenge expiry error:', (err as Error).message ?? err);
+  if (!budget.shouldStop()) {
+    try {
+      peerExpiry = await expirePeerChallenges();
+    } catch (err) {
+      console.error('Peer challenge expiry error:', (err as Error).message ?? err);
+    }
   }
 
   return NextResponse.json({
@@ -91,5 +103,6 @@ export async function GET(request: NextRequest) {
     cleaned,
     chainsExpired,
     peerChallenges: peerExpiry,
+    ...budget.report(),
   });
 }

@@ -3,10 +3,16 @@
 // Phase 6B
 // C-003: Cron endpoint — service role required, no user JWT in cron context
 //
-// H-007 TIMEZONE LIMITATION: Vercel Hobby plan (free) only allows one cron job per interval.
-// This cron fires once hourly and checks if local_hour === 17 (5pm) for each dealership.
-// Works correctly for dealerships configured to publish results at 5pm, but misses other time preferences.
-// SOLUTION: Upgrade to Vercel Pro ($20/mo) for hourly cron flexibility.
+// 2026-07-02 AUDIT: this route was DESIGNED hourly (localHour === 17 gate)
+// but vercel.json scheduled it once daily at 22:00 UTC. 22:00 UTC is 5pm
+// only in EST (winter Eastern) — during DST no US timezone matched, so
+// results never sent all summer. vercel.json now schedules `0 * * * *`.
+//
+// Same fix: challenge_date is the UTC date at local-morning creation
+// (== the dealership's local date). At 5pm Pacific the UTC date has already
+// rolled over, so a `challenge_date = todayUTC` lookup can never match
+// Pacific/Mountain-winter challenges. We now fetch both candidate dates and
+// match each challenge against its dealership's LOCAL date.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
@@ -14,6 +20,7 @@ import { sendSms } from '@/lib/sms';
 import { serviceClient } from '@/lib/supabase/service';
 import { insertTranscriptLog, getOutboundCountToday } from '@/lib/service-db';
 import { rankChallengeResponses, buildResultsSMS } from '@/lib/challenges/daily';
+import { createBudget } from '@/lib/cron-budget';
 
 // 2026-04-29: pin Node runtime — cron-auth.ts imports `crypto` (Node-only).
 export const runtime = 'nodejs';
@@ -24,13 +31,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  // 2026-07-02 AUDIT H2: budget guard. Reruns are safe — the status='active'
+  // filter excludes already-completed challenges, so an hourly rerun never
+  // re-sends results.
+  const budget = createBudget({ maxMs: 55_000, cronName: 'challenge-results' });
 
-  // Get all dealerships with active challenges today
+  const now = new Date();
+  const todayUtc = now.toISOString().split('T')[0];
+  const yesterdayUtc = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  // Get all active challenges for either candidate date; local-date match below.
   const { data: challenges } = await serviceClient
     .from('daily_challenges')
-    .select('id, dealership_id')
-    .eq('challenge_date', todayStr)
+    .select('id, dealership_id, challenge_date')
+    .in('challenge_date', [todayUtc, yesterdayUtc])
     .eq('status', 'active');
 
   if (!challenges || challenges.length === 0) {
@@ -40,6 +54,7 @@ export async function GET(request: NextRequest) {
   const results: Array<{ dealershipId: string; participationCount: number; resultsSent: number }> = [];
 
   for (const challenge of challenges) {
+    if (budget.shouldStop()) break;
     const dealershipId = challenge.dealership_id as string;
     const challengeId = challenge.id as string;
 
@@ -53,15 +68,26 @@ export async function GET(request: NextRequest) {
     if (!dealership?.timezone) continue;
 
     try {
+      const tz = dealership.timezone as string;
       const localHour = parseInt(
         new Intl.DateTimeFormat('en-US', {
           hour: 'numeric',
           hour12: false,
-          timeZone: dealership.timezone as string,
-        }).format(new Date())
+          timeZone: tz,
+        }).format(now)
       );
 
       if (localHour !== 17) continue;
+
+      // en-CA locale formats as YYYY-MM-DD — comparable to challenge_date.
+      const localDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(now);
+
+      if ((challenge.challenge_date as string) !== localDate) continue;
     } catch (err) {
       console.warn(
         `Failed to determine local hour for dealership ${dealershipId}:`,
@@ -110,6 +136,7 @@ export async function GET(request: NextRequest) {
 
     let resultsSent = 0;
     for (const p of participants ?? []) {
+      if (budget.shouldStop()) break;
       try {
         // X-009: Check message cap before sending results
         const outbound = await getOutboundCountToday(p.id as string, dealership?.timezone as string);
@@ -132,7 +159,8 @@ export async function GET(request: NextRequest) {
     }
 
     results.push({ dealershipId, participationCount, resultsSent });
+    budget.markProcessed();
   }
 
-  return NextResponse.json({ processed: challenges.length, results });
+  return NextResponse.json({ candidates: challenges.length, results, ...budget.report() });
 }

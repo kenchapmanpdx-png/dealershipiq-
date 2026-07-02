@@ -21,7 +21,10 @@ const VALID_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
   grading: ['completed', 'error', 'abandoned'],
   completed: [], // terminal
   abandoned: [], // terminal
-  error: ['abandoned'], // orphaned session detector can clean up
+  // 2026-07-02 H5: error → active added — grading-recovery cron rescues
+  // errored sessions so the rep's next text re-triggers grading instead of
+  // dead-ending until the orphan sweeper abandons them.
+  error: ['active', 'abandoned'],
 };
 
 export function canTransition(from: SessionStatus, to: SessionStatus): boolean {

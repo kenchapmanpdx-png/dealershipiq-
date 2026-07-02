@@ -162,10 +162,14 @@ export async function POST(request: NextRequest) {
     const result: PushResult = { sent: 0, failed: 0, users: [] };
 
     for (const targetUser of targetUsers ?? []) {
-
+      // 2026-07-02 AUDIT H3: track session + send success so a failed send
+      // doesn't strand a 'pending' session (blocks the rep's next training
+      // via the getActiveSession open-status filter until the 2h sweep).
+      let session: { id: string } | null = null;
+      let smsSent = false;
       try {
         // Create session
-        const session = await createConversationSession({
+        session = await createConversationSession({
           userId: targetUser.id,
           dealershipId,
           mode,
@@ -174,6 +178,7 @@ export async function POST(request: NextRequest) {
 
         // Send SMS
         const smsResponse = await sendSms(targetUser.phone, questionText);
+        smsSent = true;
 
         // Transition: pending → active
         await updateSessionStatus(session.id, dealershipId, 'active');
@@ -215,6 +220,19 @@ export async function POST(request: NextRequest) {
           status: 'failed',
           error: 'Failed to send SMS',
         });
+        // H3: compensating abandon — ONLY when the SMS never went out. If it
+        // was delivered, the rep holds a live prompt; abandoning would make
+        // their reply unroutable.
+        if (session && !smsSent) {
+          try {
+            await updateSessionStatus(session.id, dealershipId, 'abandoned');
+          } catch (cleanupErr) {
+            console.error(
+              `Push training cleanup failed for session ${session.id}:`,
+              (cleanupErr as Error).message ?? cleanupErr
+            );
+          }
+        }
       }
     }
 

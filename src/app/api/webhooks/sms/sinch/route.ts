@@ -285,9 +285,17 @@ export async function POST(request: NextRequest) {
   // OpenAI grading which can take 30s+. Dispatching off-thread to
   // /api/internal/sinch-process (300s budget) eliminates the retry-storm risk.
   //
-  // Fire-and-forget: we don't await the dispatch; the internal route runs
-  // independently. If the dispatch fetch errors before lambda death, we log
-  // and Sinch will retry (idempotency in handleInboundMessage handles dupes).
+  // 2026-07-02 AUDIT C2: the dispatch is AWAITED. The worker route returns
+  // 202 in ~100ms (it registers the slow work via waitUntil and answers
+  // immediately), so awaiting costs almost nothing and closes two loss
+  // windows the old fire-and-forget `void fetch()` had:
+  //   1. Lambda freeze after our 200 could kill the un-sent fetch — and a
+  //      200 means Sinch NEVER retries, so the message was simply gone.
+  //   2. A non-2xx from the worker (secret mismatch, deployment protection)
+  //      resolved the fetch without throwing — no .catch, no log, no retry.
+  // On ANY dispatch failure we fall through to inline processing below,
+  // which is the lossless legacy path (slow → Sinch retries → idempotency
+  // dedupes). Off-thread failure degrades to inline; it never drops.
   if (
     !isInternalWorker
     && process.env.SINCH_OFF_THREAD_ENABLED === 'true'
@@ -295,19 +303,31 @@ export async function POST(request: NextRequest) {
   ) {
     const workerSecret = process.env.INTERNAL_WORKER_SECRET;
     const internalUrl = `${getAppUrl()}/api/internal/sinch-process`;
-    void fetch(internalUrl, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-worker-secret': workerSecret,
-      },
-      body: rawBody,
-    }).catch((err: unknown) => {
+    try {
+      const dispatchRes = await fetch(internalUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-worker-secret': workerSecret,
+        },
+        body: rawBody,
+        // Worker answers in ~100ms; anything slower means it's broken.
+        // Bounded so a hung worker can't eat the 15s Sinch window.
+        signal: AbortSignal.timeout(5000),
+      });
+      if (dispatchRes.ok) {
+        return NextResponse.json({ status: 'ok' });
+      }
+      log.error('sinch.webhook.off_thread_dispatch_rejected', {
+        status: dispatchRes.status,
+      });
+      // fall through to inline processing
+    } catch (err: unknown) {
       log.error('sinch.webhook.off_thread_dispatch_failed', {
         err: (err as Error).message ?? String(err),
       });
-    });
-    return NextResponse.json({ status: 'ok' });
+      // fall through to inline processing
+    }
   }
 
   // --- REST API (XMS) inbound format ---
@@ -837,13 +857,19 @@ async function handleNowKeyword(
     let pushed = 0;
 
     for (const rep of eligible) {
+      // 2026-07-02 AUDIT H3: track created session + send success so a
+      // failed send doesn't strand a 'pending' session. 'pending' counts as
+      // an open session (getActiveSession filter), so a stranded one blocks
+      // the rep's next training for up to 2h until the orphan sweeper runs.
+      let session: { id: string } | null = null;
+      let smsSent = false;
       try {
         // X-009: Check message cap before pushing to each rep
         const outboundCount = await getOutboundCountToday(rep.id, dlrTimezone);
         if (outboundCount >= 3) continue;
 
         // Create session for each rep
-        const session = await createConversationSession({
+        session = await createConversationSession({
           userId: rep.id,
           dealershipId: user.dealershipId,
           mode: 'roleplay',
@@ -855,6 +881,7 @@ async function handleNowKeyword(
         const fullMsg = `${greeting}${pending.scenarioText}`;
 
         const smsRes = await sendSms(rep.phone, fullMsg);
+        smsSent = true;
         await updateSessionStatus(session.id, user.dealershipId, 'active');
         await insertTranscriptLog({
           userId: rep.id,
@@ -869,6 +896,19 @@ async function handleNowKeyword(
         await new Promise(r => setTimeout(r, 50));
       } catch (repErr) {
         console.error(`NOW push failed for ${rep.id}:`, (repErr as Error).message ?? repErr);
+        // H3: compensating abandon — ONLY when the SMS never went out.
+        // If the SMS was delivered, the rep holds a live prompt; abandoning
+        // the session then would make their reply unroutable (worse bug).
+        if (session && !smsSent) {
+          try {
+            await updateSessionStatus(session.id, user.dealershipId, 'abandoned');
+          } catch (cleanupErr) {
+            console.error(
+              `NOW push cleanup failed for session ${session.id}:`,
+              (cleanupErr as Error).message ?? cleanupErr
+            );
+          }
+        }
       }
     }
 

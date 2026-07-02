@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
+import { createBudget } from '@/lib/cron-budget';
 import { sendSms } from '@/lib/sms';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { getLocalYesterdayString, isLocalMonday } from '@/lib/quiet-hours';
@@ -37,6 +38,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // 2026-07-02 AUDIT H2: budget guard. Both dealership loops below do
+  // multi-query + SMS work per iteration; without a guard Vercel hard-kills
+  // at maxDuration=60 mid-send. No double-send risk from a graceful stop:
+  // Vercel does not retry crons, and each TZ band matches exactly one run
+  // per day — a stop means skipped dealerships MISS that day's digest.
+  // (checkDailyDigestAlreadySent exists as a dedup helper but is currently
+  // unwired — see its eslint-disable.) The budget.stop warn log is the
+  // signal to watch.
+  const budget = createBudget({ maxMs: 55_000, cronName: 'daily-digest' });
+
   // Changed from hour 8 → 7: brief arrives 1 hour before the typical 8am meeting
   const dealerships = await getDealershipsByTimezoneHour(7);
 
@@ -50,6 +61,7 @@ export async function GET(request: NextRequest) {
   }> = [];
 
   for (const dealership of dealerships) {
+    if (budget.shouldStop()) break;
     let managersNotified = 0;
     let errors = 0;
 
@@ -208,6 +220,7 @@ export async function GET(request: NextRequest) {
 
   // C-004 fix: Check Monday per-dealership in local timezone (not global UTC)
   for (const dealership of dealerships) {
+    if (budget.shouldStop()) break;
     const isMondayLocal = isLocalMonday(dealership.timezone ?? 'America/New_York');
     if (!isMondayLocal) continue;
 
@@ -226,6 +239,7 @@ export async function GET(request: NextRequest) {
       userIdSet.forEach((id) => uniqueUserIds.push(id));
 
       for (const userId of uniqueUserIds) {
+        if (budget.shouldStop()) break;
         try {
           const insight = await findPositiveInsight(userId, dealership.id);
           if (!insight) continue;
@@ -264,6 +278,7 @@ export async function GET(request: NextRequest) {
     dealerships: dealerships.length,
     results,
     microInsightsSent,
+    ...budget.report(),
   });
 }
 

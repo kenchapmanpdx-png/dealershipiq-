@@ -76,7 +76,12 @@ describe('replaceScoreInFeedback', () => {
   });
 
   it('handles empty string', () => {
-    expect(replaceScoreInFeedback('', 14)).toBe('');
+    // 2026-07-02: expectation corrected to match the function's documented
+    // contract ("if no match, prepend the authoritative weighted score").
+    // Empty GPT feedback must still deliver the score — an empty SMS would
+    // be the bug, not the score-only message. Pre-existing failure shipped
+    // with the v7 weighted-scoring commit (29773ef); nothing enforced ''.
+    expect(replaceScoreInFeedback('', 14)).toBe('14/20');
   });
 
   it('handles feedback with score not at start (GPT violation)', () => {
