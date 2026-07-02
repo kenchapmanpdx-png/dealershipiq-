@@ -229,7 +229,7 @@ export default function PhoneMockup() {
                       ? 'bg-blue-600 text-white rounded-br-md'
                       : msg.from === 'ai'
                         ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-100 rounded-bl-md'
-                        : 'bg-white/8 text-white/90 rounded-bl-md'
+                        : 'bg-white/[0.08] text-white/90 rounded-bl-md'
                   }`}
                 >
                   {msg.text}
@@ -245,7 +245,7 @@ export default function PhoneMockup() {
             {/* Typing indicator */}
             {visibleMessages < conversation.length && visibleMessages > 0 && (
               <div className="self-start shrink-0">
-                <div className="bg-white/8 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1.5">
+                <div className="bg-white/[0.08] rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-[bounce_1.4s_infinite_0ms]" />
                   <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-[bounce_1.4s_infinite_200ms]" />
                   <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-[bounce_1.4s_infinite_400ms]" />

@@ -6,6 +6,8 @@ import AnimatedCounter from '@/components/marketing/AnimatedCounter';
 import ScrollReveal from '@/components/marketing/ScrollReveal';
 import { StaggerReveal } from '@/components/marketing/ScrollReveal';
 import FAQ from '@/components/marketing/FAQ';
+import MagneticButton from '@/components/marketing/MagneticButton';
+import KineticUnderline from '@/components/marketing/KineticUnderline';
 
 export const metadata: Metadata = {
   title: 'SMS-Powered Sales Training for Auto Dealers | DealershipIQ',
@@ -216,9 +218,9 @@ export default function LandingPage() {
         {/* Ambient orbs */}
         <div className="orb orb-blue w-[700px] h-[700px] -top-56 -left-56 animate-orb-drift-1" />
         <div className="orb orb-purple w-[600px] h-[600px] top-10 right-[-18%] animate-orb-drift-2" />
-        <div className="orb orb-cyan w-[400px] h-[400px] bottom-[-8%] left-[20%] animate-orb-drift-3" />
+        <div className="orb orb-cyan hidden md:block w-[400px] h-[400px] bottom-[-8%] left-[20%] animate-orb-drift-3" />
         <div
-          className="orb orb-indigo w-[500px] h-[500px] top-[40%] left-[55%] animate-orb-drift-1"
+          className="orb orb-indigo hidden md:block w-[500px] h-[500px] top-[40%] left-[55%] animate-orb-drift-1"
           style={{ animationDelay: '-8s' }}
         />
 
@@ -258,15 +260,17 @@ export default function LandingPage() {
 
               {/* CTAs */}
               <div className="flex flex-col sm:flex-row items-start gap-4">
-                <Link
-                  href="/signup"
-                  className="group inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-base px-8 py-4 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
-                >
-                  Start Free Trial
-                  <svg className="w-4 h-4 ml-2 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
-                </Link>
+                <MagneticButton>
+                  <Link
+                    href="/signup"
+                    className="group inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-base px-8 py-4 rounded-lg hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
+                  >
+                    Start Free Trial
+                    <svg className="w-4 h-4 ml-2 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </Link>
+                </MagneticButton>
                 <Link
                   href="#how-it-works"
                   className="inline-flex items-center justify-center border border-[var(--border-card)] text-[var(--text-secondary)] font-medium text-base px-8 py-4 rounded-lg hover:border-[var(--border-hover)] hover:text-white transition-all duration-300 ease-out-cubic"
@@ -333,25 +337,40 @@ export default function LandingPage() {
             </div>
           </ScrollReveal>
 
-          <StaggerReveal className="grid grid-cols-1 md:grid-cols-3 gap-5" staggerMs={150}>
-            {testimonials.map((t) => (
-              <div
-                key={t.name}
-                className="glass rounded-2xl p-7 sm:p-8 flex flex-col card-hover"
-              >
-                <span className="quote-mark mb-2">&ldquo;</span>
-                <p className="text-sm text-[var(--text-secondary)] leading-relaxed flex-1 mb-6 -mt-2">
-                  {t.quote}
-                </p>
-                <div className="gradient-line mb-5" />
-                <div>
-                  <p className="text-sm font-semibold text-white">{t.name}</p>
-                  <p className="text-xs text-[var(--text-muted)]">
-                    {t.role} · {t.dealership}
-                  </p>
+          <StaggerReveal className="dim-siblings grid grid-cols-1 md:grid-cols-3 gap-5" staggerMs={150}>
+            {testimonials.map((t) => {
+              const initials = t.name
+                .split(' ')
+                .map((w) => w[0])
+                .join('');
+              return (
+                <div
+                  key={t.name}
+                  className="glass rounded-2xl p-6 sm:p-7 flex flex-col card-hover"
+                >
+                  {/* Thread header — like a Messages contact bar */}
+                  <div className="flex items-center gap-3 pb-4 mb-4 border-b border-white/5">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-b from-[#9ca3af] to-[#6b7280] flex items-center justify-center shrink-0">
+                      <span className="text-xs font-semibold text-white">{initials}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white leading-tight truncate">{t.name}</p>
+                      <p className="text-xs text-[var(--text-muted)] truncate">
+                        {t.role} · {t.dealership}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Incoming SMS bubble — same language as the hero phone */}
+                  <div className="flex-1 flex flex-col">
+                    <div className="max-w-[95%] self-start bg-white/[0.08] rounded-2xl rounded-bl-md px-4 py-3">
+                      <p className="text-sm text-white/90 leading-relaxed">{t.quote}</p>
+                    </div>
+                    <p className="text-[10px] text-white/30 mt-1.5 pl-1">Text Message · Today 9:41 AM</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </StaggerReveal>
         </div>
       </section>
@@ -368,12 +387,13 @@ export default function LandingPage() {
                 Capabilities
               </p>
               <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
-                Your sales team is texting anyway. Make it count.
+                Your sales team is texting anyway.{' '}
+                <KineticUnderline>Make it count.</KineticUnderline>
               </h2>
             </div>
           </ScrollReveal>
 
-          <StaggerReveal className="grid grid-cols-1 md:grid-cols-3 gap-4" staggerMs={80}>
+          <StaggerReveal className="dim-siblings grid grid-cols-1 md:grid-cols-3 gap-4" staggerMs={80}>
             {features.map((f) => (
               <div
                 key={f.title}
@@ -491,7 +511,7 @@ export default function LandingPage() {
 
                 <Link
                   href="/signup"
-                  className="group block w-full text-center bg-[var(--accent)] text-white font-semibold py-4 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow text-base"
+                  className="group block w-full text-center bg-[var(--accent)] text-white font-semibold py-4 rounded-lg hover:bg-[var(--accent-hover)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-300 ease-out-cubic shadow-glow text-base"
                 >
                   Start Free Trial
                   <svg className="w-4 h-4 ml-2 inline transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -533,19 +553,20 @@ export default function LandingPage() {
       {/* ══════════ FINAL CTA ══════════ */}
       <section className="relative py-20 md:py-28 overflow-hidden">
         <div className="orb orb-blue w-[700px] h-[700px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-orb-drift-2" />
-        <div className="orb orb-purple w-[450px] h-[450px] bottom-0 right-[10%] animate-orb-drift-3" />
+        <div className="orb orb-purple hidden md:block w-[450px] h-[450px] bottom-0 right-[10%] animate-orb-drift-3" />
 
         <div className="relative z-10 max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <ScrollReveal>
             <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance mb-6">
-              Your sales team is texting anyway. Make it count.
+              Your sales team is texting anyway.{' '}
+              <KineticUnderline>Make it count.</KineticUnderline>
             </h2>
             <p className="text-body text-[var(--text-secondary)] mb-10 leading-relaxed max-w-lg mx-auto">
               Start training today. See who&apos;s putting in the work on the dashboard by tomorrow morning.
             </p>
             <Link
               href="/signup"
-              className="group inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-lg px-10 py-5 rounded-lg hover:bg-[var(--accent-hover)] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
+              className="group inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-lg px-10 py-5 rounded-lg hover:bg-[var(--accent-hover)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
             >
               Start Your Free Trial
               <svg className="w-5 h-5 ml-2 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -56,12 +56,29 @@ body {
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Smooth anchor scrolling (respects reduced motion) */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 ::selection {
-  background: var(--accent);
+  background: rgba(59, 130, 246, 0.4);
   color: white;
 }
+
+/* ── Custom scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
 
 /* ── Focus ring ── */
 *:focus-visible {
@@ -190,12 +207,19 @@ body {
   position: relative;
   transition: transform 0.5s var(--ease-out-cubic),
               box-shadow 0.5s var(--ease-out-cubic),
-              border-color 0.5s var(--ease-out-cubic);
+              border-color 0.5s var(--ease-out-cubic),
+              opacity 0.3s var(--ease-out-cubic);
 }
 .card-hover:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-lg);
   border-color: var(--border-hover);
+}
+
+/* ── Sibling dimming — hovered card stays lit, neighbors recede ── */
+@media (hover: hover) {
+  .dim-siblings:hover .card-hover { opacity: 0.55; }
+  .dim-siblings .card-hover:hover { opacity: 1; }
 }
 
 /* ── Gradient border card (for featured items) ── */
@@ -296,14 +320,27 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
-/* ── Testimonial quote styling ── */
-.quote-mark {
-  font-size: 4rem;
-  line-height: 1;
-  background: linear-gradient(135deg, var(--accent) 0%, rgba(139,92,246,0.6) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+/* ── Kinetic underline — swipes in when phrase enters view ── */
+.kinetic-underline {
+  position: relative;
+  display: inline-block;
+}
+.kinetic-underline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.06em;
+  height: 0.08em;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--accent) 0%, #a855f7 60%, #ec4899 100%);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.9s var(--ease-out-cubic);
+  transition-delay: var(--ink-delay, 450ms);
+}
+.kinetic-underline.is-inked::after {
+  transform: scaleX(1);
 }
 
 /* ── Horizontal line with gradient fade ── */
