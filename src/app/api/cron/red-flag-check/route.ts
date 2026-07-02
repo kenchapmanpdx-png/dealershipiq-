@@ -25,6 +25,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // 2026-07-02: Kill switch for manager "needs attention" SMS alerts.
+  // Alerts are PAUSED unless RED_FLAG_SMS_ENABLED=true is set in Vercel.
+  // Red-flag detection still runs and persists to red_flag_events either
+  // way, so the morning script / dashboard keep their data.
+  const smsAlertsEnabled = process.env.RED_FLAG_SMS_ENABLED === 'true';
+
   // 2026-04-29 H5: budget guard + filter to active/trialing subs + page limit.
   // Without these the cron sequentially walks every dealership and busts
   // maxDuration at ~500 rows. Now: stops gracefully at ~55s, only processes
@@ -114,6 +120,19 @@ export async function GET(request: NextRequest) {
           dealershipId: dealership.id,
           dealershipName: dealership.name,
           flaggedUsers: 0,
+          alertsSent: 0,
+          errors: 0,
+        });
+        continue;
+      }
+
+      // Kill switch: skip SMS alerts entirely when paused (events above
+      // were still persisted).
+      if (!smsAlertsEnabled) {
+        results.push({
+          dealershipId: dealership.id,
+          dealershipName: dealership.name,
+          flaggedUsers,
           alertsSent: 0,
           errors: 0,
         });
