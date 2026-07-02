@@ -246,13 +246,13 @@ export default function LandingPage() {
 
               {/* Tagline */}
               <p className="text-xl sm:text-2xl font-semibold text-white/70 tracking-wide mb-6">
-                Daily Micro-Learning delivered by text message.
+                Two minutes a day, by text. No app. No classroom.
               </p>
 
               {/* Subheadline */}
               <p className="text-body text-[var(--text-secondary)] max-w-lg mb-10 leading-relaxed">
                 AI grades every response in seconds.
-                Managers see real-time results across every rooftop — no apps, no classroom time,
+                Managers see real-time results across every rooftop —
                 no disruption to the floor.
               </p>
 
@@ -368,7 +368,7 @@ export default function LandingPage() {
                 Capabilities
               </p>
               <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
-                Everything your team needs to sell more cars
+                Your sales team is texting anyway. Make it count.
               </h2>
             </div>
           </ScrollReveal>
