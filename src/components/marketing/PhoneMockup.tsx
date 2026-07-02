@@ -78,10 +78,15 @@ export default function PhoneMockup() {
     return () => timers.forEach(clearTimeout);
   }, [cycle]);
 
-  // Auto-scroll to bottom when new messages appear
+  // Auto-scroll the phone's message list to the bottom when new messages
+  // appear. 2026-07-02: scroll ONLY the inner container via scrollTop — the
+  // previous bottomRef.scrollIntoView() also scrolled the window/page (that's
+  // how scrollIntoView works: it scrolls every scrollable ancestor), so each
+  // looping message yanked the whole page back up to the hero.
   useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     }
   }, [visibleMessages]);
 
