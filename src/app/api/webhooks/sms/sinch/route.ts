@@ -1678,6 +1678,10 @@ async function handleMidExchange(
   mode: 'roleplay' | 'quiz' | 'objection',
   stepIndex: number
 ) {
+  // 2026-07-03: started/completed pair mirrors grading.* -- a started with
+  // no completed brackets exactly where a mid-exchange stall died.
+  log.info('followup.started', { session_id: session.id, mode, step_index: stepIndex });
+
   try {
     const history = await getSessionTranscript(session.id, user.dealershipId);
 
@@ -1716,6 +1720,12 @@ async function handleMidExchange(
     });
 
     await updateSessionStep(session.id, user.dealershipId, stepIndex + 1);
+
+    log.info('followup.completed', {
+      session_id: session.id,
+      step_index: stepIndex + 1,
+      model: followUp.model,
+    });
   } catch (err) {
     console.error('Follow-up generation failed:', (err as Error).message ?? err);
     await updateSessionStatus(session.id, user.dealershipId, 'error');

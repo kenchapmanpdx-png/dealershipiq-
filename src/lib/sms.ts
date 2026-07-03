@@ -263,6 +263,16 @@ export async function sendSms(
   }
 
   const data = await res.json();
+  // 2026-07-03: log EVERY accepted send. Single-segment sends were previously
+  // invisible in logs, which made "did the app reply?" unanswerable when
+  // diagnosing delivery-side freezes. batch_id lets us match Sinch delivery
+  // reports / dashboard entries to a specific send.
+  log.info('sms.sent', {
+    to_last4: phone.slice(-4),
+    chars: sanitized.length,
+    segments: smsSegmentCount(sanitized),
+    batch_id: data.id ?? null,
+  });
   return { ...data, message_id: data.id };
 }
 

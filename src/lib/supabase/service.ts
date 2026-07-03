@@ -22,6 +22,20 @@ export function getServiceClient(): SupabaseClient {
         autoRefreshToken: false,
         persistSession: false,
       },
+      global: {
+        // 2026-07-03: bound EVERY database round-trip. Supabase calls
+        // previously had no timeout -- one stalled connection hung the
+        // invocation forever and died silently at maxDuration, which is
+        // the mid-session freeze signature (processing vanishes with no
+        // error, no log, no reply). 15 s is ~50x normal latency but
+        // finite: a timeout now THROWS, hits the existing catch paths,
+        // and the user gets an error SMS instead of dead air.
+        fetch: (input, init) =>
+          fetch(input, {
+            ...init,
+            signal: init?.signal ?? AbortSignal.timeout(15_000),
+          }),
+      },
     }
   );
 
