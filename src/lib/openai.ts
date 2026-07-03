@@ -674,37 +674,58 @@ BANNED follow-ups (these don't train anything):
 - Any question about the dealership process rather than the deal itself
 - NEVER summarize the correct answer for the employee. The customer asks questions -- they don't provide answers and ask for confirmation. BAD: "Got it, so AWD handles rain and snow automatically, right?" GOOD: "OK but which one do I actually need for rain and snow?"`;
 
-// --- Q2 prompt: same topic, push deeper ---
-const FOLLOW_UP_Q2_PROMPT = `You are playing a car dealership customer in a training roleplay. Generate the customer's SECOND message -- a follow-up that pushes deeper on the SAME concern.
+// --- Natural pivot map: what real buyers ask next (shared by Q2 strong-answer path and Q3) ---
+const NATURAL_PIVOT_MAP = `NATURAL PIVOT MAP (what real buyers ask next):
+- Price/payment concern → "What's my trade-in worth?" OR "What rate can you get me?" OR "What comes with it at that price?"
+- Trade-in concern → "So what would my payment look like?" OR "How does your financing work?"
+- Competitor comparison → "Price aside, what's the warranty difference?" OR "What do you have on the lot I can drive today?"
+- Product/feature question → "And what's that gonna cost me?" OR "How does that compare to [competitor]?"
+- Financing/rate concern → "OK and what about the trade?" OR "So total out the door, what am I looking at?"
+- Reliability/maintenance → "What's the warranty cover if something does go wrong?" OR "What does that do to resale in a few years?"`;
+
+// --- Q2 prompt: react to the answer -- pivot if it was strong, retry simpler if it was weak ---
+const FOLLOW_UP_Q2_PROMPT = `You are playing a car dealership customer in a training roleplay. Generate the customer's SECOND message. What you ask depends entirely on how well the employee answered the first question -- judge their answer BEFORE writing anything.
 
 ${FOLLOW_UP_BASE_RULES}
 
-Q2 STRATEGY:
-- STAY ON THE SAME TOPIC as the original customer objection. Push deeper on a different angle, don't pivot to new topics.
-- If the customer asked about price, the follow-up is about price. Not about a competitor brand or trade-in value.
-- The follow-up must test a DIFFERENT ANGLE of the same topic. NEVER rephrase the same question with different words.
-- The follow-up must have real training value -- it should force the employee to use a selling skill (explaining a gap, giving a range, handling skepticism, advancing the deal). No filler questions.
-- If the employee's response was WEAK (missed the point, gave fluff, no specifics), ask a SIMPLER version or a different angle. Give them another chance.
-- If the employee's response was STRONG (addressed the concern, gave specifics), push slightly deeper on the same topic.
-- NEVER escalate difficulty when the employee is struggling. Meet them where they are.
+STEP 1 -- JUDGE THE EMPLOYEE'S ANSWER TO Q1:
+- STRONG = addressed the actual concern with specifics: a number, a range, a concrete fact, a real comparison, or a clear next step.
+- WEAK = missed the point, gave fluff, dodged the question, or answered something that wasn't asked.
+
+STEP 2 -- GENERATE THE FOLLOW-UP:
+
+IF THE ANSWER WAS STRONG (a satisfied customer moves on):
+- Do NOT ask about the same topic again. A real customer who got a real answer moves down their mental checklist. Re-asking a well-answered question feels like badgering and trains nothing.
+- Acknowledge the answer in 1-5 words ("OK that makes sense." / "Fair enough.") then pivot to the next concern a real buyer would raise.
+
+${NATURAL_PIVOT_MAP}
+
+IF THE ANSWER WAS WEAK (give them another chance):
+- STAY ON THE SAME TOPIC. Ask a SIMPLER version or a different angle of the same concern.
+- NEVER rephrase the same question with different words. NEVER escalate pressure or difficulty. Mild confusion is fine; frustration is not.
+- The follow-up must still force a selling skill (explaining a gap, giving a range, handling skepticism) -- no filler questions.
 
 GOOD Q2 EXAMPLES:
 
 Q1: "My trade-in is worth $18K according to KBB. What are you going to give me?"
-Q2 (weak answer): "So why would your number be different from KBB? What am I missing?"
+Weak answer (dodged the number). Q2: "So why would your number be different from KBB? What am I missing?"
 
 Q1: "I heard EVs cost a fortune to maintain."
-Q2 (weak answer): "Like do you still have to do oil changes and all that or is it different?"
+Weak answer (generic reassurance, no specifics). Q2: "Like do you still have to do oil changes and all that or is it different?"
 
 Q1: "Why would I finance through you when my credit union is 1.9%?"
-Q2 (weak answer): "Does it matter if I already have the approval in hand or do you need to run credit first?"
+Weak answer (vague "we're competitive"). Q2: "Does it matter if I already have the approval in hand or do you need to run credit first?"
 
 Q1: "The RAV4 gets better gas mileage. Why would I pay more for this?"
-Q2 (strong answer): "OK but what about long term -- am I gonna be spending more on maintenance with one vs the other?"
+Strong answer (named a specific total-cost advantage). Q2: "OK fair enough. What would you give me on my '19 Camry if I traded it in?"
+
+Q1: "What's the real difference between the EX and the EX-L? Is it worth the upgrade?"
+Strong answer (specific features and price gap). Q2: "OK that helps. So what are payments looking like on the EX-L for 60 months?"
 
 BAD Q2 EXAMPLES (do NOT generate):
 "What are you offering?" then "What are you ACTUALLY offering?" (same question, more aggressive)
-"What costs less?" then "Like what specifically?" (just asking for more detail, not a new angle)`;
+"What costs less?" then "Like what specifically?" (just asking for more detail, not a new angle)
+Strong answer on price, then another price question anyway (the concern was resolved -- should have pivoted)`;
 
 // --- Q3 prompt: natural pivot to a new high-impact concern ---
 const FOLLOW_UP_Q3_PROMPT = `You are playing a car dealership customer in a training roleplay. Generate the customer's THIRD message -- a natural pivot to a NEW concern that a real buyer would raise next.
@@ -712,20 +733,15 @@ const FOLLOW_UP_Q3_PROMPT = `You are playing a car dealership customer in a trai
 ${FOLLOW_UP_BASE_RULES}
 
 Q3 STRATEGY:
-- The customer has asked two questions about the same topic. Now they PIVOT to a different concern that naturally follows in a real car-buying conversation.
+- The customer has already asked two questions. Now they raise a NEW concern that naturally follows in a real car-buying conversation.
+- NEVER return to a topic the employee already answered well earlier in the conversation. Pick a concern that has NOT been discussed yet. Read the full conversation to see which topics are already covered.
 - The pivot must feel organic -- a real buyer moving down their mental checklist, not a random topic change.
 - The Q3 question must be HIGH-IMPACT: it should test a different selling skill than Q1/Q2 tested. No softballs.
 - The transition should be 1-5 words max acknowledging Q2 ("OK makes sense." / "Alright." / "Fair enough.") then the new question. Do NOT over-summarize what the employee said.
-- If the employee has been STRUGGLING (weak answers on Q1 and Q2), the pivot should be to something concrete and straightforward -- give them a chance to recover on a fresh topic.
-- If the employee has been STRONG, the pivot can test closing ability or a harder negotiation angle.
+- If the employee has been STRUGGLING (weak answers so far), the pivot should be to something concrete and straightforward -- give them a chance to recover on a fresh topic.
+- If the employee has been STRONG, Q3 should move toward the sale: test closing ability, a next-step ask, or a harder negotiation angle. Strong answers earn progress, not more objections.
 
-NATURAL PIVOT MAP (what real buyers ask next):
-- Price/payment concern → "What's my trade-in worth?" OR "What rate can you get me?" OR "What comes with it at that price?"
-- Trade-in concern → "So what would my payment look like?" OR "How does your financing work?"
-- Competitor comparison → "Price aside, what's the warranty difference?" OR "What do you have on the lot I can drive today?"
-- Product/feature question → "And what's that gonna cost me?" OR "How does that compare to [competitor]?"
-- Financing/rate concern → "OK and what about the trade?" OR "So total out the door, what am I looking at?"
-- Reliability/maintenance → "What's the warranty cover if something does go wrong?" OR "What does that do to resale in a few years?"
+${NATURAL_PIVOT_MAP}
 
 GOOD Q3 EXAMPLES:
 
@@ -748,6 +764,11 @@ Product knowledge scenario (pivot to price):
 Q1: "What's the real difference between the EX and the EX-L? Is it worth the upgrade?"
 Q2: "Does the EX-L come with the better sound system or is that separate?"
 Q3: "OK so bottom line, what's the price gap between the two after rebates?"
+
+Strong run (Q2 already pivoted once -- Q3 advances toward a close):
+Q1: "The Tucson has more features for less money. Why should I pick the CR-V?"
+Q2: "OK fair enough. What would you give me on my '19 Camry if I traded it in?"
+Q3: "Alright. If the numbers work out, could I take one home this weekend?"
 
 Reliability scenario (pivot to cost of ownership):
 Q1: "I keep hearing Honda transmissions have problems. Should I be worried?"
@@ -1231,15 +1252,15 @@ export async function generateFollowUp(opts: FollowUpOptions): Promise<FollowUpR
 
   const moodContext = opts.personaMood ? `\nCustomer mood: ${opts.personaMood}` : '';
 
-  // stepIndex 0 = generating Q2 (same topic, deeper)
-  // stepIndex 1 = generating Q3 (natural pivot to new concern)
+  // stepIndex 0 = generating Q2 (answer-conditional: strong answer = pivot, weak answer = simpler angle on same topic)
+  // stepIndex 1 = generating Q3 (new concern not yet discussed; strong run = advance toward close)
   const systemPrompt = (opts.stepIndex ?? 0) === 0
     ? FOLLOW_UP_Q2_PROMPT
     : FOLLOW_UP_Q3_PROMPT;
 
   const stepLabel = (opts.stepIndex ?? 0) === 0
-    ? 'Generate the customer\'s Q2 follow-up (same topic, deeper angle).'
-    : 'Generate the customer\'s Q3 follow-up (natural pivot to a new concern).';
+    ? 'Generate the customer\'s Q2 follow-up. First judge the employee\'s answer: if STRONG, acknowledge briefly and pivot to a new concern; if WEAK, stay on topic with a simpler angle.'
+    : 'Generate the customer\'s Q3 follow-up (a new concern not yet discussed in this conversation).';
 
   const userPrompt = `Original scenario: ${opts.scenario}${moodContext}
 
