@@ -1772,3 +1772,32 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
   };
 }
 
+// ============================================================================
+// DEALERSHIP BRANDS (2026-07-03)
+// ============================================================================
+// Brand names (e.g. ["Honda"]) for a dealership, from the same
+// dealership_brands table onboarding populates. Used to ground AI follow-up
+// generation and grading word tracks in vehicles the store actually sells --
+// without this the AI roleplayed Camry-vs-RAV4 house choices at a Honda
+// dealership. Best-effort: returns [] on any failure (callers treat empty
+// as "no brand constraint", which is today's behavior).
+export async function getDealershipBrandNames(dealershipId: string): Promise<string[]> {
+  try {
+    const { data: brandRows } = await serviceClient
+      .from('dealership_brands')
+      .select('make_id')
+      .eq('dealership_id', dealershipId);
+    const makeIds = (brandRows ?? []).map((b) => b.make_id as string).filter(Boolean);
+    if (makeIds.length === 0) return [];
+
+    const { data: makes } = await serviceClient
+      .from('makes')
+      .select('name')
+      .in('id', makeIds);
+    return (makes ?? []).map((m) => m.name as string).filter(Boolean);
+  } catch (err) {
+    console.error('getDealershipBrandNames failed:', (err as Error).message ?? err);
+    return [];
+  }
+}
+

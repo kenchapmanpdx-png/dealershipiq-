@@ -659,7 +659,8 @@ const FOLLOW_UP_BASE_RULES = `REALISM RULES:
 - Never break character or acknowledge this is training.
 - Never append meta-instructions like "Reply with your best sales response".
 - Use ONLY plain ASCII characters. No em dashes, curly quotes, or special Unicode.
-- If your question depends on vehicle-specific facts (safety features, specs, trim levels, towing capacity, mpg, tech packages, warranty terms), NAME the exact vehicle. Use the vehicle already mentioned in the scenario or conversation; if none has been named anywhere, name a specific mainstream model yourself ("the CR-V", "the 2026 Tucson"). NEVER ask about "the car" in the abstract -- a feature question with no named model has no correct answer and trains nothing.
+- If your question depends on vehicle-specific facts (safety features, specs, trim levels, towing capacity, mpg, tech packages, warranty terms), NAME the exact vehicle. Use the vehicle already mentioned in the scenario or conversation; if none has been named anywhere, name a specific model consistent with the DEALERSHIP CONTEXT below. NEVER ask about "the car" in the abstract -- a feature question with no named model has no correct answer and trains nothing.
+- BRAND RULE: if a DEALERSHIP CONTEXT is provided, every vehicle you are considering BUYING at this store must be one of that dealership's brands. Other brands may ONLY appear as competitor vehicles you're comparing against or a vehicle you're trading in. Asking the salesperson to choose between two vehicles the store doesn't sell is a broken scenario.
 
 TONE RULES:
 - The customer's tone stays NEUTRAL or gets SOFTER across follow-ups. NEVER more aggressive, demanding, or confrontational.
@@ -848,6 +849,9 @@ interface GradeOptions {
   weightClass?: string;
   // C1: required for rate-limit + circuit-breaker bookkeeping
   dealershipId?: string;
+  // 2026-07-03: brand names the dealership sells (e.g. ["Honda"]). Grounds
+  // feedback word tracks in house vehicles -- never coach a competitor pitch.
+  dealershipBrands?: string[] | null;
 }
 
 export class AiGradingRateLimitedError extends Error {
@@ -865,6 +869,9 @@ interface FollowUpOptions {
   currentResponse?: string;
   stepIndex?: number;
   dealershipId?: string;
+  // 2026-07-03: brand names the dealership sells (e.g. ["Honda"]). The
+  // customer persona must shop for THESE brands; others only as competitors.
+  dealershipBrands?: string[] | null;
 }
 
 // =============================================================================
@@ -969,6 +976,16 @@ async function callOpenAIGrading(
 // v7 GRADING PATH (scenario-specific, feature-flagged)
 // =============================================================================
 
+// 2026-07-03: brand grounding for grading -- feedback word tracks must pitch
+// vehicles this dealership actually sells (the grader once coached a RAV4
+// word track at a Honda store). Appended to the scenario text so every
+// grading prompt path (v7 A/C templates + legacy) picks it up.
+function withBrandContext(scenario: string, brands?: string[] | null): string {
+  if (!brands || brands.length === 0) return scenario;
+  const b = brands.join(' / ');
+  return `${scenario}\n\n[DEALERSHIP CONTEXT: This is a ${b} dealership. Every vehicle recommended as the house product in feedback word tracks MUST be a ${b} model. Competitor makes may only appear as comparison points.]`;
+}
+
 async function gradeResponseV7(
   apiKey: string,
   opts: GradeOptions
@@ -983,6 +1000,8 @@ async function gradeResponseV7(
   const sanitizedResponse = opts.employeeResponse
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+
+  const scenarioForPrompt = withBrandContext(opts.scenario, opts.dealershipBrands);
 
   // Build conversation history string for multi-turn
   const conversationText = opts.conversationHistory?.length
@@ -1029,8 +1048,8 @@ async function gradeResponseV7(
       // Build prompts with isFallbackModel flag — scoring_weights and calibration_anchors
       // are stripped from mini to reduce cognitive load (per v7 spec Section 4).
       const { system, user } = template === 'C'
-        ? buildV7TemplateC(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, isMini)
-        : buildV7TemplateA(opts.scenario, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, weightClass, opts.scenarioDomain ?? null, isMini);
+        ? buildV7TemplateC(scenarioForPrompt, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, isMini)
+        : buildV7TemplateA(scenarioForPrompt, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, weightClass, opts.scenarioDomain ?? null, isMini);
 
       // M3-FIX: For mini, remove rationale instruction line more robustly.
       const systemPrompt = isMini
@@ -1123,6 +1142,10 @@ export async function gradeResponse(opts: GradeOptions): Promise<GradingResult &
     }
   }
 
+  // 2026-07-03: brand grounding for the legacy grading path (the v7 path
+  // applies it inside gradeResponseV7). See withBrandContext above.
+  const scenarioForPrompt = withBrandContext(opts.scenario, opts.dealershipBrands);
+
   // ─── v7 PATH: scenario-specific grading ─────────────────────────────────────
   // When grader_v7_enabled AND we have scenario bank data, use v7 templates
   if (opts.techniqueTag && opts.eliteDialogue && opts.failSignals) {
@@ -1134,7 +1157,7 @@ export async function gradeResponse(opts: GradeOptions): Promise<GradingResult &
   // ─── v6 PATH: general-purpose grading (original logic, unchanged) ───────────
   const conversation = opts.conversationHistory?.length
     ? formatConversationForAI(opts.conversationHistory, opts.employeeResponse)
-    : `Customer: ${escapeXml(opts.scenario)}\nSalesperson: ${escapeXml(opts.employeeResponse)}`;
+    : `Customer: ${escapeXml(scenarioForPrompt)}\nSalesperson: ${escapeXml(opts.employeeResponse)}`;
 
   const includeBehavioral = opts.scoreBehavioralUrgency || opts.scoreBehavioralCompetitive;
 
@@ -1150,7 +1173,7 @@ export async function gradeResponse(opts: GradeOptions): Promise<GradingResult &
     .replace(/>/g, '&gt;');
 
   const userPrompt = `Training mode: ${opts.mode}
-Opening scenario: ${escapeXml(opts.scenario)}${moodContext}
+Opening scenario: ${escapeXml(scenarioForPrompt)}${moodContext}
 
 Full conversation:
 ${conversation}
@@ -1265,6 +1288,10 @@ export async function generateFollowUp(opts: FollowUpOptions): Promise<FollowUpR
 
   const moodContext = opts.personaMood ? `\nCustomer mood: ${opts.personaMood}` : '';
 
+  const followUpBrandContext = opts.dealershipBrands && opts.dealershipBrands.length > 0
+    ? `\nDEALERSHIP CONTEXT: You are shopping at a ${opts.dealershipBrands.join(' / ')} dealership. Any vehicle you are considering buying HERE must be a ${opts.dealershipBrands.join(' / ')} model. Other brands may only appear as competitor comparisons or your trade-in.`
+    : '';
+
   // stepIndex 0 = generating Q2 (answer-conditional: strong answer = pivot, weak answer = simpler angle on same topic)
   // stepIndex 1 = generating Q3 (new concern not yet discussed; strong run = advance toward close)
   const systemPrompt = (opts.stepIndex ?? 0) === 0
@@ -1275,7 +1302,7 @@ export async function generateFollowUp(opts: FollowUpOptions): Promise<FollowUpR
     ? 'Generate the customer\'s Q2 follow-up. First judge the employee\'s answer: if STRONG, acknowledge briefly and pivot to a new concern; if WEAK, stay on topic with a simpler angle.'
     : 'Generate the customer\'s Q3 follow-up (a new concern not yet discussed in this conversation).';
 
-  const userPrompt = `Original scenario: ${opts.scenario}${moodContext}
+  const userPrompt = `Original scenario: ${opts.scenario}${moodContext}${followUpBrandContext}
 
 Conversation so far:
 ${conversationText}
@@ -1300,6 +1327,11 @@ ${stepLabel}`;
             { role: 'user', content: userPrompt },
           ],
           temperature: 0.8,
+          // 2026-07-03 F5: a 1-3 sentence texting line doesn't need deep
+          // reasoning. 'low' cuts latency (fits the 10s timeout, fewer
+          // fallbacks to the ancient backup model mid-conversation) and cost.
+          // Only sent to gpt-5* models; older models reject the param.
+          ...(model.startsWith('gpt-5') ? { reasoning_effort: 'low' } : {}),
           // GPT-5-class models consume completion tokens on internal reasoning
           // BEFORE writing output. A 200-token cap gets fully eaten by reasoning,
           // returning empty content and silently falling through to the fallback.

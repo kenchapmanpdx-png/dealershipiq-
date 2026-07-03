@@ -55,6 +55,7 @@ import {
   isFeatureEnabled,
   createConversationSession,
   getScenarioBankEntry,
+  getDealershipBrandNames,
 } from '@/lib/service-db';
 import { serviceClient } from '@/lib/supabase/service';
 import {
@@ -1448,6 +1449,9 @@ async function handleFinalExchange(
       }
     }
 
+    // 2026-07-03: ground grading word tracks in the store's actual brands.
+    const dealershipBrands = await getDealershipBrandNames(user.dealershipId);
+
     const result = await gradeResponse({
       scenario: session.questionText,
       employeeResponse: text,
@@ -1462,6 +1466,10 @@ async function handleFinalExchange(
       failSignals,
       scenarioDomain,
       weightClass,
+      // 2026-07-03: was missing -- per-dealership rate limit + circuit
+      // breaker bookkeeping never engaged for grading
+      dealershipId: user.dealershipId,
+      dealershipBrands,
     });
 
     const averageScore = (
@@ -1684,6 +1692,9 @@ async function handleMidExchange(
 
   try {
     const history = await getSessionTranscript(session.id, user.dealershipId);
+    // 2026-07-03: ground the customer persona in the store's actual brands
+    // (it once cross-shopped two Toyotas at a Honda dealership).
+    const dealershipBrands = await getDealershipBrandNames(user.dealershipId);
 
     const followUp = await generateFollowUp({
       scenario: session.questionText,
@@ -1692,6 +1703,9 @@ async function handleMidExchange(
       currentResponse: text,
       stepIndex,
       personaMood: session.personaMood,
+      // 2026-07-03: was missing -- per-dealership rate limit never engaged
+      dealershipId: user.dealershipId,
+      dealershipBrands,
     });
 
     // For objection mode: send coaching first, then customer follow-up
