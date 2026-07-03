@@ -18,6 +18,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyCronSecret } from '@/lib/cron-auth';
 import { serviceClient } from '@/lib/supabase/service';
 import { log } from '@/lib/logger';
+import { sendSms } from '@/lib/sms';
+
+// 2026-07-03: sent to the user when we rescue their stuck-in-grading session.
+// Without this nudge the reset was invisible -- the user answered the final
+// question, got silence, and the app appeared frozen even though their next
+// text would have worked. <160 chars, GSM-7 safe.
+const RECOVERY_NUDGE_SMS =
+  "Sorry about that - grading your answer hit a snag on our end. Text your answer one more time and I'll get your score right over.";
 
 // 2026-04-29: pin to Node runtime. cron-auth.ts imports `crypto` (Node-only).
 // Without this directive Vercel can occasionally auto-detect Edge for routes
@@ -77,6 +85,25 @@ export async function GET(request: NextRequest) {
         user_id: row.user_id,
         grading_started_at: row.grading_started_at,
       });
+
+      // 2026-07-03: nudge the user so the rescue is visible. Best-effort --
+      // a failed nudge must never block the reset (which already happened).
+      try {
+        const { data: userRow } = await serviceClient
+          .from('users')
+          .select('phone')
+          .eq('id', row.user_id)
+          .single();
+        if (userRow?.phone) {
+          await sendSms(userRow.phone as string, RECOVERY_NUDGE_SMS);
+          log.info('grading_recovery.nudge_sent', { session_id: row.id, user_id: row.user_id });
+        }
+      } catch (nudgeErr) {
+        log.warn('grading_recovery.nudge_failed', {
+          session_id: row.id,
+          err: (nudgeErr as Error).message ?? String(nudgeErr),
+        });
+      }
     }
   }
 

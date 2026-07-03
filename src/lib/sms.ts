@@ -250,6 +250,10 @@ export async function sendSms(
         Authorization: `Bearer ${apiToken}`,
       },
       body: JSON.stringify({ from, to: [to], body: sanitized }),
+      // 2026-07-03: this fetch previously had NO timeout -- a stalled Sinch
+      // connection could hang the invocation indefinitely (silent freeze).
+      // 10s is generous; Sinch normally accepts batches in <1s.
+      signal: AbortSignal.timeout(10_000),
     }
   );
 

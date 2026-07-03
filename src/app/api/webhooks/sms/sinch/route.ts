@@ -167,15 +167,23 @@ export async function POST(request: NextRequest) {
   const internalWorkerHeader = request.headers.get('x-internal-worker');
   const isInternalWorker = internalWorkerHeader === '1';
   if (isInternalWorker) {
+    // 2026-07-03: these failure paths previously returned 200 "ok" -- FAKE
+    // SUCCESS. The only caller that sends x-internal-worker is our own
+    // worker (processReentry), which treats 200 as "message processed" and
+    // stops. A 200 here therefore silently dropped the message and defeated
+    // the worker's retry + reentry_exhausted alarm. The "always 200"
+    // convention protects the SINCH-facing path (Sinch kills callbacks on
+    // persistent 4xx) -- but Sinch never sends these headers, so a non-2xx
+    // is safe here and lets the worker retry/alarm as designed.
     const expected = process.env.INTERNAL_WORKER_SECRET;
     if (!expected) {
       log.error('sinch.webhook.internal_worker_misconfigured', { env: 'INTERNAL_WORKER_SECRET' });
-      return NextResponse.json({ status: 'ok' });
+      return NextResponse.json({ error: 'worker unconfigured' }, { status: 500 });
     }
     const provided = request.headers.get('x-worker-secret') ?? '';
     if (!timingSafeStringEqual(provided, expected)) {
       log.warn('sinch.webhook.internal_worker_auth_failed', {});
-      return NextResponse.json({ status: 'ok' });
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
     // Auth verified upstream — fall through to message routing without
     // re-running Sinch HMAC/XMS verification.
@@ -707,6 +715,15 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
     }
 
     if (session.status !== 'active') {
+      // 2026-07-03: was a bare `return` -- a session in an unexpected state
+      // swallowed the user's message with no reply and no log, which presents
+      // to the user as the app freezing. Keep the no-reply behavior for
+      // terminal states but make every drop observable.
+      log.warn('webhook.message_dropped_session_state', {
+        session_id: session.id,
+        status: session.status,
+        step_index: session.stepIndex ?? null,
+      });
       return;
     }
 
@@ -1358,6 +1375,11 @@ async function handleFinalExchange(
   assertTransition(session.status as 'active', 'grading');
   await updateSessionStatus(session.id, user.dealershipId, 'grading');
 
+  // 2026-07-03: the grading happy path previously logged NOTHING, so a lambda
+  // dying mid-grade was indistinguishable from success in the logs. started/
+  // completed pair makes any future stall pinpointable to the step between them.
+  log.info('grading.started', { session_id: session.id, mode });
+
   try {
     const history = await getSessionTranscript(session.id, user.dealershipId);
 
@@ -1461,6 +1483,12 @@ async function handleFinalExchange(
 
     assertTransition('grading', 'completed');
     await updateSessionStatus(session.id, user.dealershipId, 'completed');
+
+    log.info('grading.completed', {
+      session_id: session.id,
+      model: result.model,
+      weighted_total: v7Result.weightedTotal ?? null,
+    });
 
     // --- Phase 6C: Chain step recording ---
     if (session.scenarioChainId) {

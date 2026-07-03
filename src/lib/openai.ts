@@ -659,6 +659,7 @@ const FOLLOW_UP_BASE_RULES = `REALISM RULES:
 - Never break character or acknowledge this is training.
 - Never append meta-instructions like "Reply with your best sales response".
 - Use ONLY plain ASCII characters. No em dashes, curly quotes, or special Unicode.
+- If your question depends on vehicle-specific facts (safety features, specs, trim levels, towing capacity, mpg, tech packages, warranty terms), NAME the exact vehicle. Use the vehicle already mentioned in the scenario or conversation; if none has been named anywhere, name a specific mainstream model yourself ("the CR-V", "the 2026 Tucson"). NEVER ask about "the car" in the abstract -- a feature question with no named model has no correct answer and trains nothing.
 
 TONE RULES:
 - The customer's tone stays NEUTRAL or gets SOFTER across follow-ups. NEVER more aggressive, demanding, or confrontational.
