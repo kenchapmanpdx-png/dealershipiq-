@@ -1362,19 +1362,35 @@ ${stepLabel}`;
     }
   }
 
-  // Fallback: generic customer response.
+  // Fallback: canned customer line.
   // 2026-04-29 M19: log a structured warn so this silent degradation is
-  // observable in Sentry. The fallback is fine as user-facing UX, but if
-  // it fires consistently it indicates an OpenAI outage or quota issue
-  // that prod should know about.
+  // observable in Sentry. If it fires consistently it indicates an OpenAI
+  // outage or quota issue (2026-07-03: confirmed 429 quota exhaustion in prod).
+  // 2026-07-03: replaced the single "I'm still not sure. What else can you
+  // tell me?" line -- it re-asked the same question (badgering) and repeated
+  // verbatim across Q2 and Q3 in dead-API sessions. Now: universal buyer
+  // pivots (payments/financing/warranty/trade) that read like a real customer
+  // moving down their checklist, picked at random per step so Q2 and Q3
+  // never send the same line.
   log.warn('openai.generate_follow_up.fallback', {
     mode: opts.mode ?? null,
     step_index: opts.stepIndex ?? null,
     history_len: opts.conversationHistory?.length ?? 0,
-    note: 'All OpenAI follow-up attempts failed; serving generic template line.',
+    note: 'All OpenAI follow-up attempts failed; serving canned pivot line.',
   });
+  const FALLBACK_LINES_Q2 = [
+    'OK. While I have you -- what would monthly payments look like on something like this?',
+    'Alright. What kind of financing rates are you seeing right now?',
+    'OK. And what does the warranty cover on these?',
+  ];
+  const FALLBACK_LINES_Q3 = [
+    'Alright. Other thing -- what would my trade be worth in all this?',
+    "OK. If the numbers work, how soon could I actually drive one home?",
+    'Fair enough. So what would the next step be if I wanted to move on this?',
+  ];
+  const bank = (opts.stepIndex ?? 0) === 0 ? FALLBACK_LINES_Q2 : FALLBACK_LINES_Q3;
   return {
-    customerMessage: "I appreciate that, but I'm still not sure. What else can you tell me?",
+    customerMessage: bank[Math.floor(Math.random() * bank.length)],
     model: 'template-fallback',
   };
 }
