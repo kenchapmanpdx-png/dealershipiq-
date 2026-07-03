@@ -30,6 +30,12 @@ export const maxDuration = 300;
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { log } from '@/lib/logger';
+// 2026-07-03 SINGLE-HOP ASYNC: waitUntil lets us answer Sinch inside its 15 s
+// window and keep processing (OpenAI grading can run 30 s+) in the SAME
+// invocation, protected from the request-cancellation that was silently
+// killing sessions mid-grade. Supersedes the two-hop off-thread worker
+// dispatch below (which remains as an optional env-gated path).
+import { waitUntil } from '@vercel/functions';
 import { verifySinchWebhookSignature, verifySinchRestWebhookSecret } from '@/lib/sinch-auth';
 import { getAppUrl } from '@/lib/url';
 import { sendSms, detectKeyword, helpResponse, isValidE164 } from '@/lib/sms';
@@ -378,11 +384,28 @@ export async function POST(request: NextRequest) {
       },
     } as SinchInboundMessage;
 
-    try {
-      await handleInboundMessage(normalized);
-    } catch (err) {
-      console.error('REST API webhook processing error:', (err as Error).message ?? err);
+    if (isInternalWorker) {
+      // Internal re-entry: the worker's fetch waits for completion, so
+      // process inline under this invocation's 300 s budget.
+      try {
+        await handleInboundMessage(normalized);
+      } catch (err) {
+        console.error('REST API webhook processing error:', (err as Error).message ?? err);
+      }
+      return NextResponse.json({ status: 'ok' });
     }
+    // Single-hop async: 200 to Sinch now, process under waitUntil. The
+    // .catch is mandatory -- an unhandled rejection inside waitUntil would
+    // be a silent loss. Lock + DB idempotency inside handleInboundMessage
+    // dedupe any Sinch retries that raced in before this deploy.
+    waitUntil(
+      handleInboundMessage(normalized).catch((err) => {
+        log.error('sinch.webhook.async_processing_failed', {
+          path: 'rest',
+          err: (err as Error).message ?? String(err),
+        });
+      })
+    );
     return NextResponse.json({ status: 'ok' });
   }
 
@@ -409,11 +432,26 @@ export async function POST(request: NextRequest) {
       }
       chanId.identity = normalizedPhone;
     }
-    try {
-      await handleInboundMessage(payload as unknown as SinchInboundMessage);
-    } catch (err) {
-      console.error('ConvAPI webhook processing error:', (err as Error).message ?? err);
+    if (isInternalWorker) {
+      // Internal re-entry: the worker's fetch waits for completion, so
+      // process inline under this invocation's 300 s budget.
+      try {
+        await handleInboundMessage(payload as unknown as SinchInboundMessage);
+      } catch (err) {
+        console.error('ConvAPI webhook processing error:', (err as Error).message ?? err);
+      }
+      return NextResponse.json({ status: 'ok' });
     }
+    // Single-hop async: 200 to Sinch now, process under waitUntil (see
+    // import comment). Root fix for the silent mid-session freeze.
+    waitUntil(
+      handleInboundMessage(payload as unknown as SinchInboundMessage).catch((err) => {
+        log.error('sinch.webhook.async_processing_failed', {
+          path: 'conv_api',
+          err: (err as Error).message ?? String(err),
+        });
+      })
+    );
     return NextResponse.json({ status: 'ok' });
   }
 
