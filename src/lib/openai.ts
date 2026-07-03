@@ -1287,7 +1287,11 @@ ${stepLabel}`;
             { role: 'user', content: userPrompt },
           ],
           temperature: 0.8,
-          ...tokenLimitParam(model, 200),
+          // GPT-5-class models consume completion tokens on internal reasoning
+          // BEFORE writing output. A 200-token cap gets fully eaten by reasoning,
+          // returning empty content and silently falling through to the fallback.
+          // 1000 matches the grading call's budget (which works in prod).
+          ...tokenLimitParam(model, 1000),
           response_format: {
             type: 'json_schema',
             json_schema: {
@@ -1306,15 +1310,38 @@ ${stepLabel}`;
         }),
       });
 
-      if (!response.ok) continue;
+      // 2026-07-03: these three failure paths used to `continue` silently,
+      // which made "all follow-up attempts failed" undiagnosable in prod.
+      // Mirror callOpenAIGrading's logging so the cause is visible.
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        log.error('openai.followup.http_error', {
+          model,
+          status: response.status,
+          body_preview: body.slice(0, 200),
+        });
+        continue;
+      }
 
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content;
-      if (!content) continue;
+      if (!content) {
+        log.error('openai.followup.empty_content', {
+          model,
+          finish_reason: data.choices?.[0]?.finish_reason ?? null,
+        });
+        continue;
+      }
 
       const result = JSON.parse(content);
       const parsed = FollowUpSchema.safeParse(result);
-      if (!parsed.success) continue;
+      if (!parsed.success) {
+        log.error('openai.followup.schema_parse_failed', {
+          model,
+          content_preview: String(content).slice(0, 200),
+        });
+        continue;
+      }
 
       return { ...parsed.data, model };
     } catch (error) {
