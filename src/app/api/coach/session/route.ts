@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { serviceClient } from '@/lib/supabase/service';
 import { isFeatureEnabled } from '@/lib/service-db';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
-import { tokenLimitParam } from '@/lib/openai';
+import { tokenLimitParam, OPENAI_MODELS } from '@/lib/openai';
 import { buildRepContext } from '@/lib/coach/context';
 import { buildCoachSystemPrompt, DOOR_OPENING_MESSAGES, CLASSIFY_EXCHANGE_TOOL } from '@/lib/coach/prompts';
 import { compactMessages, buildMessageHistory, isMaxExchanges } from '@/lib/coach/compaction';
@@ -28,8 +28,8 @@ import type {
 export const maxDuration = 60;
 export const runtime = 'nodejs';
 
-const COACH_MODEL = 'gpt-4o-2024-11-20';
-const CLASSIFY_MODEL = 'gpt-4o-mini-2024-07-18';
+const COACH_MODEL = OPENAI_MODELS.coach;
+const CLASSIFY_MODEL = OPENAI_MODELS.fallback;
 const MAX_MESSAGES_PER_HOUR = 30;
 const SESSION_STALE_HOURS = 24;
 

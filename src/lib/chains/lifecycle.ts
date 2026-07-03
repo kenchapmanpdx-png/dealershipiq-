@@ -1,7 +1,7 @@
 // Phase 6C: Scenario chain lifecycle — start/continue/branch/complete/expire
 
 import { serviceClient } from '@/lib/supabase/service';
-import { tokenLimitParam } from '@/lib/openai';
+import { tokenLimitParam, OPENAI_MODELS } from '@/lib/openai';
 import { selectBranch } from './branching';
 import { loadTemplate, selectTemplate, substituteVars } from './templates';
 import { getVehicleContextForScenario } from '@/lib/vehicle-data';
@@ -285,7 +285,7 @@ async function generateChainScenario(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
 
-  const model = 'gpt-5.4-2026-03-05';
+  const model = OPENAI_MODELS.primary;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
 

@@ -14,7 +14,7 @@
 // we already use on the grading path (see src/lib/openai.ts).
 
 import { serviceClient } from '@/lib/supabase/service';
-import { tokenLimitParam } from '@/lib/openai';
+import { tokenLimitParam, OPENAI_MODELS } from '@/lib/openai';
 import { escapeXml } from '@/lib/sms';
 import type { GeneratedScenario } from '@/types/challenges';
 
@@ -58,7 +58,7 @@ export async function generateScenarioFromManager(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
 
-  const model = 'gpt-5.4-2026-03-05';
+  const model = OPENAI_MODELS.primary;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
 

@@ -3,7 +3,7 @@
 // Strategy: first 8 messages → GPT-4o-mini synopsis (~200 tokens) + last 4 messages full.
 
 import type { CoachMessage } from '@/types/coach';
-import { tokenLimitParam } from '@/lib/openai';
+import { tokenLimitParam, OPENAI_MODELS } from '@/lib/openai';
 
 interface CompactedHistory {
   synopsis: string | null;
@@ -90,7 +90,7 @@ async function summarizeMessages(messages: CoachMessage[]): Promise<string> {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini-2024-07-18',
+        model: OPENAI_MODELS.fallback,
         messages: [
           {
             role: 'system',
@@ -99,7 +99,7 @@ async function summarizeMessages(messages: CoachMessage[]): Promise<string> {
           },
           { role: 'user', content: transcript },
         ],
-        ...tokenLimitParam('gpt-4o-mini-2024-07-18', 200),
+        ...tokenLimitParam(OPENAI_MODELS.fallback, 200),
         temperature: 0.3,
       }),
     });

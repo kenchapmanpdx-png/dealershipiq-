@@ -802,16 +802,28 @@ void _OBJECTION_COACHING_PROMPT;
 // MODEL CONFIG & HELPERS
 // =============================================================================
 
+// Model IDs are env-overridable so upgrading to a newer model does NOT require
+// a code change: set OPENAI_MODEL_PRIMARY / OPENAI_MODEL_FALLBACK /
+// OPENAI_MODEL_COACH in Vercel (Settings -> Environment Variables) and redeploy.
+// Always use PINNED snapshot IDs (e.g. 'gpt-5.4-2026-03-05'), never floating
+// aliases, so behavior only changes when we deliberately upgrade.
+// After any model swap, spot-check graded sessions -- score calibration can
+// shift between models.
 export const OPENAI_MODELS = {
-  primary: 'gpt-5.4-2026-03-05',
-  fallback: 'gpt-4o-mini-2024-07-18',
+  // grading, SMS follow-ups, scenario generation
+  primary: process.env.OPENAI_MODEL_PRIMARY || 'gpt-5.4-2026-03-05',
+  // grading fallback, classify calls, coach transcript compaction
+  fallback: process.env.OPENAI_MODEL_FALLBACK || 'gpt-4o-mini-2024-07-18',
+  // Ask IQ coach conversations
+  coach: process.env.OPENAI_MODEL_COACH || 'gpt-4o-2024-11-20',
 } as const;
 
-// GPT-5.4+ requires max_completion_tokens; older models use max_tokens
+// GPT-4-era models use max_tokens; everything newer (gpt-5, gpt-6, ...)
+// requires max_completion_tokens.
 export function tokenLimitParam(model: string, limit: number): Record<string, number> {
-  return model.startsWith('gpt-5')
-    ? { max_completion_tokens: limit }
-    : { max_tokens: limit };
+  return model.startsWith('gpt-4')
+    ? { max_tokens: limit }
+    : { max_completion_tokens: limit };
 }
 
 // =============================================================================
@@ -1399,7 +1411,7 @@ export async function getOpenAICompletion(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
 
-  const modelId = model === 'gpt-4o-mini' ? 'gpt-4o-mini-2024-07-18' : 'gpt-5.4-2026-03-05';
+  const modelId = model === 'gpt-4o-mini' ? OPENAI_MODELS.fallback : OPENAI_MODELS.primary;
 
   try {
     const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
