@@ -533,8 +533,24 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   // Without this ordering, two concurrent webhooks for the same message
   // could both pass the DB check before either inserts.
   const { tryLockUser, unlockUser } = await import('@/lib/service-db');
-  const locked = await tryLockUser(phone);
-  if (!locked) return;
+  let locked = await tryLockUser(phone);
+  if (!locked) {
+    // 2026-07-03: one retry after 2s -- the previous message's processing
+    // may legitimately hold the lease for a few more seconds.
+    await new Promise((r) => setTimeout(r, 2000));
+    locked = await tryLockUser(phone);
+  }
+  if (!locked) {
+    // 2026-07-03: was a bare `return` -- a refused lock silently swallowed
+    // the user's message (THE "app froze" signature). The leaked-advisory-
+    // lock root cause is fixed by migration 20260703000001 (lease-based
+    // locks); this log makes any future refusal visible.
+    log.warn('webhook.message_dropped_lock_refused', {
+      phone_last4: phone.slice(-4),
+      message_id: messageId,
+    });
+    return;
+  }
 
   try {
     // Idempotency check (C-002 audit fix: database-backed, inside advisory lock)
