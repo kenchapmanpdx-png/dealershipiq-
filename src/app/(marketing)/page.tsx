@@ -331,11 +331,13 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ SOCIAL PROOF ══════════ */}
-      <section className="py-20 md:py-28">
+      {/* 2026-07-04: compacted — section padding, heading gap, card gap and
+          card padding all reduced; the section read as too airy/spread out. */}
+      <section className="py-14 md:py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
-            <div className="text-center mb-16">
-              <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
+            <div className="text-center mb-10">
+              <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-3">
                 From the Floor
               </p>
               <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
@@ -344,7 +346,7 @@ export default function LandingPage() {
             </div>
           </ScrollReveal>
 
-          <StaggerReveal className="dim-siblings grid grid-cols-1 md:grid-cols-3 gap-5" staggerMs={150}>
+          <StaggerReveal className="dim-siblings grid grid-cols-1 md:grid-cols-3 gap-4" staggerMs={150}>
             {testimonials.map((t) => {
               const initials = t.name
                 .split(' ')
@@ -353,10 +355,10 @@ export default function LandingPage() {
               return (
                 <div
                   key={t.name}
-                  className="glass rounded-2xl p-6 sm:p-7 flex flex-col card-hover"
+                  className="glass rounded-2xl p-5 sm:p-6 flex flex-col card-hover"
                 >
                   {/* Thread header — like a Messages contact bar */}
-                  <div className="flex items-center gap-3 pb-4 mb-4 border-b border-white/5">
+                  <div className="flex items-center gap-3 pb-3 mb-3 border-b border-white/5">
                     <div className="w-9 h-9 rounded-full bg-gradient-to-b from-[#9ca3af] to-[#6b7280] flex items-center justify-center shrink-0">
                       <span className="text-xs font-semibold text-white">{initials}</span>
                     </div>
@@ -395,7 +397,10 @@ export default function LandingPage() {
               </p>
               <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
                 Your sales team is texting anyway.{' '}
-                <KineticUnderline>Make it count.</KineticUnderline>
+                {/* 2026-07-04: inks later — waits until the phrase is 30% up
+                    the viewport, then holds another second, so the swipe lands
+                    when the headline is prominent instead of edge-peeking. */}
+                <KineticUnderline delay={1000} rootMargin="0px 0px -30% 0px">Make it count.</KineticUnderline>
               </h2>
             </div>
           </ScrollReveal>
@@ -433,18 +438,22 @@ export default function LandingPage() {
                 How It Works
               </p>
               <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
-                Live in four steps.<br />Results on day one.
+                Live in four steps.<br />
+                <KineticUnderline delay={700}>Results on day one.</KineticUnderline>
               </h2>
             </div>
           </ScrollReveal>
 
-          <InView className="steps-flow">
+          {/* 2026-07-04: fires later (grid top must clear the bottom 20% of
+              the viewport) and charges up slower (480ms between steps, was
+              320ms; fill duration lengthened in globals.css). */}
+          <InView className="steps-flow" threshold={0.15} rootMargin="0px 0px -20% 0px">
           <StaggerReveal className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6" staggerMs={120}>
             {steps.map((s, i) => (
               <div
                 key={s.num}
                 className="relative text-center lg:text-left"
-                style={{ '--step-delay': `${i * 320}ms` } as CSSProperties}
+                style={{ '--step-delay': `${i * 480}ms` } as CSSProperties}
               >
                 {/* Connector line draws toward the next step on desktop */}
                 {i < steps.length - 1 && (

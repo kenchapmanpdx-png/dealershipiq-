@@ -10,9 +10,14 @@ import React, { useEffect, useRef, useState } from 'react';
 export default function KineticUnderline({
   children,
   delay = 450,
+  rootMargin = '0px',
 }: {
   children: React.ReactNode;
   delay?: number; // ms after entering viewport
+  // 2026-07-04: negative bottom margin (e.g. '0px 0px -30% 0px') makes the
+  // ink wait until the phrase has scrolled well up into the viewport,
+  // instead of firing the moment it peeks in at the bottom edge.
+  rootMargin?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [inked, setInked] = useState(false);
@@ -33,12 +38,12 @@ export default function KineticUnderline({
           observer.unobserve(el);
         }
       },
-      { threshold: 0.6 }
+      { threshold: 0.6, rootMargin }
     );
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [rootMargin]);
 
   return (
     <span

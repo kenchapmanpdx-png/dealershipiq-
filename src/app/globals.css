@@ -352,7 +352,8 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  transition: background-position 0.9s var(--ease-out-cubic);
+  /* 2026-07-04: 0.9s -> 1.4s — the ink-fill read as rushed. */
+  transition: background-position 1.4s var(--ease-out-cubic);
   transition-delay: var(--step-delay, 0ms);
 }
 .steps-flow.in-view .step-number {
@@ -363,8 +364,8 @@ body {
 .step-connector {
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform 0.7s var(--ease-out-cubic);
-  transition-delay: calc(var(--step-delay, 0ms) + 220ms);
+  transition: transform 1s var(--ease-out-cubic);
+  transition-delay: calc(var(--step-delay, 0ms) + 350ms);
 }
 .steps-flow.in-view .step-connector {
   transform: scaleX(1);
@@ -373,8 +374,8 @@ body {
 /* Icon square charges up with its step */
 .step-icon {
   transition:
-    box-shadow 0.6s var(--ease-out-cubic),
-    border-color 0.6s var(--ease-out-cubic);
+    box-shadow 0.9s var(--ease-out-cubic),
+    border-color 0.9s var(--ease-out-cubic);
   transition-delay: var(--step-delay, 0ms);
 }
 .steps-flow.in-view .step-icon {

@@ -12,11 +12,16 @@ export default function InView({
   className = '',
   activeClassName = 'in-view',
   threshold = 0.2,
+  rootMargin = '0px 0px -40px 0px',
 }: {
   children: React.ReactNode;
   className?: string;
   activeClassName?: string;
   threshold?: number;
+  // 2026-07-04: configurable so tall sections (e.g. the four-step grid on
+  // mobile, where 20% visibility means barely one card) can demand deeper
+  // scroll before their sequence starts.
+  rootMargin?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(false);
@@ -37,12 +42,12 @@ export default function InView({
           observer.unobserve(el);
         }
       },
-      { threshold, rootMargin: '0px 0px -40px 0px' }
+      { threshold, rootMargin }
     );
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [threshold]);
+  }, [threshold, rootMargin]);
 
   return (
     <div ref={ref} className={`${className} ${active ? activeClassName : ''}`.trim()}>
