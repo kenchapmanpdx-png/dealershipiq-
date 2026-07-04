@@ -175,6 +175,29 @@ body {
   background: radial-gradient(circle, rgba(168, 85, 247, 0.28) 0%, transparent 70%);
 }
 
+/* ── Mobile performance (2026-07-04) ──
+   The animated hero repainted every frame on phones: heroShift animates
+   @property color stops (custom-property animation is never GPU-accelerated,
+   so the browser repaints the whole hero each frame), heroPan pans an
+   oversized background, and each orb drifts while carrying an 80px blur.
+   Desktop GPUs absorb it; phones drop frames — choppy scroll through the
+   hero. On small screens we freeze the gradient and orbs (a static frame of
+   the same artwork, visually near-identical) and halve the blur cost. */
+@media (max-width: 767px) {
+  .hero-gradient { animation: none; }
+  .orb {
+    animation: none !important;
+    filter: blur(40px);
+    will-change: auto;
+  }
+}
+
+/* Accessibility: users who ask for reduced motion get the static hero too. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-gradient { animation: none; }
+  .orb { animation: none !important; }
+}
+
 /* ── Section divider — gradient fade line ── */
 .section-divider {
   height: 1px;

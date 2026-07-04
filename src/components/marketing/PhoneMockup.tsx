@@ -53,10 +53,35 @@ const conversation: Message[] = [
 export default function PhoneMockup() {
   const [visibleMessages, setVisibleMessages] = useState<number>(0);
   const [cycle, setCycle] = useState(0);
+  const [inView, setInView] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // 2026-07-04: gate the conversation on visibility. Previously the timers
+  // started on MOUNT, so on mobile (where the phone sits below the fold) the
+  // exchange was half-finished before the user ever scrolled to it — and the
+  // loop ran forever off-screen, burning frames. Now it starts fresh each
+  // time the phone scrolls into view and fully stops when it leaves.
   useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setInView(entry.isIntersecting),
+      { threshold: 0.35 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!inView) {
+      // Off-screen: stop and rewind so re-entry replays from the top.
+      setVisibleMessages(0);
+      return;
+    }
+
     const timers: NodeJS.Timeout[] = [];
 
     conversation.forEach((msg, i) => {
@@ -76,7 +101,7 @@ export default function PhoneMockup() {
     );
 
     return () => timers.forEach(clearTimeout);
-  }, [cycle]);
+  }, [cycle, inView]);
 
   // Auto-scroll the phone's message list to the bottom when new messages
   // appear. 2026-07-02: scroll ONLY the inner container via scrollTop — the
@@ -91,7 +116,7 @@ export default function PhoneMockup() {
   }, [visibleMessages]);
 
   return (
-    <div className="relative mx-auto w-[280px] sm:w-[320px]">
+    <div ref={rootRef} className="relative mx-auto w-[280px] sm:w-[320px]">
       {/* ── Shine border — rotating neon glow ── */}
       <div
         className="absolute -inset-[3px] rounded-[2.8rem] animate-shine z-0"
@@ -106,9 +131,11 @@ export default function PhoneMockup() {
           padding: '3px',
         }}
       />
-      {/* Neon glow shadow layers — subtle */}
-      <div className="absolute -inset-3 rounded-[3rem] bg-blue-500/[0.022] blur-xl z-0 animate-[glow-pulse_4s_ease-in-out_infinite]" />
-      <div className="absolute -inset-6 rounded-[3.5rem] bg-violet-500/[0.012] blur-2xl z-0 animate-[glow-pulse_4s_ease-in-out_infinite_1s]" />
+      {/* Neon glow shadow layers — subtle. 2026-07-04: desktop-only. These
+          animate box-shadow (repaints every frame) at ~2% opacity — visually
+          invisible on a phone screen but a constant GPU cost during scroll. */}
+      <div className="hidden md:block absolute -inset-3 rounded-[3rem] bg-blue-500/[0.022] blur-xl z-0 animate-[glow-pulse_4s_ease-in-out_infinite]" />
+      <div className="hidden md:block absolute -inset-6 rounded-[3.5rem] bg-violet-500/[0.012] blur-2xl z-0 animate-[glow-pulse_4s_ease-in-out_infinite_1s]" />
 
       {/* ── Phone frame — dark silver metallic ── */}
       <div
