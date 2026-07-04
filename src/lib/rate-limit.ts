@@ -3,13 +3,24 @@
 // Limits: AI grading per tenant, SMS sends global, signup per IP
 // Requires: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 //
-// Behavior:
+// Behavior (2026-07-04 posture change):
 //   - If Redis is configured and reachable → normal rate limiting.
-//   - If Redis is unreachable or missing in PRODUCTION → fail CLOSED (returns success:false).
-//     Callers must handle {success:false} by rejecting with 503.
-//   - If missing outside production → fail OPEN with a warn log (dev convenience).
+//   - If Redis is missing or erroring → fail OPEN with a loud log.
+//     RATIONALE: the old fail-CLOSED-in-prod posture turned "backend not
+//     configured" into a FULL PRODUCT OUTAGE — every AI call rejected, every
+//     rep told "having trouble grading" (2026-07-03 incident, twice). For
+//     this product the blast radius of open (bounded cost risk; the circuit
+//     breaker, cron budgets, and OpenAI quota still apply) is far smaller
+//     than closed (no dealership can train at all). A protection layer being
+//     absent must degrade to "protection off, alarm on" — never "store closed".
+//   - redis_missing (unconfigured) logs WARN; redis_error (configured but
+//     failing) logs ERROR so Sentry treats a broken backend as page-worthy.
 //
-// Env override: RATE_LIMIT_FAIL_OPEN=true forces fail-open even in prod (emergency escape hatch).
+// Env override: RATE_LIMIT_FAIL_CLOSED=true restores strict fail-closed in
+// production — set it only after Redis is configured and proven stable.
+// NOTE: until Upstash creds are set, auth-attempt brute-force limiting is
+// also inactive (as it has been since launch); configuring Redis activates
+// all limiters for real.
 
 import { log } from '@/lib/logger';
 
@@ -27,18 +38,19 @@ function isProd(): boolean {
   return process.env.NODE_ENV === 'production';
 }
 
-function forcedOpen(): boolean {
-  return process.env.RATE_LIMIT_FAIL_OPEN === 'true';
-}
-
-// Return the appropriate bypass result based on environment.
+// Return the appropriate bypass result. See header: FAIL OPEN by default.
 function bypassResult(limiter: string, reason: 'redis_missing' | 'redis_error'): RateLimitResult {
-  if (isProd() && !forcedOpen()) {
+  if (isProd() && process.env.RATE_LIMIT_FAIL_CLOSED === 'true') {
     log.error('rate_limit.fail_closed', { limiter, reason });
     return { ...FAIL_CLOSED, bypass_reason: reason };
   }
-  // Dev or emergency override
-  log.warn('rate_limit.bypass', { limiter, reason, env: process.env.NODE_ENV, forced_open: forcedOpen() });
+  if (reason === 'redis_error') {
+    // Configured but broken — page-worthy, but never a product outage.
+    log.error('rate_limit.bypass_open', { limiter, reason, env: process.env.NODE_ENV });
+  } else {
+    // Not configured — expected until Upstash is set up; warn, don't page.
+    log.warn('rate_limit.bypass_open', { limiter, reason, env: process.env.NODE_ENV });
+  }
   return { ...PASS_THROUGH, bypass_reason: reason };
 }
 
