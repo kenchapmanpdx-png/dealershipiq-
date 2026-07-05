@@ -198,6 +198,40 @@ body {
   .orb { animation: none !important; }
 }
 
+/* ── Card ambient glow (2026-07-04) ──
+   A static radial wash of the brand gradient in each card's upper corner —
+   a distant echo of the hero orbs. Deliberately NOT animated: the cards are
+   where people read, and the section's quietness is what makes the hero and
+   CTA pop. Desktop hover breathes it slightly; zero cost during scroll. */
+.card-glow {
+  position: relative;
+  overflow: hidden;
+}
+.card-glow::before {
+  content: '';
+  position: absolute;
+  top: -35%;
+  right: -20%;
+  width: 75%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(99, 91, 255, 0.09) 0%,
+    rgba(236, 72, 153, 0.035) 45%,
+    transparent 70%
+  );
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 0.5s var(--ease-out-cubic), transform 0.5s var(--ease-out-cubic);
+}
+@media (hover: hover) {
+  .card-glow:hover::before {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+}
+
 /* ── Section divider — gradient fade line ── */
 .section-divider {
   height: 1px;

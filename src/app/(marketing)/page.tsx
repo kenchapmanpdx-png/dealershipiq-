@@ -409,7 +409,7 @@ export default function LandingPage() {
             {features.map((f) => (
               <div
                 key={f.title}
-                className={`glass card-hover rounded-2xl p-5 sm:p-8 group ${f.span}`}
+                className={`glass card-hover card-glow rounded-2xl p-5 sm:p-8 group ${f.span}`}
               >
                 <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] mb-5 group-hover:bg-[var(--accent)]/15 transition-colors duration-300">
                   {f.icon}
