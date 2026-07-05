@@ -119,6 +119,9 @@ export async function GET(
         .from('training_results')
         .select('user_id, product_accuracy, tone_rapport, addressed_concern, close_attempt, created_at')
         .in('user_id', Array.from(memberMap.keys()))
+        // 2026-07-05 AUDIT #18: without this, a user with memberships at two
+        // stores leaked the other store's scores into this public leaderboard.
+        .eq('dealership_id', dealership.id)
         .gte('created_at', ninetyDaysAgo)
         .limit(10000);
 

@@ -575,17 +575,14 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       return;
     }
 
-    // M-020: Mark as processed with hard cap enforcement (evict oldest half when full)
-    processedMessages.add(messageId);
-    if (processedMessages.size > MAX_PROCESSED_CACHE) {
-      const entries = Array.from(processedMessages);
-      const evictCount = Math.floor(entries.length / 2);
-      for (let i = 0; i < evictCount; i++) processedMessages.delete(entries[i]);
-    }
-
     // Look up active session BEFORE logging inbound, so we can tag the transcript row
     const activeSession = await getActiveSession(user.id, user.dealershipId);
-    const hasActiveSession = !!activeSession && activeSession.status === 'active';
+    // 2026-07-05 AUDIT #16: pending/error sessions also mean "rep is holding a
+    // live question" — treat them as active for keyword suppression so a
+    // re-sent answer containing e.g. "stop the customer..." isn't misread as a
+    // natural-language opt-out during the error-recovery window.
+    const hasActiveSession =
+      !!activeSession && ['active', 'pending', 'error'].includes(activeSession.status);
 
     // Log inbound message with session_id (UNIQUE constraint on sinch_message_id catches any remaining races)
     await insertTranscriptLog({
@@ -597,6 +594,19 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       sinchMessageId: messageId,
       sessionId: activeSession?.id,
     });
+
+    // M-020: Mark as processed with hard cap enforcement (evict oldest half when full)
+    // 2026-07-05 AUDIT #17: moved AFTER the durable transcript write. Adding to
+    // the in-memory cache first meant a transient throw between add and insert
+    // suppressed the legitimate Sinch retry on a warm instance — message lost
+    // with zero DB record. The UNIQUE constraint remains the cross-instance
+    // backstop.
+    processedMessages.add(messageId);
+    if (processedMessages.size > MAX_PROCESSED_CACHE) {
+      const entries = Array.from(processedMessages);
+      const evictCount = Math.floor(entries.length / 2);
+      for (let i = 0; i < evictCount; i++) processedMessages.delete(entries[i]);
+    }
 
     // ==========================================================================
     // KEYWORD PRIORITY ORDER (C-004 audit fix)
@@ -775,7 +785,21 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
       return;
     }
 
-    if (session.status !== 'active') {
+    if (session.status === 'pending' || session.status === 'error') {
+      // 2026-07-05 AUDIT #15/#16: self-heal instead of dropping.
+      // pending = SMS went out but the activation step failed mid-send-flow;
+      // error = grading failed and ERROR_SMS told the rep to text again.
+      // Either way the rep is holding a live question and this text is their
+      // answer — activate the session and process normally. (error→active and
+      // pending→active are both valid transitions; on a re-graded final step
+      // the upsert-ignore in insertTrainingResult keeps the first stored row.)
+      log.info('webhook.session_self_healed', {
+        session_id: session.id,
+        from_status: session.status,
+      });
+      await updateSessionStatus(session.id, user.dealershipId, 'active');
+      session.status = 'active';
+    } else if (session.status !== 'active') {
       // 2026-07-03: was a bare `return` -- a session in an unexpected state
       // swallowed the user's message with no reply and no log, which presents
       // to the user as the app freezing. Keep the no-reply behavior for
@@ -1646,9 +1670,12 @@ async function handleFinalExchange(
     }
 
     // --- Phase 6D: Peer challenge completion check ---
-    if (session.challengeId) {
-      // Note: session.challengeId here is used for daily challenges AND peer challenges.
-      // For peer challenges, we look up whether this session is linked to a peer_challenge row.
+    // 2026-07-05 AUDIT #4: was gated on session.challengeId — but peer sessions
+    // CANNOT carry challenge_id (its FK references daily_challenges; a peer id
+    // would violate it), so the hook was unreachable and peer results never
+    // sent. The lookup below is keyed by session id, so run it unconditionally
+    // (one cheap indexed maybeSingle per grade).
+    {
       try {
         const sc = serviceClient;
         const { data: peerChallenge } = await sc

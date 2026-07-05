@@ -127,7 +127,10 @@ export async function getActiveSession(userId: string, dealershipId: string) {
     .select('id, status, question_text, mode, prompt_version_id, step_index, persona_mood, training_domain, challenge_id, scenario_chain_id, chain_step, created_at')
     .eq('dealership_id', dealershipId)
     .eq('user_id', userId)
-    .in('status', ['pending', 'active', 'grading'])
+    // 2026-07-05 AUDIT #16: 'error' included — ERROR_SMS tells the rep to text
+    // their answer again, so their session must be routable during the window
+    // before grading-recovery resets it (webhook self-heals error→active).
+    .in('status', ['pending', 'active', 'grading', 'error'])
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();

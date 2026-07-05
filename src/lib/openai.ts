@@ -334,6 +334,15 @@ OUTPUT FIELD INSTRUCTIONS:
     ? ' This is the primary success criterion. Cold, dismissive, or robotic tone = score 1-2.'
     : '';
 
+  // N2 2026-07-05: the closing strictness sentence was static fact_heavy copy
+  // shipped on ALL classes — rapport_heavy and hybrid prompts told the grader
+  // to nuke product_accuracy for wrong facts even when facts were weighted 3/20.
+  const strictnessTail = wc === 'fact_heavy'
+    ? 'Score product_accuracy MOST STRICTLY. A wrong fact should score product_accuracy 1-2 regardless of other dimensions.'
+    : wc === 'rapport_heavy'
+      ? 'Score tone_rapport MOST STRICTLY. Lecturing, pressuring, or ignoring the customer\'s emotional state should score tone_rapport 1-2 even if factually correct.'
+      : 'Weight all four dimensions evenly. Reserve 1-2 scores for clear failures in a dimension.';
+
   const scoringWeightsBlock = isFallbackModel ? '' : `
 <scoring_weights>
 This is a ${wc} scenario. Apply these scoring priorities:
@@ -341,7 +350,7 @@ This is a ${wc} scenario. Apply these scoring priorities:
 - addressed_concern: weight ${w.ac}/20.
 - tone_rapport: weight ${w.tr}/20.${trInstruction}
 - close_attempt: weight ${w.ca}/20.
-Score the highest-weighted dimension MOST STRICTLY. A wrong fact in a fact_heavy scenario should score product_accuracy 1-2 regardless of other dimensions.
+${strictnessTail}
 </scoring_weights>
 `;
 
@@ -1439,7 +1448,9 @@ function getTemplateFallback(mode: string): GradingResult & { model: string; pro
     tone_rapport: 3,
     addressed_concern: 3,
     close_attempt: 3,
-    feedback: `6/10 Decent effort. We had trouble grading in detail -- keep at it and we'll have full feedback next time.`,
+    // 2026-07-05 AUDIT P3: was "6/10" in a /20-scale product — a fake score on
+    // a placeholder grade. Score-free copy is honest about what happened.
+    feedback: `Answer received! Grading hit a snag so no score this time -- keep at it and your next answer gets full feedback.`,
     reasoning: `Template fallback used. Mode: ${mode}. TODO: Add is_fallback column to training_results to distinguish template grades.`,
     model: 'template-fallback',
   };

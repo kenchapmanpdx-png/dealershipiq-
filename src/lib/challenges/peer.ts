@@ -512,11 +512,38 @@ export async function expirePeerChallenges(): Promise<{ expired: number; default
 
   let defaultWins = 0;
   for (const c of activeExpired ?? []) {
-    // Whoever has a completed session wins
-    let winnerId = c.challenger_id as string;
-    if (c.challenger_session_id && !c.challenged_session_id) winnerId = c.challenger_id as string;
-    else if (c.challenged_session_id && !c.challenger_session_id) winnerId = c.challenged_id as string;
+    // 2026-07-05 AUDIT #4: "whoever has a completed session wins" used to test
+    // session-ID PRESENCE — but both ids are always set at ACCEPT, so the
+    // challenger silently won every expiry. Now checks actual completion.
+    const sessionIds = [c.challenger_session_id, c.challenged_session_id].filter(Boolean) as string[];
+    const { data: sessions } = await serviceClient
+      .from('conversation_sessions')
+      .select('id, status')
+      .in('id', sessionIds);
+    const completedIds = new Set(
+      (sessions ?? []).filter((s) => s.status === 'completed').map((s) => s.id as string)
+    );
+    const challengerDone = !!c.challenger_session_id && completedIds.has(c.challenger_session_id as string);
+    const challengedDone = !!c.challenged_session_id && completedIds.has(c.challenged_session_id as string);
 
+    if (challengerDone && challengedDone) {
+      // Both graded but the completion hook never fired (legacy gate bug) —
+      // resolve properly by scores via the atomic completion path.
+      await checkAndCompleteChallenge(c.id as string);
+      defaultWins++;
+      continue;
+    }
+
+    if (!challengerDone && !challengedDone) {
+      // Nobody finished — no fake winner.
+      await serviceClient
+        .from('peer_challenges')
+        .update({ status: 'expired' })
+        .eq('id', c.id as string);
+      continue;
+    }
+
+    const winnerId = challengerDone ? (c.challenger_id as string) : (c.challenged_id as string);
     await serviceClient
       .from('peer_challenges')
       .update({ status: 'completed', winner_id: winnerId, completed_at: now })
