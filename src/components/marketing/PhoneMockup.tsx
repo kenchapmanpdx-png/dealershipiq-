@@ -8,45 +8,49 @@ interface Message {
   delay: number; // ms before this message appears
 }
 
+// 2026-07-04: timeline compressed ~30% and the first message now lands
+// almost instantly — the old 1.15s open + 4s second message meant mobile
+// users (who scroll past in 2-3s) saw a mostly-empty black screen where the
+// hero's centerpiece should be.
 const conversation: Message[] = [
   // Persona: buyer likes the CR-V, needs to "sleep on it"
   {
     from: 'system',
     text: "\"I really like the CR-V, but I think I need to sleep on it.\"",
-    delay: 1150,
+    delay: 150,
   },
   {
     from: 'rep',
     text: "I get it. Is it the car you're not sure about, or is it the numbers?",
-    delay: 4150,
+    delay: 2400,
   },
   // Exchange 2 — real hesitation surfaces, rep creates urgency
   {
     from: 'system',
     text: "\"The numbers mostly. I just don't want to rush into something.\"",
-    delay: 7600,
+    delay: 4900,
   },
   {
     from: 'rep',
     text: "There's $1,500 in incentives expiring Saturday — let me get you a real out-the-door number so you're comparing facts, not guesses.",
-    delay: 11050,
+    delay: 7600,
   },
   // Exchange 3 — buyer reveals his number, rep closes
   {
     from: 'system',
     text: "\"I'm really trying to stay under $500 a month.\"",
-    delay: 16100,
+    delay: 11200,
   },
   {
     from: 'rep',
     text: "If we land on the right number under $500 a month, do we have a deal?",
-    delay: 20500,
+    delay: 14400,
   },
   // AI grade — praise + correction
   {
     from: 'ai',
     text: '⭐ 8.4/10 — Isolated the hesitation to numbers, not the car. Urgency without pressure. 💡 Ask what he pays now — "Only $40 more for a new CR-V" hits harder than any discount.',
-    delay: 25000,
+    delay: 17800,
   },
 ];
 
@@ -97,7 +101,7 @@ export default function PhoneMockup() {
       setTimeout(() => {
         setVisibleMessages(0);
         setCycle((c) => c + 1);
-      }, 36000)
+      }, 26000)
     );
 
     return () => timers.forEach(clearTimeout);
@@ -261,7 +265,7 @@ export default function PhoneMockup() {
                 >
                   {msg.text}
                 </div>
-                <p className={`text-[9px] text-white/30 mt-1 ${
+                <p className={`text-[9px] text-white/50 mt-1 ${
                   msg.from === 'rep' ? 'text-right' : ''
                 }`}>
                   {msg.from === 'system' ? 'Customer' : msg.from === 'rep' ? 'You' : 'AI Coach'}

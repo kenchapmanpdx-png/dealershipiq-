@@ -22,7 +22,10 @@ export default function FAQ({ items }: { items: FAQItem[] }) {
             aria-expanded={isOpen}
           >
             <div className="flex items-start justify-between gap-4">
-              <h3 className="text-sm font-semibold text-white group-hover:text-[var(--accent-hover)] transition-colors duration-300">
+              {/* 2026-07-04: hover color only on devices with real hover.
+                  On touch, a tap left the button stuck in :hover, so one
+                  closed question stayed accent-blue — read as a bug. */}
+              <h3 className="text-sm font-semibold text-white [@media(hover:hover)]:group-hover:text-[var(--accent-hover)] transition-colors duration-300">
                 {faq.q}
               </h3>
               <div

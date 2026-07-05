@@ -79,7 +79,9 @@ export default function AnimatedCounter({ value, label }: AnimatedCounterProps) 
           {hasAnimated ? displayValue : <span className="opacity-0">{value}</span>}
         </span>
       </p>
-      <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-white/40">{label}</p>
+      {/* 2026-07-04: white/40 at 11px failed contrast on near-black — the
+          values popped but the labels explaining them were unreadable. */}
+      <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-white/60">{label}</p>
     </div>
   );
 }

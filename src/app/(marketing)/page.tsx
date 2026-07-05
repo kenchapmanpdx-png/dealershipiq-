@@ -282,7 +282,7 @@ export default function LandingPage() {
               </div>
 
               {/* Trust signal */}
-              <p className="text-xs text-[var(--text-muted)] mt-6 flex items-center gap-4">
+              <p className="text-xs text-[var(--text-muted)] mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
                 <span className="flex items-center gap-1.5">
                   <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -375,7 +375,7 @@ export default function LandingPage() {
                     <div className="max-w-[95%] self-start bg-white/[0.08] rounded-2xl rounded-bl-md px-4 py-3">
                       <p className="text-sm text-white/90 leading-relaxed">{t.quote}</p>
                     </div>
-                    <p className="text-[10px] text-white/30 mt-1.5 pl-1">Text Message · Today 9:41 AM</p>
+                    <p className="text-[10px] text-white/50 mt-1.5 pl-1">Text Message · Today 9:41 AM</p>
                   </div>
                 </div>
               );
@@ -388,10 +388,10 @@ export default function LandingPage() {
       <div className="section-divider max-w-4xl mx-auto" />
 
       {/* ══════════ FEATURES — BENTO GRID ══════════ */}
-      <section id="features" className="py-20 md:py-28 bg-[var(--bg-secondary)] scroll-mt-20">
+      <section id="features" className="py-14 md:py-28 bg-[var(--bg-secondary)] scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
-            <div className="text-center max-w-2xl mx-auto mb-16">
+            <div className="text-center max-w-2xl mx-auto mb-10 md:mb-16">
               <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
                 Capabilities
               </p>
@@ -409,7 +409,7 @@ export default function LandingPage() {
             {features.map((f) => (
               <div
                 key={f.title}
-                className={`glass card-hover rounded-2xl p-7 sm:p-8 group ${f.span}`}
+                className={`glass card-hover rounded-2xl p-5 sm:p-8 group ${f.span}`}
               >
                 <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] mb-5 group-hover:bg-[var(--accent)]/15 transition-colors duration-300">
                   {f.icon}
@@ -430,10 +430,10 @@ export default function LandingPage() {
       <div className="section-divider max-w-4xl mx-auto" />
 
       {/* ══════════ HOW IT WORKS ══════════ */}
-      <section id="how-it-works" className="py-20 md:py-28 scroll-mt-20">
+      <section id="how-it-works" className="py-14 md:py-28 scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
-            <div className="max-w-2xl mx-auto text-center mb-16">
+            <div className="max-w-2xl mx-auto text-center mb-10 md:mb-16">
               <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
                 How It Works
               </p>
@@ -448,7 +448,7 @@ export default function LandingPage() {
               the viewport) and charges up slower (480ms between steps, was
               320ms; fill duration lengthened in globals.css). */}
           <InView className="steps-flow" threshold={0.15} rootMargin="0px 0px -20% 0px">
-          <StaggerReveal className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6" staggerMs={120}>
+          <StaggerReveal className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" staggerMs={120}>
             {steps.map((s, i) => (
               <div
                 key={s.num}
@@ -461,7 +461,9 @@ export default function LandingPage() {
                 )}
 
                 {/* Icon circle */}
-                <div className="step-icon w-14 h-14 rounded-2xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] mb-5 mx-auto lg:mx-0">
+                {/* 2026-07-04: hidden on mobile — icon chip + giant number was
+                    double ornamentation per step; the numbers carry it alone. */}
+                <div className="step-icon w-14 h-14 rounded-2xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 hidden sm:flex items-center justify-center text-[var(--accent)] mb-5 mx-auto lg:mx-0">
                   {s.icon}
                 </div>
 
@@ -483,10 +485,10 @@ export default function LandingPage() {
       <div className="section-divider max-w-4xl mx-auto" />
 
       {/* ══════════ PRICING ══════════ */}
-      <section id="pricing" className="py-20 md:py-28 bg-[var(--bg-secondary)] scroll-mt-20">
+      <section id="pricing" className="py-14 md:py-28 bg-[var(--bg-secondary)] scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
-            <div className="max-w-2xl mx-auto text-center mb-16">
+            <div className="max-w-2xl mx-auto text-center mb-10 md:mb-16">
               <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
                 Pricing
               </p>
@@ -550,7 +552,7 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ FAQ ══════════ */}
-      <section className="py-20 md:py-28">
+      <section className="py-14 md:py-28">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <ScrollReveal>
             <div className="text-center mb-12">
@@ -573,7 +575,7 @@ export default function LandingPage() {
       <div className="section-divider max-w-4xl mx-auto" />
 
       {/* ══════════ FINAL CTA ══════════ */}
-      <section className="relative py-20 md:py-28 overflow-hidden">
+      <section className="relative py-14 md:py-28 overflow-hidden">
         <div className="orb orb-blue w-[700px] h-[700px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-orb-drift-2" />
         <div className="orb orb-purple hidden md:block w-[450px] h-[450px] bottom-0 right-[10%] animate-orb-drift-3" />
 
