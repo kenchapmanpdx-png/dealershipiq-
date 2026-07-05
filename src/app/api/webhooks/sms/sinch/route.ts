@@ -39,7 +39,7 @@ import { waitUntil } from '@vercel/functions';
 import { verifySinchWebhookSignature, verifySinchRestWebhookSecret } from '@/lib/sinch-auth';
 import { getAppUrl } from '@/lib/url';
 import { sendSms, detectKeyword, helpResponse, isValidE164 } from '@/lib/sms';
-import { gradeResponse, generateFollowUp, ERROR_SMS } from '@/lib/openai';
+import { gradeResponse, generateFollowUp, ERROR_SMS, computeWeightedTotal, replaceScoreInFeedback, type WeightClass } from '@/lib/openai';
 import { assertTransition, isFinalExchange } from '@/lib/state-machine';
 import {
   getUserByPhone,
@@ -1497,6 +1497,32 @@ async function handleFinalExchange(
 
     // Extract v7 weighted scoring fields (present when v7 path ran)
     const v7Result = result as typeof result & { weightClass?: string; rawTotal?: number; weightedTotal?: number };
+// v7.3: Guarantee weighted scoring on EVERY grade, path-independent.
+    // Live data 2026-07-05: 37 of 42 grades had NULL weighted_total because
+    // (a) scenario text-match missed, or (b) v7 model calls failed and the
+    // v6 fallback discarded weighting even when weightClass was known.
+    // Unmatched scenarios default to 'hybrid', where weighted_total ===
+    // raw_total by construction, so nothing regresses.
+    const effectiveWeightClass = ((v7Result.weightClass ?? weightClass) || 'hybrid') as WeightClass;
+    let storedRawTotal = v7Result.rawTotal;
+    let storedWeightedTotal = v7Result.weightedTotal;
+    if (storedWeightedTotal == null && result.model !== 'template-fallback') {
+      storedRawTotal =
+        result.product_accuracy +
+        result.tone_rapport +
+        result.addressed_concern +
+        result.close_attempt;
+      storedWeightedTotal = computeWeightedTotal(
+        {
+          product_accuracy: result.product_accuracy,
+          tone_rapport: result.tone_rapport,
+          addressed_concern: result.addressed_concern,
+          close_attempt: result.close_attempt,
+        },
+        effectiveWeightClass
+      );
+      result.feedback = replaceScoreInFeedback(result.feedback, storedWeightedTotal);
+    }
 
     await insertTrainingResult({
       userId: user.id,
@@ -1513,9 +1539,9 @@ async function handleFinalExchange(
       urgencyCreation: result.urgency_creation ?? null,
       competitivePositioning: result.competitive_positioning ?? null,
       trainingDomain: session.trainingDomain ?? undefined,
-      weightClass: v7Result.weightClass,
-      rawTotal: v7Result.rawTotal,
-      weightedTotal: v7Result.weightedTotal,
+      weightClass: result.model === 'template-fallback' ? undefined : effectiveWeightClass,
+      rawTotal: storedRawTotal,
+      weightedTotal: storedWeightedTotal,
     });
 
     // Phase 4D: Update priority vector if domain tracked
@@ -1549,7 +1575,7 @@ async function handleFinalExchange(
     log.info('grading.completed', {
       session_id: session.id,
       model: result.model,
-      weighted_total: v7Result.weightedTotal ?? null,
+      weighted_total: storedWeightedTotal ?? null,
     });
 
     // --- Phase 6C: Chain step recording ---
