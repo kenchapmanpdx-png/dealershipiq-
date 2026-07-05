@@ -38,6 +38,9 @@ export async function GET() {
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffIso = cutoff.toISOString();
 
+    // 2026-07-05 AUDIT #12: live columns are `response` (not `ai_response`)
+    // and there is no `topic` — old select threw, endpoint 500'd always.
+    // `topic` kept in the API shape as null so the dashboard page is untouched.
     const { data: gaps, error: gapsError } = await supabase
       .from('askiq_queries')
       .select(`
@@ -45,9 +48,8 @@ export async function GET() {
         user_id,
         users (full_name),
         query_text,
-        ai_response,
+        response,
         confidence,
-        topic,
         created_at
       `)
       .eq('dealership_id', dealershipId)
@@ -67,9 +69,9 @@ export async function GET() {
       user_id: g.user_id as string,
       user_name: ((g.users as Record<string, unknown>)?.full_name ?? 'Unknown') as string,
       query_text: g.query_text as string,
-      ai_response: g.ai_response as string,
+      ai_response: g.response as string,
       confidence: Math.round((g.confidence as number) * 100),
-      topic: g.topic as string | null,
+      topic: null,
       created_at: g.created_at as string,
     }));
 

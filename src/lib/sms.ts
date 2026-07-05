@@ -184,6 +184,7 @@ export async function sendSms(
   options?: SendSmsOptions
 ): Promise<SmsSendResult> {
   // M-3: proactive sends must pass through the quiet-hours gate.
+  // (see isBlockedSendResult below for the sentinel-result contract)
   if (options?.proactive === true) {
     const { isWithinSendWindow } = await import('@/lib/quiet-hours');
     const tz = options.timezone ?? await resolveDealershipTimezone(phone);
@@ -224,6 +225,9 @@ export async function sendSms(
     console.warn(`Blocked SMS to opted-out number: ***${phone.slice(-4)}`);
     return { id: 'blocked-opt-out', message_id: 'blocked-opt-out', to: [phone], from: fromNumber };
   }
+
+  // (2026-07-05 AUDIT #9: callers that create sessions must detect the
+  // sentinel results above via isBlockedSendResult — see export below.)
 
   // Sanitize for GSM-7 before sending
   let sanitized = sanitizeGsm7(text);
@@ -274,6 +278,15 @@ export async function sendSms(
     batch_id: data.id ?? null,
   });
   return { ...data, message_id: data.id };
+}
+
+// 2026-07-05 AUDIT #9: sendSms returns SENTINEL results instead of throwing
+// when the kill switch is off ('disabled') or the recipient opted out
+// ('blocked-opt-out'). Historically callers treated these as delivered and
+// activated sessions the rep never received — the session then silently ate
+// replies until the 2h orphan sweep. Session-creating callers must check this.
+export function isBlockedSendResult(result: { message_id: string }): boolean {
+  return result.message_id === 'disabled' || result.message_id === 'blocked-opt-out';
 }
 
 // --- GSM-7 validation ---

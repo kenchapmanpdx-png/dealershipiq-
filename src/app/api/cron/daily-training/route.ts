@@ -9,7 +9,7 @@ import { verifyCronSecret } from '@/lib/cron-auth';
 import { createBudget } from '@/lib/cron-budget';
 import { log } from '@/lib/logger';
 import { isWithinSendWindow, isWeekday } from '@/lib/quiet-hours';
-import { sendSms } from '@/lib/sms';
+import { sendSms, isBlockedSendResult } from '@/lib/sms';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { selectContent } from '@/lib/training/content-priority';
 import { markScenarioPushed } from '@/lib/manager-create/generate';
@@ -333,13 +333,19 @@ export async function GET(request: NextRequest) {
         // Build final SMS
         const greeting = firstName ? `Hey ${firstName}, ` : '';
         const fullQuestion = `${streakPrefix}${greeting}${question}`;
+        // 2026-07-05 AUDIT #13: store the UNPREFIXED question on the session.
+        // The streak prefix broke scenario-bank matching at grading time
+        // (getScenarioBankEntry strips only "Hey X, ", which the prefix
+        // precedes) — silently downgrading to v6/hybrid on exactly the days a
+        // rep hit a streak milestone. The SMS still carries the prefix.
+        const sessionQuestion = `${greeting}${question}`;
 
         // Create session
         const session = await createConversationSession({
           userId: user.id,
           dealershipId: dealership.id,
           mode,
-          questionText: fullQuestion,
+          questionText: sessionQuestion,
           personaMood,
           trainingDomain,
           challengeId,
@@ -380,6 +386,12 @@ export async function GET(request: NextRequest) {
 
         // Send SMS
         const sinchResponse = await sendSms(user.phone, fullQuestion);
+        // 2026-07-05 AUDIT #9: sentinel = nothing was delivered. Throw BEFORE
+        // smsSent=true so the H3 compensating abandon fires instead of
+        // activating a session the rep never received.
+        if (isBlockedSendResult(sinchResponse)) {
+          throw new Error('SMS blocked (kill switch or opt-out) — session not activated');
+        }
         smsSent = true;
 
         // Upgrade placeholder to real message id (best-effort)

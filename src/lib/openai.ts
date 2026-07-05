@@ -105,6 +105,7 @@ const SMS_MAX = {
 // Replace non-GSM-7 characters that would force UCS-2 encoding (triples SMS cost)
 function sanitizeGsm7(text: string): string {
   return text
+    .replace(/[\t\n\r]+/g, ' ')   // N3 2026-07-05: whitespace -> space (bare strip fused words)
     .replace(/\u2014/g, ' -- ')   // em-dash -> double hyphen
     .replace(/\u2013/g, ' - ')    // en-dash -> single hyphen
     .replace(/[\u2018\u2019]/g, "'")  // curly single quotes

@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { requireJsonContentType } from '@/lib/api-helpers';
-import { sendSms } from '@/lib/sms';
+import { sendSms, isBlockedSendResult } from '@/lib/sms';
 import {
   createConversationSession,
   updateSessionStatus,
@@ -178,6 +178,11 @@ export async function POST(request: NextRequest) {
 
         // Send SMS
         const smsResponse = await sendSms(targetUser.phone, questionText);
+        // 2026-07-05 AUDIT #9: sentinel = nothing was delivered. Throw BEFORE
+        // smsSent=true so the H3 compensating abandon fires.
+        if (isBlockedSendResult(smsResponse)) {
+          throw new Error('SMS blocked (kill switch or opt-out) — session not activated');
+        }
         smsSent = true;
 
         // Transition: pending → active

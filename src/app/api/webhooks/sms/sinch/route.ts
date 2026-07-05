@@ -38,7 +38,7 @@ import { log } from '@/lib/logger';
 import { waitUntil } from '@vercel/functions';
 import { verifySinchWebhookSignature, verifySinchRestWebhookSecret } from '@/lib/sinch-auth';
 import { getAppUrl } from '@/lib/url';
-import { sendSms, detectKeyword, helpResponse, isValidE164 } from '@/lib/sms';
+import { sendSms, detectKeyword, helpResponse, isValidE164, isBlockedSendResult } from '@/lib/sms';
 import { gradeResponse, generateFollowUp, ERROR_SMS, computeWeightedTotal, replaceScoreInFeedback, type WeightClass } from '@/lib/openai';
 import { assertTransition, isFinalExchange } from '@/lib/state-machine';
 import {
@@ -535,10 +535,16 @@ async function handleInboundMessage(payload: SinchInboundMessage) {
   const { tryLockUser, unlockUser } = await import('@/lib/service-db');
   let locked = await tryLockUser(phone);
   if (!locked) {
-    // 2026-07-03: one retry after 2s -- the previous message's processing
-    // may legitimately hold the lease for a few more seconds.
-    await new Promise((r) => setTimeout(r, 2000));
-    locked = await tryLockUser(phone);
+    // 2026-07-05 AUDIT #5: was one 2s retry — but grading legitimately holds
+    // the lease for 5-30s+, so a rep who split their answer across two texts
+    // permanently lost the second half (Sinch already got our 200, no retry).
+    // We're inside waitUntil, not blocking the Sinch response: retry every 3s
+    // for up to 60s, which covers normal grading latency. Still bounded so a
+    // stuck lease can't pin the lambda.
+    for (let attempt = 0; attempt < 20 && !locked; attempt++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      locked = await tryLockUser(phone);
+    }
   }
   if (!locked) {
     // 2026-07-03: was a bare `return` -- a refused lock silently swallowed
@@ -953,6 +959,11 @@ async function handleNowKeyword(
         const fullMsg = `${greeting}${pending.scenarioText}`;
 
         const smsRes = await sendSms(rep.phone, fullMsg);
+        // 2026-07-05 AUDIT #9: sentinel = nothing delivered; throw before
+        // smsSent=true so the H3 compensating abandon fires.
+        if (isBlockedSendResult(smsRes)) {
+          throw new Error('SMS blocked (kill switch or opt-out) — session not activated');
+        }
         smsSent = true;
         await updateSessionStatus(session.id, user.dealershipId, 'active');
         await insertTranscriptLog({
@@ -1390,6 +1401,13 @@ async function handleGoKeyword(
     await updateSessionStatus(session.id, user.dealershipId, 'active');
 
     const sinchResponse = await sendSms(phone, fullQuestion);
+    // 2026-07-05 AUDIT #9: sentinel = nothing delivered. Abandon instead of
+    // leaving an active session that silently eats the rep's next texts.
+    if (isBlockedSendResult(sinchResponse)) {
+      log.warn('go.send_blocked', { session_id: session.id, phone_last4: phone.slice(-4) });
+      await updateSessionStatus(session.id, user.dealershipId, 'abandoned');
+      return;
+    }
     await insertTranscriptLog({
       userId: user.id,
       dealershipId: user.dealershipId,
@@ -1536,6 +1554,9 @@ async function handleFinalExchange(
       feedback: result.feedback,
       model: result.model,
       promptVersionId: undefined,
+      // 2026-07-05 AUDIT D2: grader rationale was produced but never stored
+      // (0/42 rows had reasoning). Unblocks appeals/audit/manager trust.
+      reasoning: result.reasoning,
       urgencyCreation: result.urgency_creation ?? null,
       competitivePositioning: result.competitive_positioning ?? null,
       trainingDomain: session.trainingDomain ?? undefined,
@@ -1808,12 +1829,16 @@ async function handlePendingConsent(
 
   if (['yes', 'start', 'y', 'unstop'].includes(trimmed)) {
     await updateUserStatus(user.id, 'active');
+    // 2026-07-05 AUDIT #1: aligned to live consent_records schema (phone +
+    // method are NOT NULL). Old call wrote nonexistent columns and threw,
+    // which also killed the welcome SMS below.
     await insertConsentRecord({
       userId: user.id,
       dealershipId: user.dealershipId,
+      phone,
       consentType: 'opt_in',
-      channel: 'sms',
-      consentSource: 'keyword_consent',
+      method: 'keyword_consent',
+      replyText: text.trim().slice(0, 160),
     });
 
     // V4-C-001: Truncate dealership name to keep <=160 chars. Template = ~130 chars without name.
@@ -2001,12 +2026,13 @@ async function handleResubscribe(
 ) {
   const { removeOptOut, insertConsentRecord } = await import('@/lib/service-db');
   await removeOptOut(phone, user.dealershipId);
+  // 2026-07-05 AUDIT #1: aligned to live consent_records schema.
   await insertConsentRecord({
     userId: user.id,
     dealershipId: user.dealershipId,
+    phone,
     consentType: 'opt_in',
-    channel: 'sms',
-    consentSource: 'keyword_start',
+    method: 'keyword_start',
   });
 
   // V4-C-002: Truncate dealership name to keep <=160 chars.

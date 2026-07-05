@@ -271,6 +271,7 @@ export async function insertTrainingResult(result: {
   feedback: string;
   model: string;
   promptVersionId?: string;
+  reasoning?: string;
   urgencyCreation?: number | null;
   competitivePositioning?: number | null;
   trainingDomain?: string;
@@ -289,6 +290,10 @@ export async function insertTrainingResult(result: {
     close_attempt: result.closeAttempt,
     feedback: result.feedback,
     prompt_version_id: result.promptVersionId ?? null,
+    // 2026-07-05 AUDIT D2/F3a: persist grader rationale + model attribution.
+    // Columns added by migration training_results_dedup_and_unique_session.
+    reasoning: result.reasoning ?? null,
+    model_used: result.model,
   };
 
   // Phase 4A: behavioral scoring (only set if provided)
@@ -315,9 +320,13 @@ export async function insertTrainingResult(result: {
     insertData.weighted_total = result.weightedTotal;
   }
 
+  // 2026-07-05 AUDIT #8: upsert-ignore on session_id (UNIQUE index
+  // uniq_training_results_session). Grading-recovery can legitimately re-run
+  // handleFinalExchange after a post-insert failure (feedback SMS timeout);
+  // without this the re-grade inserted a SECOND result row for the session.
   const { error } = await serviceClient
     .from('training_results')
-    .insert(insertData);
+    .upsert(insertData, { onConflict: 'session_id', ignoreDuplicates: true });
 
   if (error) throw error;
 }
@@ -377,21 +386,28 @@ export async function removeOptOut(phone: string, dealershipId: string) {
 
 // ─── Consent records ─────────────────────────────────────────────────
 
+// 2026-07-05 AUDIT #1: table is phone-centric (phone + method are NOT NULL);
+// the old insert wrote nonexistent channel/consent_source columns and threw on
+// every call — NO consent record was ever written for YES/START opt-ins (TCPA
+// exposure) and the welcome SMS never sent. Callers must pass phone; `method`
+// records how consent was obtained (e.g. 'keyword_consent', 'keyword_start').
 export async function insertConsentRecord(entry: {
   userId: string;
   dealershipId: string;
+  phone: string;
   consentType: string;
-  channel: string;
-  consentSource: string;
+  method: string;
+  replyText?: string;
 }) {
   const { error } = await serviceClient
     .from('consent_records')
     .insert({
       user_id: entry.userId,
       dealership_id: entry.dealershipId,
+      phone: entry.phone,
       consent_type: entry.consentType,
-      channel: entry.channel,
-      consent_source: entry.consentSource,
+      method: entry.method,
+      reply_text: entry.replyText ?? null,
     });
 
   if (error) throw error;
@@ -560,6 +576,10 @@ export async function getOrphanedSessions(hoursThreshold: number = 2) {
 
 // ─── Delivery log ────────────────────────────────────────────────────
 
+// 2026-07-05 AUDIT #6: column is `recipient_phone` (not `phone`) — the old
+// name threw on every call, so ZERO delivery-log rows were ever written and
+// push/daily sends were miscounted as failures. user_id/session_id columns
+// added by migration sms_delivery_log_add_user_session.
 export async function insertDeliveryLog(entry: {
   dealershipId: string;
   userId: string;
@@ -573,7 +593,7 @@ export async function insertDeliveryLog(entry: {
     .insert({
       dealership_id: entry.dealershipId,
       user_id: entry.userId,
-      phone: entry.phone,
+      recipient_phone: entry.phone,
       sinch_message_id: entry.sinchMessageId,
       status: entry.status,
       session_id: entry.sessionId ?? null,

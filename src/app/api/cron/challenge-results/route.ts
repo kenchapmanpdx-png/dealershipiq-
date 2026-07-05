@@ -77,8 +77,6 @@ export async function GET(request: NextRequest) {
         }).format(now)
       );
 
-      if (localHour !== 17) continue;
-
       // en-CA locale formats as YYYY-MM-DD — comparable to challenge_date.
       const localDate = new Intl.DateTimeFormat('en-CA', {
         timeZone: tz,
@@ -87,7 +85,16 @@ export async function GET(request: NextRequest) {
         day: '2-digit',
       }).format(now);
 
-      if ((challenge.challenge_date as string) !== localDate) continue;
+      // 2026-07-05 AUDIT #10: was `localHour !== 17 || challenge_date !==
+      // localDate` — if the 17:00 hourly run was skipped/late/budget-stopped,
+      // the next 17:00 was a new local date, so the challenge stayed 'active'
+      // FOREVER with no results sent. New rule: skip only when the challenge
+      // is for today AND it isn't 5pm yet. Same-day sends still happen at 17:00;
+      // overdue challenges (challenge_date < today) send on the next run at
+      // any hour instead of stranding.
+      const challengeDate = challenge.challenge_date as string;
+      if (challengeDate > localDate) continue; // future challenge
+      if (challengeDate === localDate && localHour < 17) continue; // today, before 5pm
     } catch (err) {
       console.warn(
         `Failed to determine local hour for dealership ${dealershipId}:`,

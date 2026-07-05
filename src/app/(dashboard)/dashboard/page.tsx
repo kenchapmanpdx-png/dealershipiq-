@@ -59,10 +59,16 @@ export default function DashboardPage() {
           rep.last_training_at &&
           isToday(new Date(rep.last_training_at as string))
       ).length;
+      // 2026-07-05 AUDIT #7: average_score is on a 0-5 scale, so percent is
+      // x20 (was x100 -> "180.0%"). Reps with zero sessions are excluded
+      // instead of diluting the mean with 0s.
+      const scoredReps = team.filter(
+        (rep: Record<string, unknown>) => (rep.total_sessions as number) > 0
+      );
       const avgScore =
-        team.length > 0
-          ? (team.reduce((sum: number, rep: Record<string, unknown>) => sum + (rep.average_score as number), 0) /
-              team.length) * 100
+        scoredReps.length > 0
+          ? (scoredReps.reduce((sum: number, rep: Record<string, unknown>) => sum + (rep.average_score as number), 0) /
+              scoredReps.length) * 20
           : 0;
 
       // Fetch recent sessions for activity feed

@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { serviceClient } from '@/lib/supabase/service';
-import { sendSms } from '@/lib/sms';
+import { sendSms, isBlockedSendResult } from '@/lib/sms';
 import { getDealershipName, insertTranscriptLog } from '@/lib/service-db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { apiError, apiSuccess, requireJsonContentType } from '@/lib/api-helpers';
@@ -148,15 +148,25 @@ export async function POST(request: NextRequest) {
       const dealershipName = await getDealershipName(dealershipId);
       const consentMsg = `${dealershipName} uses DealershipIQ for training. You'll receive daily practice questions via text. Reply YES to opt in, or STOP to decline.`;
       const smsResponse = await sendSms(normalizedPhone, consentMsg);
-      await insertTranscriptLog({
-        userId: newUser.id,
-        dealershipId,
-        phone: normalizedPhone,
-        direction: 'outbound',
-        messageBody: consentMsg,
-        sinchMessageId: smsResponse.message_id,
-        metadata: { type: 'consent_request' },
-      });
+      // 2026-07-05 AUDIT #9: sentinel = consent request never delivered — the
+      // user would sit in pending_consent forever looking like "invite sent".
+      // Log loudly and skip the transcript row (nothing actually went out).
+      if (isBlockedSendResult(smsResponse)) {
+        log.warn('users.create.consent_sms_blocked', {
+          user_id: newUser.id,
+          reason: smsResponse.message_id,
+        });
+      } else {
+        await insertTranscriptLog({
+          userId: newUser.id,
+          dealershipId,
+          phone: normalizedPhone,
+          direction: 'outbound',
+          messageBody: consentMsg,
+          sinchMessageId: smsResponse.message_id,
+          metadata: { type: 'consent_request' },
+        });
+      }
     } catch (smsErr) {
       log.warn('users.create.consent_sms_failed', {
         user_id: newUser.id,

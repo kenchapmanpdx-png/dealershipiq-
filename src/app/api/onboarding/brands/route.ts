@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { serviceClient } from '@/lib/supabase/service';
 import { requireJsonContentType } from '@/lib/api-helpers';
 
 export async function POST(request: NextRequest) {
@@ -47,16 +48,45 @@ export async function POST(request: NextRequest) {
   }
 
   // M-017: Single source of truth — dealership_brands table only (no settings fallback)
+  // 2026-07-05 AUDIT #3: dealership_brands has make_id (NOT NULL, FK→makes),
+  // not brand_name — the old upsert threw on every call, so onboarding brand
+  // save always failed AND brand grounding (getDealershipBrandNames) had no
+  // data. Resolve names→makes (create missing makes via service client:
+  // makes has no manager INSERT policy), then upsert on (dealership_id, make_id).
   try {
-    const brandRows = brands.map((brand: string) => ({
+    const names = Array.from(new Set(brands.map((b: string) => b.trim()).filter(Boolean)));
+
+    // Resolve existing makes case-insensitively
+    const { data: existingMakes, error: makesErr } = await serviceClient
+      .from('makes')
+      .select('id, name');
+    if (makesErr) throw makesErr;
+    const makeIdByLower = new Map(
+      (existingMakes ?? []).map((m) => [(m.name as string).toLowerCase(), m.id as string])
+    );
+
+    // Create any missing makes (name is UNIQUE)
+    const missing = names.filter((n) => !makeIdByLower.has(n.toLowerCase()));
+    if (missing.length > 0) {
+      const { data: created, error: createErr } = await serviceClient
+        .from('makes')
+        .upsert(missing.map((name) => ({ name })), { onConflict: 'name' })
+        .select('id, name');
+      if (createErr) throw createErr;
+      for (const m of created ?? []) {
+        makeIdByLower.set((m.name as string).toLowerCase(), m.id as string);
+      }
+    }
+
+    const brandRows = names.map((name) => ({
       dealership_id: dealershipId,
-      brand_name: brand,
+      make_id: makeIdByLower.get(name.toLowerCase())!,
     }));
 
     // C-003: RLS-backed — dealership_brands FOR ALL policy
     const { error } = await supabase
       .from('dealership_brands')
-      .upsert(brandRows, { onConflict: 'dealership_id,brand_name' });
+      .upsert(brandRows, { onConflict: 'dealership_id,make_id' });
 
     if (error) {
       console.error('Brands upsert failed:', error.message);

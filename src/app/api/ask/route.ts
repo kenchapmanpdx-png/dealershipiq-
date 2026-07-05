@@ -108,15 +108,17 @@ export async function POST(request: NextRequest) {
     const confidence = 1.0; // Stub — high confidence prevents false knowledge gap entries
 
     // C-003: RLS-backed — askiq_insert_authenticated policy enforces dealership_id from JWT.
+    // 2026-07-05 AUDIT #2: live column is `response` (not `ai_response`) and
+    // there is no `topic` column — the old insert threw on every call, so
+    // every Ask IQ question returned 500. Feature was fully dead.
     const { data: queryRecord, error: insertError } = await supabase
       .from('askiq_queries')
       .insert({
         user_id: user.id,
         dealership_id: dealershipId,
         query_text: questionText,
-        ai_response: aiResponse,
+        response: aiResponse,
         confidence,
-        topic: null, // TODO: Extract topic from question
       })
       .select('id')
       .single();
