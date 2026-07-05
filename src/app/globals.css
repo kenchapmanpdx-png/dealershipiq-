@@ -290,21 +290,28 @@ body {
   }
 }
 
-/* Mobile: static gradient edge — visible without hover, zero animation. */
+/* Mobile: no hover exists, so the ring fires AUTOMATICALLY as each card
+   scrolls into view (InView adds .ring-fire per card at 50% visibility).
+   Two full orbits, then it parks as a faint edge lit from the top-right —
+   the same corner as the ambient glow, so both effects read as one light.
+   Cards reveal one at a time while scrolling, so at most one ring animates
+   at any moment — no scroll-perf regression. */
 @media (max-width: 767px) {
-  .card-border-shine::after {
-    opacity: 0.55;
-    background: linear-gradient(
-      135deg,
-      rgba(99, 91, 255, 0.55) 0%,
-      rgba(236, 72, 153, 0.35) 40%,
-      transparent 75%
-    );
+  .ring-fire .card-border-shine::after {
+    animation: border-spin-reveal 2.4s var(--ease-out-cubic) 150ms forwards;
   }
+}
+
+@keyframes border-spin-reveal {
+  0%   { opacity: 0; --shine-angle: 275deg; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0.45; --shine-angle: 995deg; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .card-border-shine:hover::after { animation: none; }
+  .ring-fire .card-border-shine::after { animation: none; opacity: 0.4; }
 }
 
 /* ── Section divider — gradient fade line ── */

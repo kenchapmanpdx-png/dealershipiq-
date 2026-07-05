@@ -407,8 +407,11 @@ export default function LandingPage() {
 
           <StaggerReveal className="dim-siblings grid grid-cols-1 md:grid-cols-3 gap-4" staggerMs={80}>
             {features.map((f) => (
+              /* 2026-07-04: per-card in-view trigger — on mobile the border
+                 ring fires automatically as each card scrolls in (no hover
+                 on touch); desktop keeps hover-spin. */
+              <InView key={f.title} threshold={0.5} activeClassName="ring-fire">
               <div
-                key={f.title}
                 className={`glass card-hover card-glow card-border-shine rounded-2xl p-5 sm:p-8 group ${f.span}`}
               >
                 <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] mb-5 group-hover:bg-[var(--accent)]/15 transition-colors duration-300">
@@ -421,6 +424,7 @@ export default function LandingPage() {
                   {f.description}
                 </p>
               </div>
+              </InView>
             ))}
           </StaggerReveal>
         </div>
