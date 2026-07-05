@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { serviceClient } from '@/lib/supabase/service';
 import { isFeatureEnabled } from '@/lib/service-db';
 import { checkSubscriptionAccess } from '@/lib/billing/subscription';
 import { checkAskLimit } from '@/lib/rate-limit';
@@ -48,6 +49,19 @@ export async function POST(request: NextRequest) {
     if (!dealershipId) {
       return NextResponse.json({ error: 'No dealership' }, { status: 403 });
     }
+
+    // 2026-07-05 verification pass: askiq_queries.user_id FK references
+    // public.users(id), but `user.id` here is the AUTH user id — the insert
+    // violated the FK on every call. Resolve the app-level user row first.
+    const { data: publicUser } = await serviceClient
+      .from('users')
+      .select('id')
+      .eq('auth_id', user.id)
+      .maybeSingle();
+    if (!publicUser) {
+      return NextResponse.json({ error: 'User record not found' }, { status: 403 });
+    }
+    const publicUserId = publicUser.id as string;
 
     // 2026-04-29 H6: Phase 5 subscription gate. Previously /api/ask only
     // checked `ask_iq_enabled` — an unpaid dealership with the flag on
@@ -114,7 +128,7 @@ export async function POST(request: NextRequest) {
     const { data: queryRecord, error: insertError } = await supabase
       .from('askiq_queries')
       .insert({
-        user_id: user.id,
+        user_id: publicUserId,
         dealership_id: dealershipId,
         query_text: questionText,
         response: aiResponse,
