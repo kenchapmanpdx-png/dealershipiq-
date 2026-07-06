@@ -50,11 +50,13 @@ import {
   checkOptOut,
   insertTrainingResult,
   getSessionTranscript,
+  getTrainingResultBySession,
   insertConsentRecord,
   updateUserStatus,
   isFeatureEnabled,
   createConversationSession,
   getScenarioBankEntry,
+  getScenarioBankById,
   getDealershipBrandNames,
 } from '@/lib/service-db';
 import { serviceClient } from '@/lib/supabase/service';
@@ -1463,12 +1465,38 @@ async function handleFinalExchange(
     challengeId?: string | null;
     scenarioChainId?: string | null;
     chainStep?: number | null;
+    scenarioId?: string | null;
   },
-  user: { id: string; dealershipId: string },
+  user: { id: string; dealershipId: string; language?: string },
   phone: string,
   text: string,
   mode: 'roleplay' | 'quiz' | 'objection'
 ) {
+  // 2026-07-05 AUDIT #8: idempotent re-grade. If this session was already graded
+  // (grading-recovery reset a stuck session to 'active' after a post-insert SMS
+  // failure, and the rep re-texted their answer), re-send the STORED feedback
+  // verbatim instead of re-grading. A fresh grade would produce a different LLM
+  // score than the row on the dashboard -- the rep would see a number that
+  // doesn't match their record. This also skips a needless OpenAI call.
+  const existingResult = await getTrainingResultBySession(session.id, user.dealershipId);
+  if (existingResult) {
+    log.info('grading.idempotent_resend', {
+      session_id: session.id,
+      weighted_total: existingResult.weightedTotal,
+    });
+    await sendSms(phone, existingResult.feedback);
+    await insertTranscriptLog({
+      userId: user.id,
+      dealershipId: user.dealershipId,
+      phone,
+      direction: 'outbound',
+      messageBody: existingResult.feedback,
+      sessionId: session.id,
+    });
+    await updateSessionStatus(session.id, user.dealershipId, 'completed');
+    return;
+  }
+
   assertTransition(session.status as 'active', 'grading');
   await updateSessionStatus(session.id, user.dealershipId, 'grading');
 
@@ -1493,7 +1521,12 @@ async function handleFinalExchange(
     const v7Enabled = await isFeatureEnabled(user.dealershipId, 'grader_v7_enabled');
     if (v7Enabled) {
       try {
-        const scenarioData = await getScenarioBankEntry(session.questionText);
+        // 2026-07-05 AUDIT: prefer durable scenario_id (captured at send time)
+        // over customer_line text matching; falls back to text match for legacy
+        // sessions and AI-generated questions that carry no bank id.
+        const scenarioData = session.scenarioId
+          ? (await getScenarioBankById(session.scenarioId)) ?? (await getScenarioBankEntry(session.questionText))
+          : await getScenarioBankEntry(session.questionText);
         if (scenarioData) {
           techniqueTag = scenarioData.techniqueTag;
           eliteDialogue = scenarioData.eliteDialogue;
@@ -1528,6 +1561,8 @@ async function handleFinalExchange(
       // breaker bookkeeping never engaged for grading
       dealershipId: user.dealershipId,
       dealershipBrands,
+      // 2026-07-07 ES: plumbing (English fallback until localized content ships)
+      language: user.language,
     });
 
     const averageScore = (
@@ -1587,6 +1622,8 @@ async function handleFinalExchange(
       weightClass: result.model === 'template-fallback' ? undefined : effectiveWeightClass,
       rawTotal: storedRawTotal,
       weightedTotal: storedWeightedTotal,
+      // 2026-07-05 AUDIT: persist grading degradation tier (0 best … 4 placebo).
+      fallbackLevel: (result as { fallbackLevel?: number }).fallbackLevel,
     });
 
     // Phase 4D: Update priority vector if domain tracked
@@ -1770,7 +1807,7 @@ async function handleFinalExchange(
 // --- Mid-exchange: generate AI follow-up, advance step, keep active ---
 async function handleMidExchange(
   session: { id: string; status: string; questionText: string; mode: string; personaMood?: string | null },
-  user: { id: string; dealershipId: string },
+  user: { id: string; dealershipId: string; language?: string },
   phone: string,
   text: string,
   mode: 'roleplay' | 'quiz' | 'objection',
@@ -1796,6 +1833,8 @@ async function handleMidExchange(
       // 2026-07-03: was missing -- per-dealership rate limit never engaged
       dealershipId: user.dealershipId,
       dealershipBrands,
+      // 2026-07-07 ES: plumbing (English fallback until localized content ships)
+      language: user.language,
     });
 
     // For objection mode: send coaching first, then customer follow-up

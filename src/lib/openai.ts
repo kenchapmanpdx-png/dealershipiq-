@@ -295,6 +295,8 @@ EVALUATION RULES:
 6. Grade for intent-over-spelling. SMS is noisy -- prioritize phonetic similarity and contextual meaning over typos, abbreviations, or slang.
 7. Respond ONLY with the JSON schema defined in Structured Outputs.
 8. All generated text must use only basic ASCII characters. Do NOT use em-dashes, curly quotes, or special Unicode characters. Use " -- " for dashes. Straight quotes only.
+9. close_attempt credit (F4): proposing a SPECIFIC, concrete next step is a genuine advance even without asking for a purchase commitment or citing a number -- e.g. "let's pencil out both options right now", "let me pull that spec and show you", "come meet our service manager." Give close_attempt 4 or higher when the rep proposes a concrete, relevant next action tied to the customer's concern. Reserve 1-2 for a vague ask ("what do you think?") or no next step at all. Do NOT score a concrete next-step proposal as a dodge.
+10. Arc-awareness (multi-turn only): when the customer revealed useful information earlier in the conversation (budget, timeline, who decides, what they currently drive), reward the rep for USING it in a later turn. If they gathered it and then ignored it, name that specific lapse in that exchange's callout. This shapes the feedback text; it is not a separate score.
 
 OUTPUT FIELD INSTRUCTIONS:
 - rationale: Your internal analysis. What the employee did well, what they missed, which technique elements were present or absent. 2-4 sentences.
@@ -543,6 +545,8 @@ CLOSE ATTEMPT (1-5):
 3 = Asked for a next step but didn't earn it. Jumped to close before building enough value.
 4 = Natural, earned close tied to what the customer said they wanted. "Since the payment works, should we get the paperwork started?"
 5 = Created urgency with substance (not manufactured pressure) AND asked for a specific commitment. "That incentive ends Saturday. If I can hold this rate, can you come in Thursday evening?"
+
+NOTE (F4): a concrete next-step PROPOSAL -- "let's pencil out both options right now", "let me pull that and show you", "come meet our service manager" -- counts as a genuine close attempt (4+), not a dodge, even without a purchase ask or a number. Only vague or absent next steps score 1-2.
 
 ===== STEP 4: OBJECTION HANDLING FRAMEWORK -- AGREE, ISOLATE, ADVANCE =====
 For objection scenarios, evaluate whether the rep followed this sequence:
@@ -862,6 +866,9 @@ interface GradeOptions {
   // 2026-07-03: brand names the dealership sells (e.g. ["Honda"]). Grounds
   // feedback word tracks in house vehicles -- never coach a competitor pitch.
   dealershipBrands?: string[] | null;
+  // 2026-07-07 ES: BCP-47-ish language code ('en' | 'es'). Plumbing only for
+  // now (content deferred) -- see localeDirective.
+  language?: string;
 }
 
 export class AiGradingRateLimitedError extends Error {
@@ -882,6 +889,8 @@ interface FollowUpOptions {
   // 2026-07-03: brand names the dealership sells (e.g. ["Honda"]). The
   // customer persona must shop for THESE brands; others only as competitors.
   dealershipBrands?: string[] | null;
+  // 2026-07-07 ES: language code ('en' | 'es'). Plumbing only for now.
+  language?: string;
 }
 
 // =============================================================================
@@ -999,7 +1008,7 @@ function withBrandContext(scenario: string, brands?: string[] | null): string {
 async function gradeResponseV7(
   apiKey: string,
   opts: GradeOptions
-): Promise<(GradingResult & { model: string; promptVersionId?: string; assembledSms?: string; weightClass?: string; rawTotal?: number; weightedTotal?: number }) | null> {
+): Promise<(GradingResult & { model: string; promptVersionId?: string; assembledSms?: string; weightClass?: string; rawTotal?: number; weightedTotal?: number; fallbackLevel?: number }) | null> {
   const techniqueTag = opts.techniqueTag!;
   const eliteDialogue = opts.eliteDialogue!;
   const failSignals = opts.failSignals!;
@@ -1062,9 +1071,9 @@ async function gradeResponseV7(
         : buildV7TemplateA(scenarioForPrompt, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, weightClass, opts.scenarioDomain ?? null, isMini);
 
       // M3-FIX: For mini, remove rationale instruction line more robustly.
-      const systemPrompt = isMini
+      const systemPrompt = localeDirective(opts.language) + (isMini
         ? system.replace(/^[\t ]*- rationale:.*$/m, '')
-        : system;
+        : system);
 
       const result = await callOpenAIGrading(apiKey, model, systemPrompt, user, schemaProps, reqFields);
       if (!result) continue;
@@ -1103,7 +1112,9 @@ async function gradeResponseV7(
       const finalSms = truncateAtWord(decorated, 480);
 
       // Build result compatible with existing GradingResult type
-      const gradingResult: GradingResult & { model: string; promptVersionId?: string; assembledSms: string; weightClass: string; rawTotal: number; weightedTotal: number } = {
+      // fallback_level: 0 = v7 primary model, 1 = v7 fallback (mini) model.
+      // See getTemplateFallback for the full 0-4 tier scheme.
+      const gradingResult: GradingResult & { model: string; promptVersionId?: string; assembledSms: string; weightClass: string; rawTotal: number; weightedTotal: number; fallbackLevel: number } = {
         product_accuracy: scores.product_accuracy,
         tone_rapport: scores.tone_rapport,
         addressed_concern: scores.addressed_concern,
@@ -1116,6 +1127,7 @@ async function gradeResponseV7(
         weightClass,
         rawTotal,
         weightedTotal,
+        fallbackLevel: isMini ? 1 : 0,
       };
 
       return gradingResult;
@@ -1129,10 +1141,24 @@ async function gradeResponseV7(
 }
 
 // =============================================================================
+// ES LOCALIZATION (plumbing — content deferred 2026-07-07)
+// =============================================================================
+// `language` is threaded end-to-end (user -> session handler -> grader /
+// follow-up) so localized prompt content can be added at THIS ONE place later
+// without another cross-cutting refactor. Per the 2026-07-07 scope decision
+// ("wire plumbing, defer content"), 'es' currently falls back to English.
+// When ready: return a Spanish output directive for 'es', e.g.
+//   "Write ALL customer-facing output (feedback, Try lines) in Spanish."
+export function localeDirective(language?: string): string {
+  void language; // intentionally unused until localized content ships
+  return '';
+}
+
+// =============================================================================
 // MAIN GRADING FUNCTION
 // =============================================================================
 
-export async function gradeResponse(opts: GradeOptions): Promise<GradingResult & { model: string; promptVersionId?: string; assembledSms?: string }> {
+export async function gradeResponse(opts: GradeOptions): Promise<GradingResult & { model: string; promptVersionId?: string; assembledSms?: string; fallbackLevel?: number }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY must be set');
 
@@ -1171,9 +1197,9 @@ export async function gradeResponse(opts: GradeOptions): Promise<GradingResult &
 
   const includeBehavioral = opts.scoreBehavioralUrgency || opts.scoreBehavioralCompetitive;
 
-  const systemPrompt = includeBehavioral
+  const systemPrompt = localeDirective(opts.language) + (includeBehavioral
     ? GRADING_SYSTEM_PROMPT + BEHAVIORAL_SCORING_ADDENDUM
-    : GRADING_SYSTEM_PROMPT;
+    : GRADING_SYSTEM_PROMPT);
 
   const moodContext = opts.personaMood ? `\nCustomer persona mood: ${opts.personaMood}` : '';
 
@@ -1232,7 +1258,9 @@ Grade the salesperson's overall performance across all exchanges.`;
         // v6: feedback now carries the complete SMS (same as v7). Sanitize + truncate.
         gradingResult.feedback = truncateAtWord(sanitizeGsm7(gradingResult.feedback), 480);
 
-        return { ...gradingResult, model, promptVersionId: opts.promptVersionId };
+        // fallback_level: 2 = v6 primary model, 3 = v6 fallback model
+        // (v6 = generic grading; reached when no scenario bank match or v7 failed).
+        return { ...gradingResult, model, promptVersionId: opts.promptVersionId, fallbackLevel: attemptIndex === 0 ? 2 : 3 };
       }
     } catch (error) {
       console.error(`Grading attempt failed (${model}):`, (error as Error).message ?? error);
@@ -1304,9 +1332,9 @@ export async function generateFollowUp(opts: FollowUpOptions): Promise<FollowUpR
 
   // stepIndex 0 = generating Q2 (answer-conditional: strong answer = pivot, weak answer = simpler angle on same topic)
   // stepIndex 1 = generating Q3 (new concern not yet discussed; strong run = advance toward close)
-  const systemPrompt = (opts.stepIndex ?? 0) === 0
+  const systemPrompt = localeDirective(opts.language) + ((opts.stepIndex ?? 0) === 0
     ? FOLLOW_UP_Q2_PROMPT
-    : FOLLOW_UP_Q3_PROMPT;
+    : FOLLOW_UP_Q3_PROMPT);
 
   const stepLabel = (opts.stepIndex ?? 0) === 0
     ? 'Generate the customer\'s Q2 follow-up. First judge the employee\'s answer: if STRONG, acknowledge briefly and pivot to a new concern; if WEAK, stay on topic with a simpler angle.'
@@ -1442,7 +1470,13 @@ ${stepLabel}`;
 // TEMPLATE FALLBACK (all AI models down)
 // =============================================================================
 
-function getTemplateFallback(mode: string): GradingResult & { model: string; promptVersionId?: string } {
+// fallback_level tier scheme (stored on training_results.fallback_level):
+//   0 = v7 primary model   (scenario-specific grading, best model)
+//   1 = v7 fallback model  (scenario-specific, weaker model)
+//   2 = v6 primary model   (generic grading — no scenario match or v7 failed)
+//   3 = v6 fallback model  (generic grading, weaker model)
+//   4 = template fallback  (no AI; placebo grade — alert-worthy)
+function getTemplateFallback(mode: string): GradingResult & { model: string; promptVersionId?: string; fallbackLevel: number } {
   return {
     product_accuracy: 3,
     tone_rapport: 3,
@@ -1451,8 +1485,11 @@ function getTemplateFallback(mode: string): GradingResult & { model: string; pro
     // 2026-07-05 AUDIT P3: was "6/10" in a /20-scale product — a fake score on
     // a placeholder grade. Score-free copy is honest about what happened.
     feedback: `Answer received! Grading hit a snag so no score this time -- keep at it and your next answer gets full feedback.`,
-    reasoning: `Template fallback used. Mode: ${mode}. TODO: Add is_fallback column to training_results to distinguish template grades.`,
+    // fallback_level=4 now durably marks these placebo grades in the DB
+    // (supersedes the old "add is_fallback column" TODO).
+    reasoning: `Template fallback used. Mode: ${mode}.`,
     model: 'template-fallback',
+    fallbackLevel: 4,
   };
 }
 

@@ -124,7 +124,7 @@ export async function getUserByPhone(phone: string) {
 export async function getActiveSession(userId: string, dealershipId: string) {
   const { data, error } = await serviceClient
     .from('conversation_sessions')
-    .select('id, status, question_text, mode, prompt_version_id, step_index, persona_mood, training_domain, challenge_id, scenario_chain_id, chain_step, created_at')
+    .select('id, status, question_text, mode, prompt_version_id, step_index, persona_mood, training_domain, challenge_id, scenario_chain_id, chain_step, scenario_id, created_at')
     .eq('dealership_id', dealershipId)
     .eq('user_id', userId)
     // 2026-07-05 AUDIT #16: 'error' included — ERROR_SMS tells the rep to text
@@ -150,6 +150,8 @@ export async function getActiveSession(userId: string, dealershipId: string) {
     challengeId: (data.challenge_id as string | null) ?? null,
     scenarioChainId: (data.scenario_chain_id as string | null) ?? null,
     chainStep: (data.chain_step as number | null) ?? null,
+    // 2026-07-05 AUDIT: durable scenario identity for grade-time lookup.
+    scenarioId: (data.scenario_id as string | null) ?? null,
   };
 }
 
@@ -281,6 +283,7 @@ export async function insertTrainingResult(result: {
   weightClass?: string;
   rawTotal?: number;
   weightedTotal?: number;
+  fallbackLevel?: number;
 }) {
   const insertData: Record<string, unknown> = {
     user_id: result.userId,
@@ -323,6 +326,13 @@ export async function insertTrainingResult(result: {
     insertData.weighted_total = result.weightedTotal;
   }
 
+  // 2026-07-05 AUDIT: fallback_level durably records which grading tier served
+  // this row (0 v7-primary … 4 template placebo). Column existed but 0/41 rows
+  // were written. Lets ops query degraded-grade rate without parsing model_used.
+  if (result.fallbackLevel != null) {
+    insertData.fallback_level = result.fallbackLevel;
+  }
+
   // 2026-07-05 AUDIT #8: upsert-ignore on session_id (UNIQUE index
   // uniq_training_results_session). Grading-recovery can legitimately re-run
   // handleFinalExchange after a post-insert failure (feedback SMS timeout);
@@ -332,6 +342,36 @@ export async function insertTrainingResult(result: {
     .upsert(insertData, { onConflict: 'session_id', ignoreDuplicates: true });
 
   if (error) throw error;
+}
+
+// 2026-07-05 AUDIT #8: idempotent re-grade guard.
+// A session can be graded more than once (grading-recovery resets a stuck
+// session to 'active'; the rep re-texts and grading re-runs). upsert-ignore
+// keeps the FIRST training_results row, but the re-grade previously produced a
+// FRESH LLM score and texted THAT to the rep -- so the SMS diverged from the
+// stored/dashboard row. This lets the handler detect an existing grade and
+// re-send the stored feedback verbatim instead of re-grading.
+export async function getTrainingResultBySession(
+  sessionId: string,
+  dealershipId: string
+): Promise<{ feedback: string; weightedTotal: number | null } | null> {
+  const { data, error } = await serviceClient
+    .from('training_results')
+    .select('feedback, weighted_total')
+    .eq('session_id', sessionId)
+    .eq('dealership_id', dealershipId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('getTrainingResultBySession error:', error.message);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    feedback: data.feedback as string,
+    weightedTotal: (data.weighted_total as number | null) ?? null,
+  };
 }
 
 // ─── Advisory lock ────────────────────────────────────────────────────
@@ -430,6 +470,7 @@ export async function createConversationSession(entry: {
   challengeId?: string;
   scenarioChainId?: string;
   chainStep?: number;
+  scenarioId?: string;
 }) {
   const insertData: Record<string, unknown> = {
     user_id: entry.userId,
@@ -462,6 +503,22 @@ export async function createConversationSession(entry: {
   }
   if (entry.chainStep != null) {
     insertData.chain_step = entry.chainStep;
+  }
+
+  // 2026-07-05 AUDIT: durable scenario identity. Capture scenario_id at send
+  // time (scenario active, text pristine) so grading looks up metadata by
+  // immutable id instead of reverse-matching customer_line at grade time
+  // (which failed for deactivated/edited scenarios). Best-effort -- a lookup
+  // failure must NEVER block sending the question.
+  if (entry.scenarioId) {
+    insertData.scenario_id = entry.scenarioId;
+  } else {
+    try {
+      const sid = await resolveScenarioIdByLine(entry.questionText);
+      if (sid) insertData.scenario_id = sid;
+    } catch (resolveErr) {
+      console.error('scenario_id resolve failed (non-fatal):', (resolveErr as Error).message ?? resolveErr);
+    }
   }
 
   const { data, error } = await serviceClient
@@ -1786,6 +1843,58 @@ export async function getScenarioBankEntry(customerLine: string): Promise<{
     };
   }
 
+  return {
+    scenarioId: data.scenario_id as string,
+    techniqueTag: data.technique_tag as string,
+    eliteDialogue: data.elite_dialogue as string,
+    failSignals: data.fail_signals as string,
+    mode: data.mode as string,
+    domain: data.domain as string,
+    weightClass: (data.weight_class as string) || 'hybrid',
+  };
+}
+
+// 2026-07-05 AUDIT: resolve a question's durable scenario_id at SEND time by
+// exact customer_line match. At send the text is pristine (equals the bank's
+// customer_line), so exact match is sufficient; fuzzy is reserved for grade
+// time. Returns null for AI-generated / non-bank questions (grading then falls
+// back to text matching, unchanged).
+export async function resolveScenarioIdByLine(customerLine: string): Promise<string | null> {
+  const stripped = customerLine.replace(/^Hey\s+\S+,\s*/i, '').trim();
+  const { data } = await serviceClient
+    .from('scenario_bank')
+    .select('scenario_id')
+    .eq('customer_line', stripped)
+    .limit(1)
+    .maybeSingle();
+  return (data?.scenario_id as string) ?? null;
+}
+
+// 2026-07-05 AUDIT: durable-identity lookup. Grading prefers this (by immutable
+// scenario_id captured at send time) over customer_line text matching, which
+// broke when scenarios were deactivated or their text edited after sending
+// (live 2026-07-05: 13 of 31 unmatched grades were deactivated scenarios).
+export async function getScenarioBankById(scenarioId: string): Promise<{
+  scenarioId: string;
+  techniqueTag: string;
+  eliteDialogue: string;
+  failSignals: string;
+  mode: string;
+  domain: string;
+  weightClass: string;
+} | null> {
+  const { data, error } = await serviceClient
+    .from('scenario_bank')
+    .select('scenario_id, technique_tag, elite_dialogue, fail_signals, mode, domain, weight_class')
+    .eq('scenario_id', scenarioId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('getScenarioBankById error:', error.message);
+    return null;
+  }
+  if (!data) return null;
   return {
     scenarioId: data.scenario_id as string,
     techniqueTag: data.technique_tag as string,
