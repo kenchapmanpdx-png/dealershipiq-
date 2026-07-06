@@ -119,6 +119,18 @@ function drivetrainAbbrev(driveType: string | null): string | null {
   return null;
 }
 
+// Powertrain marker from the engine label, used to disambiguate same-named trims
+// meaningfully (e.g. a gas "Limited" vs a hybrid "Limited") before falling back
+// to horsepower or an index.
+function powertrainMarker(engine: string | null): string | null {
+  if (!engine) return null;
+  const e = engine.toLowerCase();
+  if (e.includes('plug-in') || e.includes('phev')) return 'PHEV';
+  if (e.includes('electric')) return 'EV';
+  if (e.includes('hybrid')) return 'Hybrid';
+  return null;
+}
+
 // Leading body token from a CarAPI description, e.g. "4dr SUV AWD (...)" -> "4dr SUV"
 function bodyFromDescription(description: string | null): string | null {
   if (!description) return null;
@@ -170,11 +182,20 @@ function build(trims: CarApiTrim[], engines: CarApiEngine[]): Map<string, ModelB
   }
   for (const grp of Array.from(groups.values())) {
     if (grp.length === 1) continue;
+    // Primary: drivetrain + powertrain (Hybrid/PHEV/EV) + body.
     for (const c of grp) {
-      const suffix = [c.drivetrain, c.body].filter(Boolean).join(' ');
+      const marker = powertrainMarker(c.engine);
+      const hasMarker = marker !== null && c.baseName.toLowerCase().includes(marker.toLowerCase());
+      const suffix = [c.drivetrain, marker && !hasMarker ? marker : null, c.body].filter(Boolean).join(' ');
       if (suffix) c.name = `${c.baseName} ${suffix}`.trim();
     }
-    // If suffixes still collide, append an index for uniqueness.
+    // Secondary: if names still collide, append horsepower (a real spec difference).
+    const counts = new Map<string, number>();
+    for (const c of grp) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
+    for (const c of grp) {
+      if ((counts.get(c.name) ?? 0) > 1 && c.hp) c.name = `${c.name} ${c.hp}hp`;
+    }
+    // Final safety: guarantee uniqueness within the model-year.
     const seen = new Map<string, number>();
     for (const c of grp) {
       const n = (seen.get(c.name) ?? 0) + 1;
