@@ -278,11 +278,16 @@ function buildV7TemplateA(
   conversationHistory?: string,
   weightClass?: WeightClass | null,
   domain?: string | null,
-  isFallbackModel?: boolean
+  isFallbackModel?: boolean,
+  referenceFacts?: string | null
 ): { system: string; user: string } {
   const historyBlock = conversationHistory
     ? `\n<conversation_history>\n${conversationHistory}\n</conversation_history>\n`
     : '';
+
+  // Task 12: authoritative product facts (fact_heavy only). Rendered as data in
+  // the user turn; the block carries its own scoring instruction.
+  const referenceFactsBlock = referenceFacts ? `${referenceFacts}\n` : '';
 
   const system = `You are an elite automotive sales trainer grading a salesperson's SMS response.
 
@@ -378,7 +383,7 @@ Do NOT use these to generate feedback. Scoring reference only.
 <technique_to_reward>${escapeXml(techniqueTag)}</technique_to_reward>
 <behaviors_to_penalize>${escapeXml(failSignals)}</behaviors_to_penalize>
 </evaluation_criteria>
-${scoringWeightsBlock}
+${referenceFactsBlock}${scoringWeightsBlock}
 <exemplar_dialogue purpose="output_seed_only">
 ${escapeXml(eliteDialogue)}
 This is one example of an excellent response. Use it as a quality floor when generating Try examples. Adapt the phrasing to address what the employee specifically missed. Do NOT use this exemplar to influence numeric scores -- score based on the technique_to_reward criteria only.
@@ -397,7 +402,8 @@ function buildV7TemplateC(
   eliteDialogue: string,
   employeeResponse: string,
   conversationHistory?: string,
-  isFallbackModel?: boolean
+  isFallbackModel?: boolean,
+  referenceFacts?: string | null
 ): { system: string; user: string } {
   // Strip KNOWLEDGE_CHECK prefix before injecting as reference_answer
   const referenceAnswer = techniqueTag.replace(/^KNOWLEDGE_CHECK\.\s*/, '');
@@ -405,6 +411,9 @@ function buildV7TemplateC(
   const historyBlock = conversationHistory
     ? `\n<conversation_history>\n${conversationHistory}\n</conversation_history>\n`
     : '';
+
+  // Task 12: authoritative product facts (fact_heavy only). See Template A note.
+  const referenceFactsBlock = referenceFacts ? `${referenceFacts}\n` : '';
 
   const system = `You are an elite automotive sales trainer grading a salesperson's knowledge answer via SMS.
 
@@ -464,7 +473,7 @@ This is a fact_heavy knowledge check. Scoring priorities:
 <reference_answer>${escapeXml(referenceAnswer)}</reference_answer>
 <common_errors>${escapeXml(failSignals)}</common_errors>
 </evaluation_criteria>
-${scoringWeightsBlock}
+${referenceFactsBlock}${scoringWeightsBlock}
 <exemplar_dialogue purpose="output_seed_only">
 ${escapeXml(eliteDialogue)}
 Use this as the quality floor for your Try examples.
@@ -869,6 +878,11 @@ interface GradeOptions {
   // 2026-07-07 ES: BCP-47-ish language code ('en' | 'es'). Plumbing only for
   // now (content deferred) -- see localeDirective.
   language?: string;
+  // Task 12 (F1): authoritative <reference_facts> block for fact_heavy grading.
+  // - undefined -> gradeResponseV7 fetches it from the vehicle DB (prod path).
+  // - string    -> use verbatim (eval harness supplies facts inline, no DB).
+  // - null      -> explicitly no facts (eval control case).
+  referenceFacts?: string | null;
 }
 
 export class AiGradingRateLimitedError extends Error {
@@ -1022,6 +1036,23 @@ async function gradeResponseV7(
 
   const scenarioForPrompt = withBrandContext(opts.scenario, opts.dealershipBrands);
 
+  // Task 12 (F1): authoritative product facts for fact_heavy grading. Inline
+  // override (eval) wins; otherwise fetch from the vehicle DB scoped to the
+  // dealership's brands. Non-fatal — a miss just grades against elite_dialogue.
+  let referenceFacts: string | null = null;
+  if (weightClass === 'fact_heavy') {
+    if (opts.referenceFacts !== undefined) {
+      referenceFacts = opts.referenceFacts;
+    } else if (opts.dealershipId) {
+      const { getReferenceFactsForGrading } = await import('@/lib/reference-facts');
+      referenceFacts = await getReferenceFactsForGrading(
+        opts.dealershipId,
+        opts.scenario,
+        weightClass
+      );
+    }
+  }
+
   // Build conversation history string for multi-turn
   const conversationText = opts.conversationHistory?.length
     ? formatConversationForAI(opts.conversationHistory, opts.employeeResponse)
@@ -1067,8 +1098,8 @@ async function gradeResponseV7(
       // Build prompts with isFallbackModel flag — scoring_weights and calibration_anchors
       // are stripped from mini to reduce cognitive load (per v7 spec Section 4).
       const { system, user } = template === 'C'
-        ? buildV7TemplateC(scenarioForPrompt, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, isMini)
-        : buildV7TemplateA(scenarioForPrompt, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, weightClass, opts.scenarioDomain ?? null, isMini);
+        ? buildV7TemplateC(scenarioForPrompt, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, isMini, referenceFacts)
+        : buildV7TemplateA(scenarioForPrompt, techniqueTag, failSignals, eliteDialogue, sanitizedResponse, conversationText, weightClass, opts.scenarioDomain ?? null, isMini, referenceFacts);
 
       // M3-FIX: For mini, remove rationale instruction line more robustly.
       const systemPrompt = localeDirective(opts.language) + (isMini

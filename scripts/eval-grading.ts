@@ -32,6 +32,13 @@ const STRONG_FLOOR = 13; // strong answers should land >= 13 / 20
 const WEAK_CEILING = 11; // weak answers should land <= 11 / 20
 const MIN_GAP = 3; // strong must beat weak by at least this many points
 
+// Task 12: reference_facts release-blocker. A weak answer that CONTRADICTS an
+// injected reference fact must have product_accuracy nuked; a fact-correct
+// strong answer must clear a product_accuracy floor. Proves the grader is
+// actually reading <reference_facts>, not just its own priors.
+const FACT_VIOLATION_PA_CEILING = 2;
+const FACT_CORRECT_PA_FLOOR = 4;
+
 interface GradeOut {
   total: number;
   scores: { product_accuracy: number; tone_rapport: number; addressed_concern: number; close_attempt: number };
@@ -54,6 +61,9 @@ async function gradeOne(c: GoldCase, answer: string): Promise<GradeOut> {
     failSignals: c.failSignals,
     scenarioDomain: c.domain,
     weightClass: c.weightClass,
+    // Task 12: inject reference_facts inline (no DB / feature flag needed). Only
+    // consumed by the grader on fact_heavy cases; undefined for all others.
+    referenceFacts: c.referenceFacts,
     // no dealershipId -> skips the per-dealership rate-limit / circuit-breaker gate
   });
   const scores = {
@@ -115,6 +125,18 @@ async function main() {
     if (strong.total < STRONG_FLOOR) problems.push(`strong ${strong.total} < floor ${STRONG_FLOOR}`);
     if (weak.total > WEAK_CEILING) problems.push(`weak ${weak.total} > ceiling ${WEAK_CEILING}`);
     if (gap < MIN_GAP) problems.push(`gap ${gap} < ${MIN_GAP}`);
+
+    // Task 12: reference_facts fact-violation check (fact_heavy w/ injected facts).
+    if (c.assertFactViolation) {
+      const weakPa = weak.scores.product_accuracy;
+      const strongPa = strong.scores.product_accuracy;
+      if (weakPa > FACT_VIOLATION_PA_CEILING) {
+        problems.push(`fact-violation not caught: weak product_accuracy ${weakPa} > ${FACT_VIOLATION_PA_CEILING}`);
+      }
+      if (strongPa < FACT_CORRECT_PA_FLOOR) {
+        problems.push(`fact-correct under-credited: strong product_accuracy ${strongPa} < ${FACT_CORRECT_PA_FLOOR}`);
+      }
+    }
 
     const ok = problems.length === 0;
     if (ok) passed++;

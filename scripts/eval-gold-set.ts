@@ -27,6 +27,34 @@ export interface GoldCase {
   strongAnswer: string;
   /** A weak rep answer (exhibits the fail_signals) */
   weakAnswer: string;
+  /**
+   * Task 12 (F1): authoritative <reference_facts> block injected into the grader
+   * for fact_heavy cases. Mirrors what src/lib/reference-facts.ts renders from the
+   * vehicle DB, but supplied inline so the eval needs no DB / feature flag.
+   * When present, the grader must score product_accuracy against these facts.
+   */
+  referenceFacts?: string;
+  /**
+   * The specific ground-truth facts this case exercises. Documents what the
+   * strong answer states correctly and the weak answer contradicts. When
+   * `assertFactViolation` is set, the harness treats the weak answer as a fact
+   * violation the grader MUST catch.
+   */
+  factKey?: string[];
+  /**
+   * Release-blocker assertion for the reference_facts wiring: the weak answer
+   * contradicts a reference fact, so the grader must score its product_accuracy
+   * low (<= FACT_VIOLATION_PA_CEILING) and the strong answer's high (>= floor).
+   */
+  assertFactViolation?: boolean;
+}
+
+// Mirrors the envelope src/lib/reference-facts.ts wraps around DB facts, so the
+// eval exercises the exact block shape the grader sees in production.
+const REF_FACTS_INSTRUCTION =
+  "These are verified, authoritative specs for this dealership's brands. Use them to check the employee's product claims. If a stated price, horsepower, trim, drivetrain, or powertrain CONTRADICTS these facts, score product_accuracy 1-2. Specs NOT listed here (e.g. MPG, warranty terms, feature packages) are outside this reference -- judge them on general merit; do NOT penalize the employee for facts this reference does not cover.";
+function refFacts(body: string): string {
+  return `<reference_facts source="verified_vehicle_database">\n${REF_FACTS_INSTRUCTION}\n${body}\n</reference_facts>`;
 }
 
 export const GOLD_SET: GoldCase[] = [
@@ -75,6 +103,83 @@ export const GOLD_SET: GoldCase[] = [
       "You're right, that's about 7 MPG less. At 15k miles a year it's only around $30-$40 more a month in gas -- and this one has lower insurance, stronger resale, and better safety. So we're really trading $30 a month for a lot more value. Fair way to look at it?",
     weakAnswer:
       "28 is still really good gas mileage though, I wouldn't worry about it. Most cars this size are around there so 35 isn't that realistic anyway.",
+  },
+
+  // ── fact_heavy w/ reference_facts (Task 12 — grader must respect DB specs) ──
+  // Weak answers here CONTRADICT the injected reference_facts (wrong price /
+  // wrong powertrain / wrong availability). assertFactViolation makes the grader
+  // catching that a release-blocker for the reference_facts wiring.
+  {
+    scenarioId: '219',
+    mode: 'quiz',
+    weightClass: 'fact_heavy',
+    domain: 'product_knowledge',
+    scenario: "Customer is looking at the 2026 Accord. They ask: what's the difference between the Sport and the EX-L?",
+    techniqueTag: 'Trim comparison with real numbers',
+    eliteDialogue:
+      "Both are hybrid at 204 HP. Sport is $33,795, EX-L is $35,095 -- about $1,300 more. EX-L gets you leather seats, parking sensors, and driver memory seat. Sport has a sportier look with 19-inch wheels and black accents.",
+    failSignals:
+      'can\'t name the price difference | doesn\'t know both are hybrid | lists features from wrong trims | says "I\'m not sure"',
+    referenceFacts: refFacts(
+      [
+        '2026 Honda Accord:',
+        '- LX: $28,395, 192 hp, FWD, gas',
+        '- SE: $30,695, 192 hp, FWD, gas',
+        '- Sport: $33,795, 204 hp, FWD, hybrid',
+        '- EX-L: $35,095, 204 hp, FWD, hybrid',
+        '- Sport-L: $35,495, 204 hp, FWD, hybrid',
+        '- Touring: $39,495, 204 hp, FWD, hybrid',
+      ].join('\n')
+    ),
+    factKey: [
+      '2026 Accord Sport = $33,795, hybrid, 204 hp',
+      '2026 Accord EX-L = $35,095, hybrid, 204 hp',
+      'Sport and EX-L are ~$1,300 apart and BOTH hybrid',
+    ],
+    assertFactViolation: true,
+    strongAnswer:
+      "Both are hybrids making 204 hp. The Sport is $33,795 and the EX-L is $35,095 -- about $1,300 more. The EX-L adds leather, parking sensors, and a memory driver's seat; the Sport gets the sportier look with 19-inch wheels and black accents. Comfort vs styling for a small price gap.",
+    weakAnswer:
+      "The Sport is the base gas engine, right around $26k, and the EX-L is the loaded hybrid up near $45k -- so you're looking at a pretty big jump moving up to the EX-L.",
+  },
+  {
+    scenarioId: '221',
+    mode: 'quiz',
+    weightClass: 'fact_heavy',
+    domain: 'product_knowledge',
+    scenario: "Customer says: I like the CR-V but I want all-wheel drive. How much more does that cost?",
+    techniqueTag: 'AWD pricing knowledge',
+    eliteDialogue:
+      "AWD adds about $1,500 across the CR-V lineup. The LX starts at $30,920 FWD or $32,420 with AWD.",
+    failSignals:
+      "doesn't know the AWD premium | wrong base price | says AWD isn't available | can't give a specific number",
+    referenceFacts: refFacts(
+      [
+        '2026 Honda CR-V:',
+        '- LX: $30,920, 190 hp, FWD, gas',
+        '- LX AWD: $32,420, 190 hp, AWD, gas',
+        '- EX: $33,150, 190 hp, FWD, gas',
+        '- EX AWD: $34,650, 190 hp, AWD, gas',
+        '- EX-L: $35,400, 190 hp, FWD, gas',
+        '- Sport Hybrid: $35,630, 204 hp, FWD, hybrid',
+        '- EX-L AWD: $36,900, 190 hp, AWD, gas',
+        '- Sport Hybrid AWD: $37,130, 204 hp, AWD, hybrid',
+        '- Sport-L Hybrid: $38,725, 204 hp, FWD, hybrid',
+        '- TrailSport Hybrid: $38,800, 204 hp, AWD, hybrid',
+        '- Sport-L Hybrid AWD: $40,225, 204 hp, AWD, hybrid',
+        '- Sport Touring Hybrid: $42,250, 204 hp, AWD, hybrid',
+        '- e:FCEV: $50,000, 174 hp, FWD, EV',
+      ].join('\n')
+    ),
+    factKey: [
+      'CR-V AWD is a +$1,500 option on the same trim (LX $30,920 FWD -> $32,420 AWD)',
+      'AWD is available on gas trims (LX AWD, EX AWD), not hybrid-only',
+    ],
+    assertFactViolation: true,
+    strongAnswer:
+      "On the CR-V, all-wheel drive is a $1,500 add on the same trim -- the LX is $30,920 front-wheel drive or $32,420 with AWD, and it's the same $1,500 step up on the EX. Want me to price the exact trim they're eyeing with AWD included?",
+    weakAnswer:
+      "AWD on the CR-V runs about $4,000 more, and it really only comes on the hybrid trims anyway, so they'd be looking at closer to $40k just to get into all-wheel drive.",
   },
 
   // ── hybrid (price / value objections) ──────────────────────────────────────
