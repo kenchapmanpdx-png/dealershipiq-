@@ -1,52 +1,80 @@
+// Marketing layout — light "Blue Tree" design system (2026-07-07 redesign).
+// All marketing styles live in marketing.css, scoped under the .mkt wrapper
+// so dashboard tokens in globals.css are untouched. Fonts load via
+// next/font/google and are exposed as CSS variables the stylesheet consumes.
+
 import Link from 'next/link';
-import MarketingHeader from '@/components/marketing/MarketingHeader';
+import { Plus_Jakarta_Sans, DM_Sans } from 'next/font/google';
+import MarketingNav from '@/components/marketing/MarketingNav';
+import './marketing.css';
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-jakarta',
+  display: 'swap',
+});
+
+const dmSans = DM_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-dm',
+  display: 'swap',
+});
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grain min-h-screen flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)]">
-      <MarketingHeader />
+    <div className={`mkt ${jakarta.variable} ${dmSans.variable}`}>
+      <MarketingNav />
 
-      {/* No spacer needed — header is invisible at top and overlays on scroll */}
+      <main>{children}</main>
 
-      <main className="flex-1">{children}</main>
-
-      {/* Premium footer */}
-      <footer className="border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-20">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-10 md:gap-8">
-            <div className="md:col-span-2">
-              <p className="text-lg font-bold tracking-tight text-white mb-3">
-                Dealership<span className="text-[var(--accent)]">IQ</span>
-              </p>
-              <p className="text-sm text-[var(--text-muted)] max-w-sm leading-relaxed">
-                SMS-powered sales training that turns every rep into a closer.
-                AI grades responses. Managers track results in real time.
-              </p>
+      <footer className="footer">
+        <div className="container">
+          <div className="footer-inner">
+            <div className="footer-logo-group">
+              <svg viewBox="0 0 32 32" fill="none" width="28" height="28" aria-hidden="true">
+                <rect width="32" height="32" rx="6" fill="#004a8b" />
+                <text
+                  x="16"
+                  y="21.5"
+                  textAnchor="middle"
+                  fontFamily="var(--font-jakarta), sans-serif"
+                  fontSize="13"
+                  fontWeight="800"
+                  fill="#fff"
+                >
+                  IQ
+                </text>
+              </svg>
+              <span className="footer-wordmark">DealershipIQ</span>
             </div>
-            <div>
-              <p className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-4">Product</p>
-              <div className="flex flex-col gap-3 text-sm text-[var(--text-muted)]">
-                <a href="#features" className="hover:text-white transition-colors duration-300">Features</a>
-                <a href="#how-it-works" className="hover:text-white transition-colors duration-300">How It Works</a>
-                <a href="#pricing" className="hover:text-white transition-colors duration-300">Pricing</a>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-4">Account</p>
-              <div className="flex flex-col gap-3 text-sm text-[var(--text-muted)]">
-                <Link href="/login" className="hover:text-white transition-colors duration-300">Sign In</Link>
-                <Link href="/signup" className="hover:text-white transition-colors duration-300">Start Free Trial</Link>
-              </div>
+            <div className="footer-links">
+              <Link href="/#features">Features</Link>
+              <Link href="/#how">How It Works</Link>
+              <Link href="/#pricing">Pricing</Link>
+              <Link href="/login">Sign In</Link>
+              <Link href="/terms">Terms</Link>
+              <Link href="/privacy">Privacy</Link>
             </div>
           </div>
-          <div className="gradient-line mt-12 mb-8" />
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <p className="text-xs text-[var(--text-muted)]">
-              &copy; 2026 DealershipIQ. All rights reserved.
-            </p>
-            <p className="text-xs text-[var(--text-muted)]">
-              Built for dealerships that take training seriously.
-            </p>
+          <div className="footer-mid">
+            <div>
+              <strong>DealershipIQ</strong>
+              <br />
+              SMS-powered sales training that turns every rep into a closer.
+              <br />
+              AI grades responses. Managers track results in real time.
+            </div>
+            <div className="footer-mid-right">
+              Built for dealerships that
+              <br />
+              take training seriously.
+            </div>
+          </div>
+          <div className="footer-bottom">
+            <div>&copy; 2026 DealershipIQ. All rights reserved.</div>
+            <div className="footer-fine">Training data stays private to your dealership.</div>
           </div>
         </div>
       </footer>

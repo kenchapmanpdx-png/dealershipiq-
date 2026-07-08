@@ -126,7 +126,9 @@ export default function PhoneMockup() {
         className="absolute -inset-[3px] rounded-[2.8rem] animate-shine z-0"
         style={{
           backgroundImage:
-            'radial-gradient(transparent, transparent, #3b82f6, #8b5cf6, #06b6d4, transparent, transparent)',
+            // 2026-07-07 redesign: shine recolored to the light-theme brand
+            // palette (cyan / blue / green) from the old neon blue/violet.
+            'radial-gradient(transparent, transparent, #35d3f5, #2b8fe6, #7ed957, transparent, transparent)',
           backgroundSize: '300% 300%',
           mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
           WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',

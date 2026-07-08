@@ -1933,3 +1933,31 @@ export async function getDealershipBrandNames(dealershipId: string): Promise<str
     return [];
   }
 }
+
+// ─── Marketing leads (public landing page, 2026-07-07) ─────────────────
+// Used by: /api/leads — lead-capture form on the marketing landing page.
+// Exception to Rule 2: pre-signup prospects; no dealership exists yet, so
+// there is no dealership_id to scope by. Table has RLS enabled with zero
+// policies — only this service-role path can touch it.
+export async function insertMarketingLead(lead: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  dealershipName: string;
+  teamSize: string | null;
+  role: string | null;
+  notes: string | null;
+}): Promise<void> {
+  const { error } = await serviceClient.from('marketing_leads').insert({
+    first_name: lead.firstName,
+    last_name: lead.lastName,
+    email: lead.email,
+    phone: lead.phone,
+    dealership_name: lead.dealershipName,
+    team_size: lead.teamSize,
+    role: lead.role,
+    notes: lead.notes,
+  });
+  if (error) throw error;
+}

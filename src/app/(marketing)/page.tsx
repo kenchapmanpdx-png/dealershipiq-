@@ -1,15 +1,11 @@
-import Link from 'next/link';
-import type { CSSProperties } from 'react';
+// Landing page — light "Blue Tree" design system (2026-07-07 redesign).
+// Server component; interactivity lives in MarketingFx (GSAP engine),
+// MarketingNav, LeadForm, and PhoneMockup client components.
+
 import { Metadata } from 'next';
 import PhoneMockup from '@/components/marketing/PhoneMockup';
-import PhoneScrollAnimation from '@/components/marketing/PhoneScrollAnimation';
-import AnimatedCounter from '@/components/marketing/AnimatedCounter';
-import ScrollReveal from '@/components/marketing/ScrollReveal';
-import { StaggerReveal } from '@/components/marketing/ScrollReveal';
-import FAQ from '@/components/marketing/FAQ';
-import MagneticButton from '@/components/marketing/MagneticButton';
-import KineticUnderline from '@/components/marketing/KineticUnderline';
-import InView from '@/components/marketing/InView';
+import MarketingFx from '@/components/marketing/MarketingFx';
+import LeadForm from '@/components/marketing/LeadForm';
 
 export const metadata: Metadata = {
   title: 'SMS-Powered Sales Training for Auto Dealers | DealershipIQ',
@@ -39,138 +35,139 @@ const jsonLd = {
 
 /* ── Data ── */
 
+const metrics = [
+  { start: '30', end: '5', prefix: '<', suffix: 's', display: '<5s', label: 'AI grading turnaround' },
+  { start: '0', end: '100', prefix: '', suffix: '%', display: '100%', label: 'SMS delivery — no app needed' },
+  { start: '0', end: '3', prefix: '', suffix: 'x', display: '3x', label: 'More practice reps than classroom' },
+  { start: '9', end: '0', prefix: '', suffix: '', display: '0', label: 'Disruption to the sales floor' },
+];
+
+const testimonials = [
+  {
+    quote:
+      'We went from sporadic whiteboard sessions to daily reps actually practicing objection handling. The AI feedback is better than what most trainers give.',
+    name: 'Marcus T.',
+    initials: 'MT',
+    role: 'General Manager · Tri-County Ford',
+  },
+  {
+    quote:
+      "My guys are competitive. They started comparing scores in the group chat by day three. I haven't seen this level of engagement with any training tool.",
+    name: 'Rachel K.',
+    initials: 'RK',
+    role: 'Sales Manager · Heritage Honda',
+  },
+  {
+    quote:
+      "I can finally see who's putting in the work and who's not — across all three stores. The coaching queue alone saves me 5 hours a week.",
+    name: 'David L.',
+    initials: 'DL',
+    role: 'Dealer Principal · Lakeside Auto Group',
+  },
+];
+
 const features = [
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
-      </svg>
-    ),
     title: 'Daily SMS Training',
     description: 'Questions delivered by text. No app download, no login — reps just reply.',
-    span: 'md:col-span-1',
-  },
-  {
+    num: '01',
+    wide: false,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
       </svg>
     ),
+  },
+  {
     title: 'AI-Powered Grading',
-    description: 'GPT evaluates every response in real time. Instant, actionable feedback per rep.',
-    span: 'md:col-span-1',
-  },
-  {
+    description: 'AI evaluates every response in real time. Instant, actionable feedback per rep.',
+    num: '02',
+    wide: false,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
       </svg>
     ),
+  },
+  {
     title: 'Manager Dashboard',
     description: 'Real-time visibility into team performance, skill gaps, and coaching priorities.',
-    span: 'md:col-span-1',
-  },
-  {
+    num: '03',
+    wide: false,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
       </svg>
     ),
+  },
+  {
     title: 'Adaptive Difficulty',
     description: 'Training adjusts to each rep — their strengths, weaknesses, and experience level.',
-    span: 'md:col-span-1',
-  },
-  {
+    num: '04',
+    wide: false,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
       </svg>
     ),
+  },
+  {
     title: 'Objection Roleplay',
-    description: 'Multi-exchange scenarios that simulate real customer pushback — price objections, competitor comparisons, and stalls. Reps build muscle memory for the moments that matter most.',
-    span: 'md:col-span-2',
-  },
-  {
+    description:
+      'Multi-exchange scenarios that simulate real customer pushback — price objections, competitor comparisons, and stalls. Reps build muscle memory for the moments that matter most.',
+    num: '05',
+    wide: true,
     icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
       </svg>
     ),
+  },
+  {
     title: 'Multi-Rooftop',
     description: 'Unlimited reps across all your locations. One flat rate per dealership.',
-    span: 'md:col-span-1',
+    num: '06',
+    wide: false,
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      </svg>
+    ),
   },
 ];
 
 const steps = [
   {
-    num: '01',
+    num: '1',
     title: 'Enroll your team',
     description: 'Add salespeople by phone number. Takes 30 seconds per rep. No app to install.',
-    icon: (
-      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
-      </svg>
-    ),
   },
   {
-    num: '02',
+    num: '2',
     title: 'Training goes out daily',
     description: 'Each rep gets a scenario or question via text, tailored to their skill level.',
-    icon: (
-      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
-      </svg>
-    ),
   },
   {
-    num: '03',
+    num: '3',
     title: 'AI grades instantly',
     description: 'Responses scored on accuracy, technique, and professionalism. Feedback in seconds.',
-    icon: (
-      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-      </svg>
-    ),
   },
   {
-    num: '04',
+    num: '4',
     title: 'Managers see everything',
     description: 'Live dashboard: scores, trends, skill gaps, and who needs coaching — across all stores.',
-    icon: (
-      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-      </svg>
-    ),
   },
 ];
 
-const metrics = [
-  { value: '<5s', label: 'AI grading turnaround' },
-  { value: '100%', label: 'SMS delivery — no app needed' },
-  { value: '3x', label: 'More practice reps than classroom' },
-  { value: '0', label: 'Disruption to the sales floor' },
-];
-
-const testimonials = [
-  {
-    quote: "We went from sporadic whiteboard sessions to daily reps actually practicing objection handling. The AI feedback is better than what most trainers give.",
-    name: 'Marcus T.',
-    role: 'General Manager',
-    dealership: 'Tri-County Ford',
-  },
-  {
-    quote: "My guys are competitive. They started comparing scores in the group chat by day three. I haven't seen this level of engagement with any training tool.",
-    name: 'Rachel K.',
-    role: 'Sales Manager',
-    dealership: 'Heritage Honda',
-  },
-  {
-    quote: "I can finally see who's putting in the work and who's not — across all three stores. The coaching queue alone saves me 5 hours a week.",
-    name: 'David L.',
-    role: 'Dealer Principal',
-    dealership: 'Lakeside Auto Group',
-  },
+const pricingFeatures = [
+  'Unlimited salespeople',
+  'Daily SMS training',
+  'AI-powered grading & feedback',
+  'Real-time manager dashboard',
+  'Multi-exchange objection roleplay',
+  'Coaching queue & priority alerts',
+  'Custom scenario support',
+  'Dedicated onboarding',
 ];
 
 const faqItems = [
@@ -196,134 +193,117 @@ const faqItems = [
   },
 ];
 
-const pricingFeatures = [
-  'Unlimited salespeople',
-  'Daily SMS training',
-  'AI-powered grading & feedback',
-  'Real-time manager dashboard',
-  'Multi-exchange objection roleplay',
-  'Coaching queue & priority alerts',
-  'Custom scenario support',
-  'Dedicated onboarding',
-];
-
 export default function LandingPage() {
   return (
-    <div className="relative overflow-hidden">
+    <div>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      <MarketingFx />
 
       {/* ══════════ HERO ══════════ */}
-      <section className="relative py-24 md:py-32 lg:py-40 hero-gradient hero-grid overflow-hidden">
-        {/* Ambient orbs */}
-        <div className="orb orb-blue w-[700px] h-[700px] -top-56 -left-56 animate-orb-drift-1" />
-        <div className="orb orb-purple w-[600px] h-[600px] top-10 right-[-18%] animate-orb-drift-2" />
-        <div className="orb orb-cyan hidden md:block w-[400px] h-[400px] bottom-[-8%] left-[20%] animate-orb-drift-3" />
-        <div
-          className="orb orb-indigo hidden md:block w-[500px] h-[500px] top-[40%] left-[55%] animate-orb-drift-1"
-          style={{ animationDelay: '-8s' }}
-        />
-
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-            {/* Left — Copy */}
-            <div className="hero-stagger">
-              {/* Eyebrow */}
-              <p className="inline-flex items-center gap-2 text-xs font-medium tracking-widest uppercase text-[var(--accent)] border border-[var(--accent)]/20 rounded-full px-4 py-1.5 mb-8 bg-[var(--accent)]/5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+      <section className="hero">
+        <div className="hero-orb hero-orb-1" />
+        <div className="hero-orb hero-orb-2" />
+        <div className="hero-orb hero-orb-3" />
+        <div className="hero-orb hero-orb-4" />
+        <div className="hero-aurora" />
+        <div className="container">
+          <div className="hero-layout">
+            <div>
+              <div className="hero-eyebrow">
+                <span className="pulse-dot" />
                 SMS-Powered Sales Training
-              </p>
-
-              {/* Headline */}
-              <h1 className="text-hero font-bold tracking-[-0.03em] text-white leading-[1.06] mb-2">
-                Turn reps into
-                <br />
-                <span className="bg-gradient-to-r from-blue-400 via-blue-300 to-cyan-400 bg-clip-text text-transparent">
-                  closers
+              </div>
+              <h1>
+                <span className="line">
+                  <span className="line-inner">Turn reps into</span>
+                </span>
+                <span className="line">
+                  <span className="line-inner">
+                    <span className="accent-word">closers</span>,
+                  </span>
+                </span>
+                <span className="line">
+                  <span className="line-inner">not order takers.</span>
                 </span>
               </h1>
-              <p className="text-[calc(var(--text-hero)*0.75)] font-bold tracking-[-0.02em] text-white/75 leading-[1.1] mb-4">
-                not order takers.
+              <p className="hero-tagline">Two minutes a day, by text. No app. No classroom.</p>
+              <p className="hero-sub">
+                AI grades every response in seconds. Managers see real-time results across every
+                rooftop — no disruption to the floor.
               </p>
-
-              {/* Tagline */}
-              <p className="text-xl sm:text-2xl font-semibold text-white/70 tracking-wide mb-6">
-                Two minutes a day, by text. No app. No classroom.
-              </p>
-
-              {/* Subheadline */}
-              <p className="text-body text-[var(--text-secondary)] max-w-lg mb-10 leading-relaxed">
-                AI grades every response in seconds.
-                Managers see real-time results across every rooftop —
-                no disruption to the floor.
-              </p>
-
-              {/* CTAs */}
-              <div className="flex flex-col sm:flex-row items-start gap-4">
-                <MagneticButton>
-                  <Link
-                    href="/signup"
-                    className="group inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-base px-8 py-4 rounded-lg hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
-                  >
-                    Start Free Trial
-                    <svg className="w-4 h-4 ml-2 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                  </Link>
-                </MagneticButton>
-                <Link
-                  href="#how-it-works"
-                  className="inline-flex items-center justify-center border border-[var(--border-card)] text-[var(--text-secondary)] font-medium text-base px-8 py-4 rounded-lg hover:border-[var(--border-hover)] hover:text-white transition-all duration-300 ease-out-cubic"
-                >
+              <div className="hero-cta">
+                <a href="#signup" className="btn btn-green btn-lg magnetic">
+                  Start Free Trial <span className="btn-arrow">→</span>
+                </a>
+                <a href="#how" className="btn btn-ghost btn-lg">
                   See How It Works
-                </Link>
+                </a>
               </div>
-
-              {/* Trust signal */}
-              <p className="text-xs text-[var(--text-muted)] mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
-                <span className="flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  30-day free trial
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  No credit card
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  Live in 5 min
-                </span>
-              </p>
             </div>
-
-            {/* Right — Phone mockup */}
-            <div className="hero-stagger flex justify-center lg:justify-end">
-              <PhoneScrollAnimation>
+            <div>
+              <div className="phone-wrap">
                 <PhoneMockup />
-              </PhoneScrollAnimation>
+              </div>
+            </div>
+          </div>
+
+          <div className="hero-promises">
+            <div className="hero-promise">
+              <div className="promise-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2}>
+                  <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <div className="promise-text">
+                <strong>30-Day Free Trial</strong>
+                <span>Full access for a month. No credit card, no contract — cancel anytime.</span>
+              </div>
+            </div>
+            <div className="hero-promise">
+              <div className="promise-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2}>
+                  <path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+              </div>
+              <div className="promise-text">
+                <strong>No App to Download</strong>
+                <span>Training arrives by standard SMS. If your reps can text, they can train.</span>
+              </div>
+            </div>
+            <div className="hero-promise">
+              <div className="promise-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2}>
+                  <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div className="promise-text">
+                <strong>Live in 5 Minutes</strong>
+                <span>Add reps by phone number and training goes out the same day.</span>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       {/* ══════════ METRICS BAR ══════════ */}
-      <section className="relative border-y border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-10 md:gap-0">
-            {metrics.map((m, i) => (
-              <div
-                key={m.label}
-                className={`md:px-6 ${i > 0 ? 'md:border-l md:border-[var(--border-subtle)]' : ''}`}
-              >
-                <AnimatedCounter value={m.value} label={m.label} />
+      <section className="metrics-strip">
+        <div className="container">
+          <div className="metrics-grid">
+            {metrics.map((m) => (
+              <div key={m.label} className="metric sr">
+                <div
+                  className="m-num"
+                  data-start={m.start}
+                  data-end={m.end}
+                  data-prefix={m.prefix}
+                  data-suffix={m.suffix}
+                >
+                  {m.display}
+                </div>
+                <div className="m-label">{m.label}</div>
               </div>
             ))}
           </div>
@@ -331,282 +311,232 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════ SOCIAL PROOF ══════════ */}
-      {/* 2026-07-04: compacted — section padding, heading gap, card gap and
-          card padding all reduced; the section read as too airy/spread out. */}
-      <section className="py-14 md:py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ScrollReveal>
-            <div className="text-center mb-10">
-              <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-3">
-                From the Floor
-              </p>
-              <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
-                Managers who switched aren&apos;t going back
-              </h2>
-            </div>
-          </ScrollReveal>
-
-          <StaggerReveal className="dim-siblings grid grid-cols-1 md:grid-cols-3 gap-4" staggerMs={150}>
-            {testimonials.map((t) => {
-              const initials = t.name
-                .split(' ')
-                .map((w) => w[0])
-                .join('');
-              return (
-                <div
-                  key={t.name}
-                  className="glass rounded-2xl p-5 sm:p-6 flex flex-col card-hover card-glow"
-                >
-                  {/* Thread header — like a Messages contact bar */}
-                  <div className="flex items-center gap-3 pb-3 mb-3 border-b border-white/5">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-b from-[#9ca3af] to-[#6b7280] flex items-center justify-center shrink-0">
-                      <span className="text-xs font-semibold text-white">{initials}</span>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-white leading-tight truncate">{t.name}</p>
-                      <p className="text-xs text-[var(--text-muted)] truncate">
-                        {t.role} · {t.dealership}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Incoming SMS bubble — same language as the hero phone */}
-                  <div className="flex-1 flex flex-col">
-                    <div className="max-w-[95%] self-start bg-white/[0.08] rounded-2xl rounded-bl-md px-4 py-3">
-                      <p className="text-sm text-white/90 leading-relaxed">{t.quote}</p>
-                    </div>
-                    <p className="text-[10px] text-white/50 mt-1.5 pl-1">Text Message · Today 9:41 AM</p>
+      <section className="section">
+        <div className="container">
+          <div className="section-head sr">
+            <div className="section-tag">From the Floor</div>
+            <h2>
+              Managers who switched <span className="em">aren&apos;t going back</span>
+            </h2>
+          </div>
+          <div className="testi-grid">
+            {testimonials.map((t) => (
+              <div key={t.name} className="testi-card sr">
+                <div className="testi-head">
+                  <div className="testi-avatar">{t.initials}</div>
+                  <div>
+                    <div className="name">{t.name}</div>
+                    <div className="role">{t.role}</div>
                   </div>
                 </div>
-              );
-            })}
-          </StaggerReveal>
-        </div>
-      </section>
-
-      {/* ── Section Divider ── */}
-      <div className="section-divider max-w-4xl mx-auto" />
-
-      {/* ══════════ FEATURES — BENTO GRID ══════════ */}
-      <section id="features" className="py-14 md:py-28 bg-[var(--bg-secondary)] scroll-mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ScrollReveal>
-            <div className="text-center max-w-2xl mx-auto mb-10 md:mb-16">
-              <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
-                Capabilities
-              </p>
-              <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
-                Your sales team is texting anyway.{' '}
-                {/* 2026-07-04: inks later — waits until the phrase is 30% up
-                    the viewport, then holds another second, so the swipe lands
-                    when the headline is prominent instead of edge-peeking. */}
-                <KineticUnderline delay={1000} rootMargin="0px 0px -30% 0px">Make it count.</KineticUnderline>
-              </h2>
-            </div>
-          </ScrollReveal>
-
-          <StaggerReveal className="dim-siblings grid grid-cols-1 md:grid-cols-3 gap-4" staggerMs={80}>
-            {features.map((f) => (
-              /* 2026-07-04: per-card in-view trigger — on mobile the border
-                 ring fires automatically as each card scrolls in (no hover
-                 on touch); desktop keeps hover-spin. */
-              <InView key={f.title} threshold={0.5} activeClassName="ring-fire">
-              <div
-                className={`glass card-hover card-glow card-border-shine rounded-2xl p-5 sm:p-8 group ${f.span}`}
-              >
-                <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] mb-5 group-hover:bg-[var(--accent)]/15 transition-colors duration-300">
-                  {f.icon}
-                </div>
-                <h3 className="text-card-title font-semibold text-white mb-2 tracking-tight">
-                  {f.title}
-                </h3>
-                <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                  {f.description}
-                </p>
+                <div className="testi-bubble">{t.quote}</div>
+                <div className="testi-meta">Text Message · Today 9:41 AM</div>
               </div>
-              </InView>
             ))}
-          </StaggerReveal>
+          </div>
         </div>
       </section>
 
-      {/* ── Section Divider ── */}
-      <div className="section-divider max-w-4xl mx-auto" />
+      <div className="gradient-divider" />
+
+      {/* ══════════ FEATURES ══════════ */}
+      <section className="section section-alt" id="features">
+        <div className="container">
+          <div className="section-head sr">
+            <div className="section-tag">Capabilities</div>
+            <h2>
+              Your sales team is texting anyway. <span className="em">Make it count.</span>
+            </h2>
+            <p>
+              Everything a dealership needs to build a daily training habit — delivered over the
+              channel your reps already live on.
+            </p>
+          </div>
+          <div className="opp-grid">
+            {features.map((f) => (
+              <div key={f.title} className={`opp-card sr${f.wide ? ' wide' : ''}`}>
+                <span className="opp-num">{f.num}</span>
+                <div className="opp-card-top">
+                  <div className="opp-icon">{f.icon}</div>
+                  <h3>{f.title}</h3>
+                </div>
+                <p>{f.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="gradient-divider" />
 
       {/* ══════════ HOW IT WORKS ══════════ */}
-      <section id="how-it-works" className="py-14 md:py-28 scroll-mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ScrollReveal>
-            <div className="max-w-2xl mx-auto text-center mb-10 md:mb-16">
-              <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
-                How It Works
-              </p>
-              <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
-                Live in four steps.<br />
-                <KineticUnderline delay={700}>Results on day one.</KineticUnderline>
-              </h2>
-            </div>
-          </ScrollReveal>
-
-          {/* 2026-07-04: fires later (grid top must clear the bottom 20% of
-              the viewport) and charges up slower (480ms between steps, was
-              320ms; fill duration lengthened in globals.css). */}
-          <InView className="steps-flow" threshold={0.15} rootMargin="0px 0px -20% 0px">
-          <StaggerReveal className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" staggerMs={120}>
-            {steps.map((s, i) => (
-              <div
-                key={s.num}
-                className="relative text-center lg:text-left"
-                style={{ '--step-delay': `${i * 480}ms` } as CSSProperties}
-              >
-                {/* Connector line draws toward the next step on desktop */}
-                {i < steps.length - 1 && (
-                  <div className="step-connector hidden lg:block absolute top-10 left-[calc(100%+4px)] w-[calc(100%-20px)] h-px bg-gradient-to-r from-[var(--accent)]/20 via-[var(--accent)]/10 to-transparent" />
-                )}
-
-                {/* Icon circle */}
-                {/* 2026-07-04: hidden on mobile — icon chip + giant number was
-                    double ornamentation per step; the numbers carry it alone. */}
-                <div className="step-icon w-14 h-14 rounded-2xl bg-[var(--accent)]/10 border border-[var(--accent)]/20 hidden sm:flex items-center justify-center text-[var(--accent)] mb-5 mx-auto lg:mx-0">
-                  {s.icon}
-                </div>
-
-                <p className="step-number mb-2">{s.num}</p>
-                <h3 className="text-lg font-semibold text-white mb-2 tracking-tight">
-                  {s.title}
-                </h3>
-                <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                  {s.description}
-                </p>
+      <section className="section" id="how">
+        <div className="container">
+          <div className="section-head sr">
+            <div className="section-tag">How It Works</div>
+            <h2>
+              Live in four steps. <span className="em">Results on day one.</span>
+            </h2>
+            <p>No software rollout, no training day, no disruption to the floor.</p>
+          </div>
+          <div className="steps-track" id="stepsTrack">
+            {steps.map((s) => (
+              <div key={s.num} className="step sr">
+                <div className="step-num">{s.num}</div>
+                <h3>{s.title}</h3>
+                <p>{s.description}</p>
               </div>
             ))}
-          </StaggerReveal>
-          </InView>
+          </div>
         </div>
       </section>
-
-      {/* ── Section Divider ── */}
-      <div className="section-divider max-w-4xl mx-auto" />
 
       {/* ══════════ PRICING ══════════ */}
-      <section id="pricing" className="py-14 md:py-28 bg-[var(--bg-secondary)] scroll-mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ScrollReveal>
-            <div className="max-w-2xl mx-auto text-center mb-10 md:mb-16">
-              <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
-                Pricing
-              </p>
-              <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance">
-                One plan. Unlimited reps.<br />No surprises.
-              </h2>
-            </div>
-          </ScrollReveal>
-
-          <ScrollReveal>
-            <div className="max-w-lg mx-auto">
-              <div className="gradient-border glass rounded-2xl p-8 sm:p-10">
-                <div className="flex items-baseline gap-1 mb-1">
-                  <span className="text-5xl font-bold text-white tracking-tight">$449</span>
-                  <span className="text-lg text-[var(--text-muted)]">/mo</span>
+      <section className="section section-alt" id="pricing">
+        <div className="container">
+          <div className="section-head sr">
+            <div className="section-tag">Pricing</div>
+            <h2>
+              One plan. Unlimited reps. <span className="em">No surprises.</span>
+            </h2>
+          </div>
+          <div className="rev-section sr">
+            <div className="rev-card">
+              <div className="rev-grid">
+                <div>
+                  <div className="rev-tag">Simple Pricing</div>
+                  <div className="rev-big">
+                    $449<span className="permo">/mo</span>
+                  </div>
+                  <div className="rev-sub">per dealership location — unlimited salespeople</div>
                 </div>
-                <p className="text-sm text-[var(--text-secondary)] mb-8">
-                  per dealership location
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-10">
-                  {pricingFeatures.map((item) => (
-                    <div
-                      key={item}
-                      className="flex items-center gap-3 text-sm text-[var(--text-secondary)]"
-                    >
-                      <svg
-                        className="w-4 h-4 flex-shrink-0 text-emerald-500"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2.5}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      {item}
-                    </div>
-                  ))}
+                <div className="rev-right">
+                  <ul className="rev-list">
+                    {pricingFeatures.map((item) => (
+                      <li key={item}>
+                        <span className="pip" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-
-                <Link
-                  href="/signup"
-                  className="group block w-full text-center bg-[var(--accent)] text-white font-semibold py-4 rounded-lg hover:bg-[var(--accent-hover)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-300 ease-out-cubic shadow-glow text-base"
-                >
-                  Start Free Trial
-                  <svg className="w-4 h-4 ml-2 inline transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
-                </Link>
-                <p className="text-xs text-[var(--text-muted)] text-center mt-4">
+              </div>
+              <div className="rev-foot">
+                <span className="note">
                   30-day free trial · No credit card required · Cancel anytime
-                </p>
+                </span>
+                <a href="#signup" className="btn btn-green magnetic">
+                  Start Free Trial <span className="btn-arrow">→</span>
+                </a>
               </div>
             </div>
-          </ScrollReveal>
+          </div>
         </div>
       </section>
+
+      <div className="gradient-divider" />
 
       {/* ══════════ FAQ ══════════ */}
-      <section className="py-14 md:py-28">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ScrollReveal>
-            <div className="text-center mb-12">
-              <p className="text-xs font-medium tracking-widest uppercase text-[var(--accent)] mb-4">
-                FAQ
-              </p>
-              <h2 className="text-section font-bold tracking-[-0.02em] text-white">
-                Common questions
-              </h2>
-            </div>
-          </ScrollReveal>
-
-          <ScrollReveal>
-            <FAQ items={faqItems} />
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* ── Section Divider ── */}
-      <div className="section-divider max-w-4xl mx-auto" />
-
-      {/* ══════════ FINAL CTA ══════════ */}
-      <section className="relative py-14 md:py-28 overflow-hidden">
-        <div className="orb orb-blue w-[700px] h-[700px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-orb-drift-2" />
-        <div className="orb orb-purple hidden md:block w-[450px] h-[450px] bottom-0 right-[10%] animate-orb-drift-3" />
-
-        <div className="relative z-10 max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <ScrollReveal>
-            <h2 className="text-section font-bold tracking-[-0.02em] text-white text-balance mb-6">
-              Your sales team is texting anyway.{' '}
-              <KineticUnderline>Make it count.</KineticUnderline>
+      <section className="section" id="faq">
+        <div className="container">
+          <div className="section-head sr">
+            <div className="section-tag">FAQ</div>
+            <h2>
+              Common <span className="em">questions</span>
             </h2>
-            <p className="text-body text-[var(--text-secondary)] mb-10 leading-relaxed max-w-lg mx-auto">
-              Start training today. See who&apos;s putting in the work on the dashboard by tomorrow morning.
-            </p>
-            <Link
-              href="/signup"
-              className="group inline-flex items-center justify-center bg-[var(--accent)] text-white font-semibold text-lg px-10 py-5 rounded-lg hover:bg-[var(--accent-hover)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-300 ease-out-cubic shadow-glow animate-glow-pulse"
-            >
-              Start Your Free Trial
-              <svg className="w-5 h-5 ml-2 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-            </Link>
-            <p className="text-xs text-[var(--text-muted)] mt-5">
-              Setup takes less than 5 minutes · No credit card · No contract
-            </p>
-          </ScrollReveal>
+          </div>
+          <div className="faq-wrap sr">
+            {faqItems.map((item) => (
+              <div key={item.q} className="faq-item">
+                <button className="faq-q" type="button">
+                  {item.q}
+                  <span className="arrow">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                      <path d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </button>
+                <div className="faq-a">
+                  <p>{item.a}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
+
+      {/* ══════════ CTA BAND ══════════ */}
+      <section className="cta-band">
+        <div className="container">
+          <h2 className="sr">
+            Your sales team is texting anyway. <span className="em">Make it count.</span>
+          </h2>
+          <p className="sr">
+            Start training today. See who&apos;s putting in the work on the dashboard by tomorrow
+            morning.
+          </p>
+          <div className="sr">
+            <a href="#signup" className="btn btn-green btn-lg magnetic">
+              Start Your Free Trial <span className="btn-arrow">→</span>
+            </a>
+            <div className="cta-micro">Setup takes less than 5 minutes · No credit card · No contract</div>
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════ SIGNUP / LEAD CAPTURE ══════════ */}
+      <section className="contact-section" id="signup">
+        <div className="container">
+          <div className="contact-grid">
+            <div className="contact-info sr">
+              <h2>Start your 30-day free trial</h2>
+              <p>
+                Tell us about your dealership and we&apos;ll have your team training by text before
+                the end of the day.
+              </p>
+              <div className="c-detail">
+                <div className="ic">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <span>Setup takes less than 5 minutes</span>
+              </div>
+              <div className="c-detail">
+                <div className="ic">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                </div>
+                <span>Works on every phone — no app to install</span>
+              </div>
+              <div className="c-detail">
+                <div className="ic">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <span>Month-to-month — cancel anytime</span>
+              </div>
+            </div>
+            <div className="form-card sr">
+              <LeadForm />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ══════════ STICKY CTA BAR ══════════ */}
+      <div className="sticky-cta" id="stickyCta">
+        <div className="sticky-cta-inner">
+          <div className="sticky-cta-text">
+            Turn reps into <span>closers</span> — 2 minutes a day, by text
+          </div>
+          <a href="#signup" className="btn btn-green">
+            Start Free Trial <span className="btn-arrow">→</span>
+          </a>
+        </div>
+      </div>
     </div>
   );
 }
