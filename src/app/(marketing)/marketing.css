@@ -971,6 +971,35 @@
   margin: 0;
 }
 
+/* ---- Kinetic underline ----
+   Gradient bar swipes in left-to-right when the phrase scrolls into
+   view (KineticUnderline component adds .is-inked). Recolored from the
+   dark theme's purple/pink to the electric-blue family used by the
+   "closers" gradient and the steps connector. Overrides the legacy
+   globals.css rules via .mkt specificity. */
+.mkt .kinetic-underline {
+  position: relative;
+  display: inline-block;
+}
+.mkt .kinetic-underline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.08em;
+  height: 0.09em;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, #57b6ff 0%, #7bd8ff 50%, var(--cyan) 100%);
+  box-shadow: 0 0 12px rgba(87, 182, 255, 0.35);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.9s var(--ease-premium);
+  transition-delay: var(--ink-delay, 450ms);
+}
+.mkt .kinetic-underline.is-inked::after {
+  transform: scaleX(1);
+}
+
 /* ============================================
    TESTIMONIALS — SMS thread cards
    ============================================ */

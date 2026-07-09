@@ -6,6 +6,7 @@ import { Metadata } from 'next';
 import PhoneMockup from '@/components/marketing/PhoneMockup';
 import MarketingFx from '@/components/marketing/MarketingFx';
 import LeadForm from '@/components/marketing/LeadForm';
+import KineticUnderline from '@/components/marketing/KineticUnderline';
 
 export const metadata: Metadata = {
   title: 'SMS-Powered Sales Training for Auto Dealers | DealershipIQ',
@@ -349,7 +350,12 @@ export default function LandingPage() {
           <div className="section-head sr">
             <div className="section-tag">Capabilities</div>
             <h2>
-              Your sales team is texting anyway. <span className="em">Make it count.</span>
+              Your sales team is texting anyway.{' '}
+              <span className="em">
+                <KineticUnderline delay={1000} rootMargin="0px 0px -30% 0px">
+                  Make it count.
+                </KineticUnderline>
+              </span>
             </h2>
             <p>
               Everything a dealership needs to build a daily training habit — delivered over the
@@ -473,7 +479,10 @@ export default function LandingPage() {
       <section className="cta-band">
         <div className="container">
           <h2 className="sr">
-            Your first training question can go out <span className="em">today.</span>
+            Your first training question can go out{' '}
+            <span className="em">
+              <KineticUnderline delay={700}>today.</KineticUnderline>
+            </span>
           </h2>
           <p className="sr">
             Five minutes to set up. By tomorrow morning, you&apos;ll see exactly who&apos;s putting
