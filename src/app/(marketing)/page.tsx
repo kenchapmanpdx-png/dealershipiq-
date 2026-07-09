@@ -37,7 +37,7 @@ const jsonLd = {
 
 const metrics = [
   { start: '30', end: '5', prefix: '<', suffix: 's', display: '<5s', label: 'AI grading turnaround' },
-  { start: '0', end: '100', prefix: '', suffix: '%', display: '100%', label: 'SMS delivery — no app needed' },
+  { start: '0', end: '100', prefix: '', suffix: '%', display: '100%', label: 'Works on every phone — no app needed' },
   { start: '0', end: '3', prefix: '', suffix: 'x', display: '3x', label: 'More practice reps than classroom' },
   { start: '9', end: '0', prefix: '', suffix: '', display: '0', label: 'Disruption to the sales floor' },
 ];
@@ -80,7 +80,7 @@ const features = [
   },
   {
     title: 'AI-Powered Grading',
-    description: 'AI evaluates every response in real time. Instant, actionable feedback per rep.',
+    description: 'Every answer scored in seconds, with feedback that tells each rep exactly what to fix.',
     num: '02',
     wide: false,
     icon: (
@@ -125,7 +125,7 @@ const features = [
   },
   {
     title: 'Multi-Rooftop',
-    description: 'Unlimited reps across all your locations. One flat rate per dealership.',
+    description: 'Unlimited reps at every store. One simple rate per rooftop — never per seat.',
     num: '06',
     wide: false,
     icon: (
@@ -174,6 +174,10 @@ const faqItems = [
   {
     q: 'Do my salespeople need to download an app?',
     a: 'No. Training is delivered via standard SMS. If they can text, they can train. Works on every phone.',
+  },
+  {
+    q: 'Do reps have to opt in?',
+    a: 'Yes. Each rep confirms by text before training starts, and they can pause or stop anytime by replying. Opt-outs are honored automatically.',
   },
   {
     q: 'How long does each session take?',
@@ -469,17 +473,17 @@ export default function LandingPage() {
       <section className="cta-band">
         <div className="container">
           <h2 className="sr">
-            Your sales team is texting anyway. <span className="em">Make it count.</span>
+            Your first training question can go out <span className="em">today.</span>
           </h2>
           <p className="sr">
-            Start training today. See who&apos;s putting in the work on the dashboard by tomorrow
-            morning.
+            Five minutes to set up. By tomorrow morning, you&apos;ll see exactly who&apos;s putting
+            in the work.
           </p>
           <div className="sr">
             <a href="#signup" className="btn btn-green btn-lg magnetic">
               Start Your Free Trial <span className="btn-arrow">→</span>
             </a>
-            <div className="cta-micro">Setup takes less than 5 minutes · No credit card · No contract</div>
+            <div className="cta-micro">No credit card · No contract · Cancel anytime</div>
           </div>
         </div>
       </section>
