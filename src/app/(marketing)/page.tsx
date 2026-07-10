@@ -193,6 +193,10 @@ const faqItems = [
     a: 'Yes. Managers can submit custom scenarios and competitive context specific to your market and inventory.',
   },
   {
+    q: 'Does DealershipIQ cover HR compliance training?',
+    a: 'Yes — as an add-on. Harassment prevention, manager complaint response, FTC Safeguards awareness, and workplace conduct scenarios go to your entire staff — sales, service, F&I, parts, and BDC — in the same two-minute text format. Every response is graded and every completion is timestamped, giving you an audit-ready record of who trained, on what, and when, across every store. Many dealers run it alongside their annual formal training: the daily reps make it stick, and the record proves it happened.',
+  },
+  {
     q: 'Is there a contract?',
     a: 'No long-term commitment. Month-to-month after your 30-day free trial. Cancel anytime.',
   },
@@ -440,6 +444,26 @@ export default function LandingPage() {
                 </a>
               </div>
             </div>
+          </div>
+
+          {/* HR add-on band — standalone, below the pricing card */}
+          <div className="addon-band sr">
+            <div className="addon-eyebrow">Add-On · HR Compliance Training</div>
+            <h3>
+              You promoted your best closer to manager. Nobody taught them what to do when an
+              employee complains.
+            </h3>
+            <p>
+              The average employment claim costs $160,000 to defend and settle — and most are lost
+              on how a manager handled the complaint, not the incident. The HR add-on trains your
+              entire staff — sales, service, F&amp;I, parts, BDC — in the same two-minute text
+              format: harassment prevention, manager complaint response, FTC Safeguards awareness.
+              Every answer graded. Every completion timestamped, at every store. Your people
+              fast-forward the annual video. They can&apos;t fast-forward a conversation.
+            </p>
+            <a href="#signup" className="addon-link">
+              Ask about the HR add-on →
+            </a>
           </div>
         </div>
       </section>

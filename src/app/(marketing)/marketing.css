@@ -1492,6 +1492,61 @@
 }
 
 /* ============================================
+   HR ADD-ON BAND (below pricing card)
+   ============================================ */
+.mkt .addon-band {
+  max-width: 48rem;
+  margin: 2rem auto 0;
+  padding: 24px 28px;
+  border: 1px dashed var(--border-visible);
+  border-radius: var(--radius-md);
+  background: var(--bg-warm);
+}
+
+.mkt .addon-eyebrow {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-light);
+}
+
+.mkt .addon-band h3 {
+  margin-bottom: 12px;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.mkt .addon-band p {
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  color: var(--text-mid);
+}
+
+.mkt .addon-link {
+  display: inline-block;
+  margin-top: 16px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.mkt .addon-link:hover {
+  color: var(--accent-deep);
+  text-decoration: underline;
+}
+
+@media (max-width: 690px) {
+  .mkt .addon-band {
+    padding: 20px;
+  }
+}
+
+/* ============================================
    FAQ
    ============================================ */
 .mkt .faq-wrap {
