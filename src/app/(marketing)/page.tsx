@@ -446,24 +446,34 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* HR add-on band — standalone, below the pricing card */}
-          <div className="addon-band sr">
-            <div className="addon-eyebrow">Add-On · HR Compliance Training</div>
-            <h3>
-              You promoted your best closer to manager. Nobody taught them what to do when an
-              employee complains.
-            </h3>
-            <p>
-              The average employment claim costs $160,000 to defend and settle — and most are lost
-              on how a manager handled the complaint, not the incident. The HR add-on trains your
-              entire staff — sales, service, F&amp;I, parts, BDC — in the same two-minute text
-              format: harassment prevention, manager complaint response, FTC Safeguards awareness.
-              Every answer graded. Every completion timestamped, at every store. Your people
-              fast-forward the annual video. They can&apos;t fast-forward a conversation.
-            </p>
-            <a href="#signup" className="addon-link">
-              Ask about the HR add-on →
-            </a>
+          {/* HR add-on — companion card, chained to pricing with a plus connector */}
+          <div className="addon-connect sr" aria-hidden="true">
+            <span className="addon-plus">+</span>
+          </div>
+          <div className="addon-card sr">
+            <div className="addon-grid">
+              <div>
+                <div className="rev-tag">Add-On · HR Compliance Training</div>
+                <h3 className="addon-head">
+                  You promoted your best closer to manager. Nobody taught them what to do when an
+                  employee complains.
+                </h3>
+                <a href="#signup" className="btn btn-ghost magnetic">
+                  Ask about the HR add-on <span className="btn-arrow">→</span>
+                </a>
+              </div>
+              <div className="addon-body">
+                <p>
+                  The average employment claim costs $160,000 to defend and settle — and most are
+                  lost on how a manager handled the complaint, not the incident. The HR add-on
+                  trains your entire staff — sales, service, F&amp;I, parts, BDC — in the same
+                  two-minute text format: harassment prevention, manager complaint response, FTC
+                  Safeguards awareness. Every answer graded. Every completion timestamped, at every
+                  store. Your people fast-forward the annual video. They can&apos;t fast-forward a
+                  conversation.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
