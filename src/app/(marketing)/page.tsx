@@ -449,8 +449,8 @@ export default function LandingPage() {
             <div className="addon-tray">
               <div className="addon-chip">Add-On · HR Compliance Training</div>
               <h3 className="addon-head">
-                You promoted your best closer to manager. Nobody taught them what to do when an
-                employee complains.
+                Selling cars is one skill. Handling an employee complaint before it becomes a
+                lawsuit is another. Train for both.
               </h3>
               <p className="addon-copy">
                 The average employment claim costs $160,000 to defend and settle — and most are
